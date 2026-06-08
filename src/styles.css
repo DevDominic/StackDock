@@ -1,0 +1,262 @@
+/* ============================================================
+   Theme tokens
+   ------------------------------------------------------------
+   Every color in the app reads from a CSS variable below.
+   To add a custom theme later, override these tokens under a
+   selector such as html[data-theme="my-theme"] { ... } — no
+   component or rule needs to change.
+   ============================================================ */
+:root {
+  color-scheme: dark;
+  font-family: system-ui, sans-serif;
+
+  /* Surfaces (pure-black default theme) */
+  --bg: #000000;
+  --bg-panel: #050505;
+  --bg-elevated: #0c0c0c;
+  --surface: #101010;
+  --hover: rgba(255, 255, 255, 0.06);
+  --active: rgba(255, 255, 255, 0.10);
+
+  /* Lines */
+  --border: #1c1c1c;
+  --border-strong: #2a2a2a;
+
+  /* Text */
+  --text: #e7e7e7;
+  --muted: #8a8a8a;
+
+  /* Accents */
+  --primary: #3b82f6;
+  --primary-fg: #ffffff;
+  --accent-soft: rgba(59, 130, 246, 0.18);
+  --danger: #ff6b6b;
+
+  background: var(--bg);
+  color: var(--text);
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; overflow: hidden; }
+body { background: var(--bg); }
+button, input, textarea { font: inherit; }
+button {
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: inherit;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+button:hover { border-color: var(--border-strong); }
+button.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-fg); }
+button.ghost { background: transparent; }
+button.danger { color: var(--danger); }
+button.active-toggle { border-color: var(--primary); background: var(--accent-soft); }
+
+.app-shell, .workspace-shell { height: 100%; }
+.dashboard { padding: 24px; max-width: 1400px; margin: 0 auto; height: 100%; overflow: auto; }
+.hero, .topbar, .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.hero { margin-bottom: 24px; }
+.hero h1, .topbar h2 { margin: 0; }
+.hero p, .muted { color: var(--muted); }
+.workspace-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.card, .panel, .banner, .empty-state { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 14px; }
+.card { padding: 16px; }
+.card-header, .card-actions, .card-meta { display: flex; gap: 8px; }
+.card-header, .card-actions { justify-content: space-between; align-items: center; }
+.card-meta { flex-direction: column; margin: 12px 0; font-size: 12px; }
+.empty-state { padding: 32px; text-align: center; }
+.banner.error { margin: 16px 24px 0; padding: 12px 16px; border-color: #643131; color: #ffb2b2; }
+.primary, .ghost { min-height: 36px; }
+
+/* Workspace terminal-first layout */
+.workspace-terminal-mode { display: flex; flex-direction: column; background: var(--bg); }
+.compact-topbar { height: 56px; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--bg-panel); flex-shrink: 0; }
+.topbar-left, .topbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.topbar-title { min-width: 0; text-align: center; }
+.topbar-title .muted { display: block; max-width: 760px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.workspace-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr; }
+.workspace-body.explorer-open { grid-template-columns: 240px minmax(0, 1fr); }
+.workspace-explorer { min-width: 0; min-height: 0; border-right: 1px solid var(--border); background: var(--bg-panel); }
+.workspace-explorer .panel { border: none; border-radius: 0; height: 100%; background: transparent; }
+
+.panel { display: flex; flex-direction: column; min-height: 0; }
+.pad { padding: 12px; }
+
+/* ---- File explorer (compact, VSCode-style) ---- */
+.file-tree .panel-title {
+  padding: 8px 12px 4px;
+  border: none;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tree-list, .git-list { overflow: auto; min-height: 0; }
+.tree-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 1px 8px;
+  min-height: 22px;
+  line-height: 22px;
+  font-size: 13px;
+  border-radius: 0;
+}
+.tree-row:hover { background: var(--hover); }
+.tree-twisty {
+  width: 14px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 10px;
+  color: var(--muted);
+}
+.tree-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.tree-icon-svg { display: block; }
+/* MDI icons are monochrome; default to the muted text color and add subtle
+   per-type tints. Each reads from a CSS var so custom themes can recolor or
+   neutralize them without touching markup. */
+.tree-icon-folder, .tree-icon-folderOpen { color: var(--icon-folder, #7a8190); }
+.tree-icon-lua { color: var(--icon-lua, #5b7fff); }
+.tree-icon-ts { color: var(--icon-ts, #3178c6); }
+.tree-icon-js { color: var(--icon-js, #e3c34b); }
+.tree-icon-py { color: var(--icon-py, #5a9fd4); }
+.tree-icon-rust { color: var(--icon-rust, #d2925f); }
+.tree-icon-go { color: var(--icon-go, #56c5d4); }
+.tree-icon-c, .tree-icon-cpp { color: var(--icon-cpp, #6f9ad0); }
+.tree-icon-csharp { color: var(--icon-csharp, #9b6fd0); }
+.tree-icon-ruby { color: var(--icon-ruby, #d05b5b); }
+.tree-icon-php { color: var(--icon-php, #8b8fcf); }
+.tree-icon-java { color: var(--icon-java, #d07b4f); }
+.tree-icon-kotlin { color: var(--icon-kotlin, #b07cf0); }
+.tree-icon-swift { color: var(--icon-swift, #ef8a52); }
+.tree-icon-html { color: var(--icon-html, #e07b53); }
+.tree-icon-css, .tree-icon-sass { color: var(--icon-css, #c678dd); }
+.tree-icon-vue { color: var(--icon-vue, #5fbf8a); }
+.tree-icon-md { color: var(--icon-md, #9aa3b2); }
+.tree-icon-json, .tree-icon-data { color: var(--icon-data, #d2a24c); }
+.tree-icon-image { color: var(--icon-image, #56b6c2); }
+.tree-icon-pdf { color: var(--icon-pdf, #d05b5b); }
+.tree-icon-config, .tree-icon-shell { color: var(--icon-config, #98c379); }
+.tree-icon-node { color: var(--icon-node, #6cab5a); }
+.tree-icon-docker { color: var(--icon-docker, #4aa0e0); }
+.tree-icon-git { color: var(--icon-git, #e07b53); }
+.tree-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- Right-click context menu ---- */
+.context-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 170px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.7);
+}
+.context-menu-item {
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  min-height: 30px;
+}
+.context-menu-item:hover { background: var(--hover); }
+
+/* ---- Git list ---- */
+.git-file { width: 100%; text-align: left; display: flex; gap: 8px; align-items: center; justify-content: space-between; border: none; background: transparent; color: inherit; padding: 6px 12px; border-radius: 0; }
+.git-file:hover { background: var(--hover); }
+.git-file.active, .tab.active, .session-tab.active { background: var(--accent-soft); }
+
+/* ---- Terminal ---- */
+.terminal-workspace { min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 240px; background: var(--bg); }
+.terminal-main { min-width: 0; min-height: 0; display: flex; }
+.terminal-views { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1; }
+.terminal-shell { flex-direction: column; min-width: 0; min-height: 0; flex: 1; background: var(--bg); }
+.terminal-meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-panel); }
+.terminal-name { background: transparent; border: 1px solid var(--border); color: inherit; border-radius: 8px; padding: 6px 8px; max-width: 220px; }
+.terminal-mount { flex: 1; min-height: 0; padding: 8px; overflow: hidden; }
+.terminal-mount .xterm { height: 100%; }
+
+/* ---- Session sidebar ---- */
+.session-sidebar { min-height: 0; border-left: 1px solid var(--border); background: var(--bg-panel); display: flex; flex-direction: column; }
+.session-header { height: 48px; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
+.session-list { padding: 8px; display: flex; flex-direction: column; gap: 6px; overflow: auto; min-height: 0; }
+.session-tab { width: 100%; min-height: 38px; display: grid; grid-template-columns: 22px minmax(0, 1fr) 18px; align-items: center; gap: 8px; text-align: left; background: var(--bg-elevated); border-color: var(--border); }
+.session-tab:hover { border-color: var(--border-strong); }
+.session-index { color: var(--muted); font-size: 12px; }
+.session-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-close { opacity: 0.7; text-align: center; }
+.tab-close:hover { opacity: 1; }
+.empty-pad { padding: 16px; }
+
+/* ---- New-session split button ---- */
+.new-session { position: relative; display: inline-flex; }
+.new-session-main {
+  display: inline-flex; align-items: center;
+  border-radius: 6px 0 0 6px;
+  border-right: none;
+  padding: 4px 12px; min-height: 28px;
+  background: var(--primary); border-color: var(--primary); color: var(--primary-fg);
+  font-size: 13px;
+}
+.new-session-caret {
+  display: inline-flex; align-items: center;
+  border-radius: 0 6px 6px 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.28);
+  padding: 4px 7px; min-height: 28px;
+  background: var(--primary); border-color: var(--primary); color: var(--primary-fg);
+  font-size: 10px;
+}
+.new-session-main:hover, .new-session-caret:hover { filter: brightness(1.12); border-color: var(--primary); }
+.new-session-menu {
+  position: absolute; top: calc(100% + 4px); right: 0; z-index: 20;
+  min-width: 160px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 4px;
+  display: flex; flex-direction: column; gap: 2px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.7);
+}
+.new-session-item {
+  text-align: left; background: transparent; border: none;
+  border-radius: 6px; padding: 6px 10px; font-size: 13px; min-height: 30px;
+}
+.new-session-item:hover { background: var(--hover); }
+.new-session-item .check { color: var(--primary); margin-left: 8px; float: right; }
+
+/* Legacy/editor/git styles kept for later phases */
+.editor-panel, .terminal-panel, .git-panel, .file-tree { height: 100%; }
+.tab-strip, .terminal-controls, .git-actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 12px; }
+.tab { display: flex; gap: 8px; align-items: center; }
+.editor-wrap { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.editor-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 12px; }
+.editor { width: 100%; flex: 1; min-height: 0; border: none; outline: none; resize: none; background: var(--bg-panel); color: var(--text); padding: 14px; font-family: Consolas, monospace; font-size: 14px; }
+.diff-view { flex: 1; min-height: 0; overflow: auto; border-top: 1px solid var(--border); }
+.diff-view pre { margin: 0; padding: 12px; white-space: pre-wrap; font-size: 12px; }
+.commit-box textarea { width: 100%; background: var(--bg-panel); color: inherit; border: 1px solid var(--border); border-radius: 8px; padding: 8px; resize: vertical; }
+
+@media (max-width: 900px) {
+  .workspace-body.explorer-open { grid-template-columns: 220px minmax(0, 1fr); }
+  .terminal-workspace { grid-template-columns: minmax(0, 1fr) 200px; }
+  .topbar-title .muted { max-width: 320px; }
+}
