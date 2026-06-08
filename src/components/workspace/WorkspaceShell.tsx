@@ -1,18 +1,18 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import type { AutomationConfig, GitFileStatus, GitStatus, PaletteCommand, StackDockSettings, TerminalProfile, Workspace, WorkspaceCommand, WorkspaceLayout, WorkspaceTerminalSession } from '../../shared/types';
+import type { AutomationConfig, GitFileStatus, GitStatus, PaletteCommand, StackDockSettings, TerminalProfile, Workspace, WorkspaceLayout, WorkspaceTerminalSession } from '../../shared/types';
 import { api } from '../../lib/api';
 import { getErrorMessage } from '../../lib/errors';
 import { useToast } from '../common/ToastProvider';
 import { useSessionStore } from '../../state/sessionStore';
 import { FileTree } from './FileTree';
-import type { OpenFileTab } from './EditorPanel';
+import type { EditorDiffMode, EditorDiffModel, OpenFileTab } from './EditorPanel';
 import { WebTabPanel, type WebTab } from './WebTabPanel';
 import { GitPanel } from './GitPanel';
 import { TerminalPanel } from './TerminalPanel';
-import { WorkspaceCommandsModal } from './WorkspaceCommandsModal';
 import { CommandLauncher, type CommandAction } from './CommandLauncher';
 import { SettingsModal, type SettingsTab } from './SettingsModal';
+import { StatusBar } from './StatusBar';
 import { applyTheme } from '../../lib/themeSupport';
 import { GlobalSessionsSidebar } from './GlobalSessionsSidebar';
 
@@ -21,16 +21,40 @@ const EditorPanel = lazy(() => import('./EditorPanel.js').then((module) => ({ de
 // Which kind of content tab is showing in the shared main area for a session.
 type MainTabKind = 'terminal' | 'editor' | 'web';
 
+type SplitDirection = 'left' | 'right' | 'up' | 'down';
+type EditorSplitOrientation = 'horizontal' | 'vertical';
+
+interface EditorGroup {
+  id: string;
+  openFiles: OpenFileTab[];
+  activeFile: string | null;
+}
+
 // All editor/web tab state for a single terminal session.
 interface SessionEditors {
-  openFiles: OpenFileTab[];
+  editorGroups: EditorGroup[];
+  activeEditorGroup: string;
+  splitOrientation: EditorSplitOrientation;
   openLinks: WebTab[];
   activeKind: MainTabKind;
-  activeFile: string | null;
   activeWeb: string | null;
 }
 
-const EMPTY_EDITORS: SessionEditors = { openFiles: [], openLinks: [], activeKind: 'terminal', activeFile: null, activeWeb: null };
+function createEditorGroup(openFiles: OpenFileTab[] = [], activeFile: string | null = openFiles[0]?.path ?? null): EditorGroup {
+  return { id: crypto.randomUUID(), openFiles, activeFile };
+}
+
+const EMPTY_EDITORS: SessionEditors = { editorGroups: [createEditorGroup([], null)], activeEditorGroup: '', splitOrientation: 'horizontal', openLinks: [], activeKind: 'terminal', activeWeb: null };
+
+function normalizeEditors(entry: SessionEditors | undefined): SessionEditors {
+  if (!entry) {
+    const group = createEditorGroup([], null);
+    return { ...EMPTY_EDITORS, editorGroups: [group], activeEditorGroup: group.id };
+  }
+  const editorGroups = entry.editorGroups.length ? entry.editorGroups : [createEditorGroup([], null)];
+  const activeEditorGroup = editorGroups.some((group) => group.id === entry.activeEditorGroup) ? entry.activeEditorGroup : editorGroups[0].id;
+  return { ...entry, editorGroups, activeEditorGroup };
+}
 
 function linkLabel(url: string) {
   try {
@@ -64,7 +88,8 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const { showToast } = useToast();
   const [layout, setLayout] = useState<WorkspaceLayout | null>(null);
   const [git, setGit] = useState<GitStatus | null>(null);
-  const [diff, setDiff] = useState('');
+  const [editorDiff, setEditorDiff] = useState<EditorDiffModel | null>(null);
+  const [diffMode, setDiffMode] = useState<EditorDiffMode>('side-by-side');
   const [settings, setSettings] = useState<StackDockSettings | null>(appSettings ?? null);
   const [profiles, setProfiles] = useState<TerminalProfile[]>([]);
   const [automation, setAutomation] = useState<AutomationConfig | null>(null);
@@ -78,22 +103,24 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   // panes stay mounted (toggled via CSS) so scrollback and editor models survive
   // tab switches.
   const [editorsBySession, setEditorsBySession] = useState<Record<string, SessionEditors>>({});
-  const activeEditors = (activeTerminalId ? editorsBySession[activeTerminalId] : undefined) ?? EMPTY_EDITORS;
-  const openFiles = activeEditors.openFiles;
+  const activeEditors = normalizeEditors(activeTerminalId ? editorsBySession[activeTerminalId] : undefined);
+  const activeEditorGroup = activeEditors.editorGroups.find((group) => group.id === activeEditors.activeEditorGroup) ?? activeEditors.editorGroups[0];
+  const openFiles = activeEditors.editorGroups.flatMap((group) => group.openFiles);
   const openLinks = activeEditors.openLinks;
-  const activeFilePath = activeEditors.activeFile;
+  const activeFilePath = activeEditorGroup.activeFile;
   const activeWebId = activeEditors.activeWeb;
   const contentTabCount = openFiles.length + openLinks.length;
   let mainView: MainTabKind = activeEditors.activeKind;
   if (mainView === 'editor' && !openFiles.length) mainView = 'terminal';
   if (mainView === 'web' && !openLinks.length) mainView = 'terminal';
   const [selectedGitFile, setSelectedGitFile] = useState<GitFileStatus | null>(null);
+  const [selectedGitStaged, setSelectedGitStaged] = useState(false);
   const [gitError, setGitError] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
-  const [commandsOpen, setCommandsOpen] = useState(false);
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>('general');
+  const [tabMenu, setTabMenu] = useState<{ file: OpenFileTab; groupId: string; x: number; y: number } | null>(null);
   const [sidebarTab, setSidebarTab] = useState<'explorer' | 'git'>('explorer');
   const autoStartedRef = useRef<string | null>(null);
   const sessionsRef = useRef<WorkspaceTerminalSession[]>([]);
@@ -170,25 +197,35 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       // from the sidebar isn't clobbered as the workspace switches in.
       if (createdSessions && firstSessionId) sessionStore.setActiveSession(firstSessionId);
       if (firstSessionId && loadedLayout?.editors.openFiles.length) {
-        const tabs: OpenFileTab[] = [];
-        for (const filePath of loadedLayout.editors.openFiles) {
+        const paths = [...new Set(loadedLayout.editors.openFiles)];
+        const tabByPath = new Map<string, OpenFileTab>();
+        for (const filePath of paths) {
           try {
             const file = await api.fs.readFile(filePath);
-            tabs.push({ path: filePath, name: filePath.split(/[\\/]/).pop() ?? filePath, content: file.content, dirty: false });
+            tabByPath.set(filePath, { path: filePath, name: filePath.split(/[\\/]/).pop() ?? filePath, content: file.content, dirty: false });
           } catch {
-            tabs.push({ path: filePath, name: filePath.split(/[\\/]/).pop() ?? filePath, content: '', dirty: false });
+            tabByPath.set(filePath, { path: filePath, name: filePath.split(/[\\/]/).pop() ?? filePath, content: '', dirty: false });
           }
         }
         if (!active) return;
-        const activeFile = loadedLayout.editors.activeFile ?? tabs[0]?.path ?? null;
+        const groupsFromLayout = loadedLayout.editors.groups?.length
+          ? loadedLayout.editors.groups.map((savedGroup) => {
+              const tabs = savedGroup.openFiles.map((filePath) => tabByPath.get(filePath)).filter(Boolean) as OpenFileTab[];
+              return createEditorGroup(tabs, savedGroup.activeFile ?? tabs[0]?.path ?? null);
+            }).filter((group) => group.openFiles.length)
+          : [];
+        const fallbackTabs = paths.map((filePath) => tabByPath.get(filePath)).filter(Boolean) as OpenFileTab[];
+        const editorGroups = groupsFromLayout.length ? groupsFromLayout : [createEditorGroup(fallbackTabs, loadedLayout.editors.activeFile ?? fallbackTabs[0]?.path ?? null)];
+        const activeGroup = editorGroups[Math.min(loadedLayout.editors.activeGroupIndex ?? 0, editorGroups.length - 1)] ?? editorGroups[0];
         // Open on the terminal with the tabs available, rather than jumping
         // straight into the editor when the workspace loads.
-        setEditorsBySession((map) => ({ ...map, [firstSessionId!]: { openFiles: tabs, openLinks: [], activeKind: 'terminal', activeFile, activeWeb: null } }));
+        setEditorsBySession((map) => ({ ...map, [firstSessionId!]: { editorGroups, activeEditorGroup: activeGroup.id, splitOrientation: loadedLayout.editors.splitOrientation ?? 'horizontal', openLinks: [], activeKind: 'terminal', activeWeb: null } }));
       }
-      if (workspace.commands?.length && autoStartedRef.current !== workspace.id) {
+      // Run any per-workspace commands flagged to auto-start when the workspace opens.
+      if (setup?.commands?.length && autoStartedRef.current !== workspace.id) {
         autoStartedRef.current = workspace.id;
-        for (const command of workspace.commands.filter((item) => item.autoStart)) {
-          await runWorkspaceCommand(command);
+        for (const command of setup.commands.filter((item) => item.autoStart)) {
+          await runPaletteCommand(command);
         }
       }
     })();
@@ -215,9 +252,12 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         },
         editors: {
           // Persist the union of files open across this workspace's sessions so
-          // none are lost on reload; they restore onto the first terminal.
-          openFiles: [...new Set(sessions.flatMap((session) => editorsBySession[session.id]?.openFiles.map((file) => file.path) ?? []))],
+          // none are lost on reload; split groups restore from the active session.
+          openFiles: [...new Set(sessions.flatMap((session) => normalizeEditors(editorsBySession[session.id]).editorGroups.flatMap((group) => group.openFiles.map((file) => file.path))))],
           activeFile: activeFilePath ?? undefined,
+          groups: activeEditors.editorGroups.map((group) => ({ openFiles: group.openFiles.map((file) => file.path), activeFile: group.activeFile ?? undefined })),
+          activeGroupIndex: Math.max(0, activeEditors.editorGroups.findIndex((group) => group.id === activeEditors.activeEditorGroup)),
+          splitOrientation: activeEditors.splitOrientation,
         },
         terminals: sessions,
       };
@@ -234,6 +274,16 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       return entries.length === Object.keys(map).length ? map : Object.fromEntries(entries);
     });
   }, [allSessions]);
+
+  useEffect(() => {
+    if (!tabMenu) return;
+    const close = () => setTabMenu(null);
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setTabMenu(null); };
+    window.addEventListener('mousedown', close);
+    window.addEventListener('resize', close);
+    window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('mousedown', close); window.removeEventListener('resize', close); window.removeEventListener('keydown', onKey); };
+  }, [tabMenu]);
 
   useEffect(() => {
     if (settings?.autoSave === false) return;
@@ -262,81 +312,172 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     if (git && !git.isRepo && sidebarTab === 'git') setSidebarTab('explorer');
   }, [git?.isRepo, sidebarTab]);
 
+  async function loadEditorDiff(file: GitFileStatus, staged = file.staged && !file.unstaged) {
+    const contents = await api.git.fileContents(workspace.path, file.path, staged);
+    setEditorDiff({ path: joinPath(workspace.path, file.path), original: contents.original, staged });
+  }
+
   async function refreshGit() {
     const status = await api.git.status(workspace.path);
     setGit(status);
     if (selectedGitFile) {
-      const currentFile = status.files.find((file) => file.path === selectedGitFile.path) ?? selectedGitFile;
-      setSelectedGitFile(currentFile);
-      setDiff(await api.git.diff(workspace.path, currentFile.path, currentFile.staged));
+      const currentFile = status.files.find((file) => file.path === selectedGitFile.path);
+      if (currentFile) {
+        const staged = selectedGitStaged && currentFile.staged ? true : !currentFile.unstaged && currentFile.staged;
+        setSelectedGitFile(currentFile);
+        setSelectedGitStaged(staged);
+        await loadEditorDiff(currentFile, staged);
+      } else {
+        setSelectedGitFile(null);
+        setEditorDiff(null);
+      }
     }
   }
 
   // ---- Per-session tab state mutation ----
   function patchSession(sessionId: string | null, patch: (prev: SessionEditors) => SessionEditors) {
     if (!sessionId) return;
-    setEditorsBySession((map) => ({ ...map, [sessionId]: patch(map[sessionId] ?? EMPTY_EDITORS) }));
+    setEditorsBySession((map) => ({ ...map, [sessionId]: normalizeEditors(patch(normalizeEditors(map[sessionId]))) }));
   }
   function patchActive(patch: (prev: SessionEditors) => SessionEditors) {
     patchSession(activeTerminalId, patch);
   }
 
   const showTerminal = () => patchActive((prev) => ({ ...prev, activeKind: 'terminal' }));
-  const selectFile = (path: string) => patchActive((prev) => ({ ...prev, activeKind: 'editor', activeFile: path }));
+  const selectFile = (path: string, groupId?: string) => patchActive((prev) => {
+    const targetGroup = (groupId ? prev.editorGroups.find((group) => group.id === groupId) : prev.editorGroups.find((group) => group.openFiles.some((file) => file.path === path))) ?? prev.editorGroups[0];
+    return {
+      ...prev,
+      activeKind: 'editor',
+      activeEditorGroup: targetGroup.id,
+      editorGroups: prev.editorGroups.map((group) => (group.id === targetGroup.id ? { ...group, activeFile: path } : group)),
+    };
+  });
   const selectWeb = (id: string) => patchActive((prev) => ({ ...prev, activeKind: 'web', activeWeb: id }));
 
   function toggleMainView() {
     patchActive((prev) => {
       if (prev.activeKind !== 'terminal') return { ...prev, activeKind: 'terminal' };
-      const next: MainTabKind = prev.openFiles.length ? 'editor' : prev.openLinks.length ? 'web' : 'terminal';
+      const next: MainTabKind = prev.editorGroups.some((group) => group.openFiles.length) ? 'editor' : prev.openLinks.length ? 'web' : 'terminal';
       return { ...prev, activeKind: next };
     });
   }
 
-  async function openFile(path: string) {
+  async function openFile(path: string, groupId?: string) {
     const sessionId = activeTerminalId;
     if (!sessionId) return;
     try {
-      if ((editorsBySession[sessionId]?.openFiles ?? []).some((file) => file.path === path)) {
-        patchSession(sessionId, (prev) => ({ ...prev, activeKind: 'editor', activeFile: path }));
+      const current = normalizeEditors(editorsBySession[sessionId]);
+      const existingGroup = current.editorGroups.find((group) => group.openFiles.some((file) => file.path === path));
+      const targetGroupId = groupId ?? existingGroup?.id ?? current.activeEditorGroup;
+      if (existingGroup && !groupId) {
+        patchSession(sessionId, (prev) => ({
+          ...prev,
+          activeKind: 'editor',
+          activeEditorGroup: existingGroup.id,
+          editorGroups: prev.editorGroups.map((group) => (group.id === existingGroup.id ? { ...group, activeFile: path } : group)),
+        }));
         return;
       }
       const file = await api.fs.readFile(path);
       const tab: OpenFileTab = { path, name: path.split(/[\\/]/).pop() ?? path, content: file.content, dirty: false };
-      patchSession(sessionId, (prev) => ({ ...prev, openFiles: [...prev.openFiles, tab], activeKind: 'editor', activeFile: path }));
+      patchSession(sessionId, (prev) => ({
+        ...prev,
+        activeKind: 'editor',
+        activeEditorGroup: targetGroupId,
+        editorGroups: prev.editorGroups.map((group) => (
+          group.id === targetGroupId
+            ? { ...group, openFiles: group.openFiles.some((item) => item.path === path) ? group.openFiles : [...group.openFiles, tab], activeFile: path }
+            : group
+        )),
+      }));
     } catch (error) { showToast(getErrorMessage(error, 'Could not open file'), 'error'); }
   }
 
   function changeFile(path: string, content: string) {
-    patchActive((prev) => ({ ...prev, openFiles: prev.openFiles.map((file) => (file.path === path ? { ...file, content, dirty: true } : file)) }));
+    patchActive((prev) => ({
+      ...prev,
+      editorGroups: prev.editorGroups.map((group) => ({ ...group, openFiles: group.openFiles.map((file) => (file.path === path ? { ...file, content, dirty: true } : file)) })),
+    }));
   }
 
   async function saveFile(path: string, options?: { silent?: boolean }) {
     const sessionId = activeTerminalId;
     if (!sessionId) return;
     try {
-      const file = (editorsBySession[sessionId]?.openFiles ?? []).find((item) => item.path === path);
+      const file = normalizeEditors(editorsBySession[sessionId]).editorGroups.flatMap((group) => group.openFiles).find((item) => item.path === path);
       if (!file || !file.dirty) return;
       await api.fs.writeFile(path, file.content);
-      patchSession(sessionId, (prev) => ({ ...prev, openFiles: prev.openFiles.map((item) => (item.path === path ? { ...item, dirty: false } : item)) }));
+      patchSession(sessionId, (prev) => ({ ...prev, editorGroups: prev.editorGroups.map((group) => ({ ...group, openFiles: group.openFiles.map((item) => (item.path === path ? { ...item, dirty: false } : item)) })) }));
       await refreshGit();
       setRefreshToken((token) => token + 1);
       if (!options?.silent) showToast('File saved', 'success');
     } catch (error) { showToast(getErrorMessage(error, 'Could not save file'), 'error'); }
   }
 
-  function closeFile(path: string) {
+  function closeFile(path: string, groupId?: string) {
     patchActive((prev) => {
-      const index = prev.openFiles.findIndex((file) => file.path === path);
-      if (index < 0) return prev;
-      const openFiles = prev.openFiles.filter((file) => file.path !== path);
-      let activeFile = prev.activeFile;
-      let activeKind = prev.activeKind;
-      if (prev.activeFile === path) {
-        activeFile = openFiles[index]?.path ?? openFiles[index - 1]?.path ?? null;
-        if (!activeFile) activeKind = prev.openLinks.length ? 'web' : 'terminal';
-      }
-      return { ...prev, openFiles, activeFile, activeKind };
+      let anyOpenFiles = 0;
+      const editorGroups = prev.editorGroups.map((group) => {
+        if (groupId && group.id !== groupId) {
+          anyOpenFiles += group.openFiles.length;
+          return group;
+        }
+        const index = group.openFiles.findIndex((file) => file.path === path);
+        if (index < 0) {
+          anyOpenFiles += group.openFiles.length;
+          return group;
+        }
+        const openFiles = group.openFiles.filter((file) => file.path !== path);
+        let activeFile = group.activeFile;
+        if (group.activeFile === path) activeFile = openFiles[index]?.path ?? openFiles[index - 1]?.path ?? null;
+        anyOpenFiles += openFiles.length;
+        return { ...group, openFiles, activeFile };
+      }).filter((group, _index, groups) => group.openFiles.length || groups.length === 1);
+      return { ...prev, editorGroups, activeKind: anyOpenFiles ? prev.activeKind : prev.openLinks.length ? 'web' : 'terminal' };
+    });
+  }
+
+  function closeOthers(path: string, groupId: string) {
+    patchActive((prev) => ({
+      ...prev,
+      editorGroups: prev.editorGroups.map((group) => group.id === groupId ? { ...group, openFiles: group.openFiles.filter((file) => file.path === path), activeFile: path } : group),
+      activeEditorGroup: groupId,
+    }));
+  }
+
+  function closeToSide(path: string, groupId: string, side: 'left' | 'right') {
+    patchActive((prev) => ({
+      ...prev,
+      editorGroups: prev.editorGroups.map((group) => {
+        if (group.id !== groupId) return group;
+        const index = group.openFiles.findIndex((file) => file.path === path);
+        if (index < 0) return group;
+        const openFiles = group.openFiles.filter((_file, fileIndex) => side === 'left' ? fileIndex >= index : fileIndex <= index);
+        const activeFile = openFiles.some((file) => file.path === group.activeFile) ? group.activeFile : path;
+        return { ...group, openFiles, activeFile };
+      }),
+    }));
+  }
+
+  function splitFile(path: string, groupId: string, direction: SplitDirection) {
+    patchActive((prev) => {
+      const sourceIndex = prev.editorGroups.findIndex((group) => group.id === groupId);
+      if (sourceIndex < 0) return prev;
+      const source = prev.editorGroups[sourceIndex];
+      const file = source.openFiles.find((item) => item.path === path);
+      if (!file) return prev;
+      const nextGroup = createEditorGroup([{ ...file }], path);
+      const insertIndex = direction === 'left' || direction === 'up' ? sourceIndex : sourceIndex + 1;
+      const editorGroups = prev.editorGroups.slice();
+      editorGroups.splice(insertIndex, 0, nextGroup);
+      return {
+        ...prev,
+        editorGroups,
+        activeKind: 'editor',
+        activeEditorGroup: nextGroup.id,
+        splitOrientation: direction === 'left' || direction === 'right' ? 'horizontal' : 'vertical',
+      };
     });
   }
 
@@ -365,7 +506,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       let activeKind = prev.activeKind;
       if (prev.activeWeb === id) {
         activeWeb = openLinks[index]?.id ?? openLinks[index - 1]?.id ?? null;
-        if (!activeWeb) activeKind = prev.openFiles.length ? 'editor' : 'terminal';
+        if (!activeWeb) activeKind = prev.editorGroups.some((group) => group.openFiles.length) ? 'editor' : 'terminal';
       }
       return { ...prev, openLinks, activeWeb, activeKind };
     });
@@ -392,14 +533,10 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     });
   }
 
-  async function runWorkspaceCommand(command: WorkspaceCommand) {
-    await createTerminal(undefined, command.terminalName || command.name || 'Command', command.command, command.cwd || workspace.path);
-    showToast(`Started ${command.name}`, 'success');
-  }
-
-  // Command-palette entries from automation.json (global or workspace-scoped).
+  // Commands from automation.json (global or workspace-scoped). The optional
+  // terminalName names the spawned terminal; cwd falls back to the workspace.
   async function runPaletteCommand(command: PaletteCommand) {
-    await createTerminal(undefined, command.label || 'Command', command.command, command.cwd?.trim() ? command.cwd : workspace.path);
+    await createTerminal(undefined, command.terminalName || command.label || 'Command', command.command, command.cwd?.trim() ? command.cwd : workspace.path);
     showToast(`Started ${command.label}`, 'success');
   }
 
@@ -466,9 +603,28 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   async function selectGitFile(file: GitFileStatus, staged = file.staged && !file.unstaged) {
     try {
       setGitError(null);
+      const absolutePath = joinPath(workspace.path, file.path);
+      const contents = await api.git.fileContents(workspace.path, file.path, staged);
       setSelectedGitFile(file);
-      setDiff(await api.git.diff(workspace.path, file.path, staged));
-      await openFile(joinPath(workspace.path, file.path));
+      setSelectedGitStaged(staged);
+      setEditorDiff({ path: absolutePath, original: contents.original, staged });
+      patchActive((prev) => {
+        const targetGroupId = prev.activeEditorGroup;
+        const tab: OpenFileTab = { path: absolutePath, name: absolutePath.split(/[\\/]/).pop() ?? absolutePath, content: contents.modified, dirty: false };
+        return {
+          ...prev,
+          activeKind: 'editor',
+          activeEditorGroup: targetGroupId,
+          editorGroups: prev.editorGroups.map((group) => {
+            if (group.id !== targetGroupId) return group;
+            const exists = group.openFiles.some((item) => item.path === absolutePath);
+            const openFiles = exists
+              ? group.openFiles.map((item) => (item.path === absolutePath && !item.dirty ? { ...item, content: contents.modified } : item))
+              : [...group.openFiles, tab];
+            return { ...group, openFiles, activeFile: absolutePath };
+          }),
+        };
+      });
     } catch (error) { showGitError(error); }
   }
 
@@ -529,7 +685,6 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     { id: 'refresh-git', label: 'Refresh Git', run: refreshGit },
     { id: 'edit-config', label: 'Edit Workspace Config (JSON)', run: () => { setSettingsInitialTab('workspace'); setSettingsOpen(true); } },
     { id: 'open-folder', label: 'Open Workspace Folder', run: () => api.fs.revealInExplorer(workspace.path) },
-    ...(workspace.commands ?? []).map((command) => ({ id: `cmd:${command.id}`, label: `Run ${command.name}`, description: command.command, run: () => runWorkspaceCommand(command) })),
   ];
 
   useEffect(() => {
@@ -546,7 +701,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 't') { event.preventDefault(); void createTerminal(undefined, 'Terminal', ''); }
       if ((event.ctrlKey || event.metaKey) && key === 'w') {
         if (mainView === 'web' && activeWebId) { event.preventDefault(); closeLink(activeWebId); }
-        else if (activeFilePath) { event.preventDefault(); closeFile(activeFilePath); }
+        else if (activeFilePath) { event.preventDefault(); closeFile(activeFilePath, activeEditors.activeEditorGroup); }
       }
     };
     window.addEventListener('keydown', onKey);
@@ -568,12 +723,13 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
           <span className="muted">{workspace.path}</span>
         </div>
         <div className="topbar-actions">
-          <span className="topbar-status" title={`${git?.files.length ?? 0} changed file(s)`}>
-            <span className="status-branch">{git?.branch ?? 'no branch'}</span>
-            <span className="status-dirty">{git?.files.length ?? 0}</span>
-          </span>
-          {workspace.commands?.slice(0, 3).map((command) => <button key={command.id} className="ghost" onClick={() => runWorkspaceCommand(command)}>{command.name}</button>)}
-          <button className="ghost" onClick={() => setCommandsOpen(true)}>Commands</button>
+          {editorDiff ? (
+            <div className="diff-mode-control" title="Editor diff display mode">
+              <button className={diffMode === 'inline' ? 'active-toggle' : 'ghost'} onClick={() => setDiffMode('inline')}>Inline</button>
+              <button className={diffMode === 'side-by-side' ? 'active-toggle' : 'ghost'} onClick={() => setDiffMode('side-by-side')}>Side by side</button>
+              <button className={diffMode === 'compare-only' ? 'active-toggle' : 'ghost'} onClick={() => setDiffMode('compare-only')}>Compare only</button>
+            </div>
+          ) : null}
           <button className="ghost" onClick={() => { setSettingsInitialTab('general'); setSettingsOpen(true); }}>Settings</button>
           <button className="ghost" onClick={() => void api.fs.revealInExplorer(workspace.path)}>Open Folder</button>
         </div>
@@ -606,7 +762,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
           <>
             <Panel id="explorer" order={2} defaultSize={safePanelSizes.explorer} minSize={12} className="workspace-explorer">
               {sidebarTab === 'git' && isRepo ? (
-                <GitPanel status={git} diff={diff} error={gitError} selectedFile={selectedGitFile} onSelectFile={selectGitFile} onStage={stage} onStageAll={stageAll} onUnstage={unstage} onDiscard={discard} onCommit={commit} onRefresh={refreshGit} />
+                <GitPanel status={git} error={gitError} selectedFile={selectedGitFile} onSelectFile={selectGitFile} onStage={stage} onStageAll={stageAll} onUnstage={unstage} onDiscard={discard} onCommit={commit} onRefresh={refreshGit} />
               ) : (
                 <FileTree rootPath={workspace.path} gitFiles={git?.files ?? []} onOpenFile={openFile} onOpenTerminalHere={openTerminalHere} refreshToken={refreshToken} />
               )}
@@ -628,20 +784,6 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
                   >
                     <span className="tab-name">Terminal</span>
                   </div>
-                  {openFiles.map((file) => (
-                    <div
-                      key={file.path}
-                      className={`tab${mainView === 'editor' && file.path === activeFilePath ? ' active' : ''}${file.dirty ? ' dirty' : ''}`}
-                      title={file.path}
-                      onClick={() => selectFile(file.path)}
-                      onMouseDown={(event) => { if (event.button === 1) { event.preventDefault(); closeFile(file.path); } }}
-                    >
-                      <span className="tab-name">{file.name}</span>
-                      <span className="tab-close" onClick={(event) => { event.stopPropagation(); closeFile(file.path); }}>
-                        <span className="dot">●</span><span className="x">×</span>
-                      </span>
-                    </div>
-                  ))}
                   {openLinks.map((link) => (
                     <div
                       key={link.id}
@@ -673,11 +815,51 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
               <div className="main-tab-pane" style={{ display: mainView === 'editor' ? 'flex' : 'none' }}>
                 {openFiles.length ? (
                   <Suspense fallback={<div className="empty-pad muted">Loading editor…</div>}>
-                    <EditorPanel openFiles={openFiles} activePath={activeFilePath} onOpenFile={selectFile} onChangeFile={changeFile} onSaveFile={saveFile} onCloseFile={closeFile} settings={settings ?? undefined} showTabs={false} />
+                    <PanelGroup direction={activeEditors.splitOrientation === 'horizontal' ? 'horizontal' : 'vertical'} className="editor-split-group">
+                      {activeEditors.editorGroups.flatMap((group, index) => [
+                        <Panel key={group.id} id={`editor-${group.id}`} minSize={20} className={group.id === activeEditors.activeEditorGroup ? 'editor-group-pane active' : 'editor-group-pane'}>
+                          <div className="editor-group-shell" onMouseDown={() => patchActive((prev) => ({ ...prev, activeEditorGroup: group.id }))}>
+                            <div className="editor-tabbar editor-group-tabbar">
+                              <div className="tab-strip">
+                                {group.openFiles.map((file) => (
+                                  <div
+                                    key={`${group.id}:${file.path}`}
+                                    className={`tab${file.path === group.activeFile ? ' active' : ''}${file.dirty ? ' dirty' : ''}`}
+                                    title={file.path}
+                                    onClick={() => selectFile(file.path, group.id)}
+                                    onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setTabMenu({ file, groupId: group.id, x: event.clientX, y: event.clientY }); }}
+                                    onMouseDown={(event) => { if (event.button === 1) { event.preventDefault(); closeFile(file.path, group.id); } }}
+                                  >
+                                    <span className="tab-name">{file.name}</span>
+                                    <span className="tab-close" onClick={(event) => { event.stopPropagation(); closeFile(file.path, group.id); }}>
+                                      <span className="dot">●</span><span className="x">×</span>
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            <EditorPanel openFiles={group.openFiles} activePath={group.activeFile} onOpenFile={(path) => selectFile(path, group.id)} onChangeFile={changeFile} onSaveFile={saveFile} onCloseFile={(path) => closeFile(path, group.id)} settings={settings ?? undefined} diff={editorDiff} diffMode={diffMode} showTabs={false} visible={mainView === 'editor'} />
+                          </div>
+                        </Panel>,
+                        index < activeEditors.editorGroups.length - 1 ? <PanelResizeHandle key={`${group.id}:resize`} className={activeEditors.splitOrientation === 'horizontal' ? 'resize-handle vertical' : 'resize-handle horizontal'} /> : null,
+                      ])}
+                    </PanelGroup>
                   </Suspense>
                 ) : (
                   <div className="empty-pad muted">Open file to edit.</div>
                 )}
+                {tabMenu ? (
+                  <div className="context-menu tab-context-menu" style={{ top: tabMenu.y, left: tabMenu.x }} onMouseDown={(event) => event.stopPropagation()}>
+                    <button className="context-menu-item" onClick={() => { splitFile(tabMenu.file.path, tabMenu.groupId, 'left'); setTabMenu(null); }}>Split Left</button>
+                    <button className="context-menu-item" onClick={() => { splitFile(tabMenu.file.path, tabMenu.groupId, 'right'); setTabMenu(null); }}>Split Right</button>
+                    <button className="context-menu-item" onClick={() => { splitFile(tabMenu.file.path, tabMenu.groupId, 'up'); setTabMenu(null); }}>Split Up</button>
+                    <button className="context-menu-item" onClick={() => { splitFile(tabMenu.file.path, tabMenu.groupId, 'down'); setTabMenu(null); }}>Split Down</button>
+                    <button className="context-menu-item" onClick={() => { closeFile(tabMenu.file.path, tabMenu.groupId); setTabMenu(null); }}>Close</button>
+                    <button className="context-menu-item" onClick={() => { closeOthers(tabMenu.file.path, tabMenu.groupId); setTabMenu(null); }}>Close Others</button>
+                    <button className="context-menu-item" onClick={() => { closeToSide(tabMenu.file.path, tabMenu.groupId, 'right'); setTabMenu(null); }}>Close to Right</button>
+                    <button className="context-menu-item" onClick={() => { closeToSide(tabMenu.file.path, tabMenu.groupId, 'left'); setTabMenu(null); }}>Close to Left</button>
+                  </div>
+                ) : null}
               </div>
               <div className="main-tab-pane" style={{ display: mainView === 'web' ? 'flex' : 'none' }}>
                 <WebTabPanel tabs={openLinks} activeId={activeWebId} onTitle={setWebTitle} />
@@ -686,9 +868,13 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
           </div>
         </Panel>
       </PanelGroup>
-      {commandsOpen ? <WorkspaceCommandsModal workspace={workspace} onSave={onUpdateWorkspace} onRun={runWorkspaceCommand} onClose={() => setCommandsOpen(false)} /> : null}
+      <StatusBar
+        git={git}
+        workspace={workspace}
+        actions={{ openGit: () => selectSidebar('git'), revealFolder: () => void api.fs.revealInExplorer(workspace.path) }}
+      />
       <CommandLauncher open={launcherOpen} actions={launcherActions} onClose={() => setLauncherOpen(false)} />
-      {settingsOpen && settings ? <SettingsModal settings={settings} currentWorkspaceId={workspace.id} initialTab={settingsInitialTab} onSave={async (next) => { const saved = await api.settings.save(next); setSettings(saved); applyTheme(saved.themeId, saved.importedThemes); onSettingsApplied?.(saved); setProfiles(await api.terminal.profiles()); }} onAutomationSaved={(config) => setAutomation(config)} onClose={() => setSettingsOpen(false)} /> : null}
+      {settingsOpen && settings ? <SettingsModal settings={settings} currentWorkspaceId={workspace.id} initialTab={settingsInitialTab} onSave={async (next) => { const saved = await api.settings.save(next); setSettings(saved); applyTheme(saved.themeId, saved.importedThemes); onSettingsApplied?.(saved); setProfiles(await api.terminal.profiles()); }} onAutomationSaved={(config) => setAutomation(config)} onRunCommand={(command) => void runPaletteCommand(command)} onClose={() => setSettingsOpen(false)} /> : null}
     </div>
   );
 }

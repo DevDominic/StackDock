@@ -94,17 +94,16 @@ export function FileTree({ rootPath, gitFiles, onOpenFile, onOpenTerminalHere, r
   const [rootChildren, setRootChildren] = useState<DirectoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [menu, setMenu] = useState<ContextTarget | null>(null);
-  const [showHidden, setShowHidden] = useState(false);
   const [treeVersion, setTreeVersion] = useState(0);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const loadChildren = useMemo(() => async (path: string) => api.fs.readDirectory(path, { showHidden }), [showHidden]);
+  const loadChildren = useMemo(() => async (path: string) => api.fs.readDirectory(path), []);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    api.fs.readDirectory(rootPath, { showHidden }).then((items) => { if (active) setRootChildren(items); }).finally(() => { if (active) setLoading(false); });
+    api.fs.readDirectory(rootPath).then((items) => { if (active) setRootChildren(items); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [rootPath, refreshToken, showHidden, treeVersion]);
+  }, [rootPath, refreshToken, treeVersion]);
 
   useEffect(() => {
     if (!menu) return;
@@ -150,7 +149,7 @@ export function FileTree({ rootPath, gitFiles, onOpenFile, onOpenTerminalHere, r
 
   return (
     <aside className="panel file-tree">
-      <div className="panel-title row"><span>Files</span><button className={showHidden ? 'ghost active-toggle' : 'ghost'} onClick={() => setShowHidden((value) => !value)}>Hidden</button></div>
+      <div className="panel-title row"><span>Files</span></div>
       {loading ? <div className="muted pad">Loading...</div> : null}
       <div className="tree-list">
         {rootChildren.map((entry) => <FileNode key={`${entry.path}:${treeVersion}`} entry={entry} depth={0} version={treeVersion} gitLookup={gitLookup} onOpenFile={onOpenFile} onContextMenu={setMenu} loadChildren={loadChildren} />)}

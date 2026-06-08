@@ -3,7 +3,6 @@ import { FileIcon } from './fileIcons';
 
 interface Props {
   status: GitStatus | null;
-  diff: string;
   error?: string | null;
   selectedFile: GitFileStatus | null;
   onSelectFile(file: GitFileStatus, staged?: boolean): void;
@@ -33,7 +32,7 @@ function fileName(path: string) {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
-export function GitPanel({ status, diff, error, selectedFile, onSelectFile, onStage, onStageAll, onUnstage, onDiscard, onCommit, onRefresh }: Props) {
+export function GitPanel({ status, error, selectedFile, onSelectFile, onStage, onStageAll, onUnstage, onDiscard, onCommit, onRefresh }: Props) {
   const staged = status?.files.filter((file) => file.staged && !file.untracked) ?? [];
   const unstaged = status?.files.filter((file) => file.unstaged || file.untracked) ?? [];
 
@@ -54,7 +53,7 @@ export function GitPanel({ status, diff, error, selectedFile, onSelectFile, onSt
             {selectedFile?.staged && selectedFile.unstaged ? <><button className="ghost" onClick={() => onSelectFile(selectedFile, true)}>Staged diff</button><button className="ghost" onClick={() => onSelectFile(selectedFile, false)}>Unstaged diff</button></> : null}
           </div>
           <CommitBox onCommit={onCommit} />
-          <DiffView diff={diff} />
+          <div className="git-editor-diff-hint muted">{selectedFile ? 'Diff opened in editor.' : 'Select a file to view its diff in the editor.'}</div>
         </>
       ) : null}
     </aside>
@@ -80,11 +79,6 @@ function GitGroup({ title, files, selectedFile, onSelectFile }: { title: string;
       </div>
     </div>
   );
-}
-
-function DiffView({ diff }: { diff: string }) {
-  const lines = diff ? diff.split('\n') : ['Select file for diff.'];
-  return <div className="diff-view"><pre>{lines.map((line, index) => <div key={index} className={line.startsWith('@@') ? 'diff-hunk' : line.startsWith('+') && !line.startsWith('+++') ? 'diff-add' : line.startsWith('-') && !line.startsWith('---') ? 'diff-remove' : 'diff-line'}>{line || ' '}</div>)}</pre></div>;
 }
 
 function CommitBox({ onCommit }: { onCommit(message: string): void }) {

@@ -1,6 +1,8 @@
 import { execFile } from 'child_process';
+import fs from 'fs/promises';
+import path from 'path';
 import { promisify } from 'util';
-import type { GitFileStatus, GitStatus } from '../src/shared/types';
+import type { GitFileContents, GitFileStatus, GitStatus } from '../src/shared/types';
 import { parseStatusLine } from './gitParser';
 
 const execFileAsync = promisify(execFile);
@@ -42,6 +44,45 @@ export async function getGitDiff(cwd: string, filePath?: string, staged = false)
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
+}
+
+async function readGitObject(cwd: string, revision: string, filePath: string) {
+  try {
+    return await runGit(cwd, ['show', `${revision}:${filePath}`]);
+  } catch {
+    return '';
+  }
+}
+
+async function readIndexObject(cwd: string, filePath: string) {
+  try {
+    return await runGit(cwd, ['show', `:${filePath}`]);
+  } catch {
+    return '';
+  }
+}
+
+async function readWorkingFile(cwd: string, filePath: string) {
+  try {
+    return await fs.readFile(path.join(cwd, filePath), 'utf8');
+  } catch {
+    return '';
+  }
+}
+
+export async function getGitFileContents(cwd: string, filePath: string, staged = false): Promise<GitFileContents> {
+  if (staged) {
+    const [original, modified] = await Promise.all([
+      readGitObject(cwd, 'HEAD', filePath),
+      readIndexObject(cwd, filePath),
+    ]);
+    return { path: filePath, original, modified };
+  }
+
+  const indexContent = await readIndexObject(cwd, filePath);
+  const original = indexContent || await readGitObject(cwd, 'HEAD', filePath);
+  const modified = await readWorkingFile(cwd, filePath);
+  return { path: filePath, original, modified };
 }
 
 export async function stageFile(cwd: string, filePath: string) {

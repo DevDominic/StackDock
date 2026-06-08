@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
 import { getErrorMessage } from '../../lib/errors';
 import { DEFAULT_THEME_ID, applyTheme, getThemes, parseVsCodeThemeJson, registerThemes } from '../../lib/themeSupport';
-import type { AutomationConfig, StackDockSettings, Workspace, WorkspaceSetup } from '../../shared/types';
+import type { AutomationConfig, PaletteCommand, StackDockSettings, Workspace, WorkspaceSetup } from '../../shared/types';
+import { CommandsEditor } from './CommandsEditor';
 
 export type SettingsTab = 'general' | 'appearance' | 'terminal' | 'workspace';
 
@@ -12,44 +13,23 @@ interface Props {
   initialTab?: SettingsTab;
   onSave(settings: StackDockSettings): Promise<void>;
   onAutomationSaved(config: AutomationConfig): void;
+  /** Run a command from a command card. Absent when Settings is opened with no active workspace. */
+  onRunCommand?(command: PaletteCommand): void;
   onClose(): void;
 }
 
 const GLOBAL_KEY = '__global__';
-const DRAFT_CACHE_KEY = 'stackdock.automationDraft';
 
-interface DraftCache {
-  draftByKey: Record<string, string>;
-  keyOrder: string[];
-  selectedKey: string;
+function cleanSetup(setup: WorkspaceSetup): WorkspaceSetup {
+  const out: WorkspaceSetup = {};
+  if (setup.defaultTerminalProfile?.trim()) out.defaultTerminalProfile = setup.defaultTerminalProfile.trim();
+  if (setup.newSessionCommand?.trim()) out.newSessionCommand = setup.newSessionCommand;
+  const commands = (setup.commands ?? []).filter((command) => command.label.trim() && command.command.trim());
+  if (commands.length) out.commands = commands;
+  return out;
 }
 
-function workspaceTemplate(): WorkspaceSetup {
-  return { defaultTerminalProfile: 'powershell', newSessionCommand: '', commands: [{ id: 'test', label: 'Run Tests', command: 'npm test' }] };
-}
-
-function isValidJson(text: string): boolean {
-  try { JSON.parse(text); return true; } catch { return false; }
-}
-
-function readCache(): DraftCache | null {
-  try {
-    const raw = localStorage.getItem(DRAFT_CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as DraftCache;
-    return parsed && parsed.draftByKey ? parsed : null;
-  } catch { return null; }
-}
-
-function writeCache(cache: DraftCache) {
-  try { localStorage.setItem(DRAFT_CACHE_KEY, JSON.stringify(cache)); } catch { /* ignore quota/availability */ }
-}
-
-function clearCache() {
-  try { localStorage.removeItem(DRAFT_CACHE_KEY); } catch { /* ignore */ }
-}
-
-export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave, onAutomationSaved, onClose }: Props) {
+export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave, onAutomationSaved, onRunCommand, onClose }: Props) {
   const [tab, setTab] = useState<SettingsTab>(initialTab ?? 'general');
   const [draft, setDraft] = useState(settings);
   const [saving, setSaving] = useState(false);
@@ -57,30 +37,29 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
   const valid = draft.terminalProfiles.every((profile) => profile.name.trim() && profile.shell.trim());
   const themeOptions = useMemo(() => getThemes(draft.importedThemes), [draft.importedThemes]);
 
-  // Workspace tab (automation.json) state.
+  // Workspace tab (automation.json) state — held as a typed AutomationConfig and
+  // edited through forms, then serialized back on save.
   const [wsLoading, setWsLoading] = useState(true);
   const [wsSaving, setWsSaving] = useState(false);
   const [wsError, setWsError] = useState<string | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [config, setConfig] = useState<AutomationConfig | null>(null);
   const [originalKeys, setOriginalKeys] = useState<Set<string>>(new Set());
-  const [draftByKey, setDraftByKey] = useState<Record<string, string>>({});
   const [keyOrder, setKeyOrder] = useState<string[]>([]);
-  const [selectedKey, setSelectedKey] = useState<string>(currentWorkspaceId);
+  const [selectedKey, setSelectedKey] = useState<string>(currentWorkspaceId || GLOBAL_KEY);
 
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        const [raw, list] = await Promise.all([api.automation.loadRaw(), api.workspaces.list()]);
+        const [loaded, list] = await Promise.all([api.automation.load(), api.workspaces.list()]);
         if (!active) return;
         setWorkspaces(list);
-        let parsed: AutomationConfig = { commands: [], workspaces: {} };
-        try { if (raw.trim()) parsed = JSON.parse(raw) as AutomationConfig; } catch { /* keep empty default */ }
-        const existing = parsed.workspaces ?? {};
-        setOriginalKeys(new Set(Object.keys(existing)));
+        setConfig(loaded);
+        setOriginalKeys(new Set(Object.keys(loaded.workspaces)));
 
         const listIds = list.map((w) => w.id);
-        const orphanIds = Object.keys(existing).filter((id) => !listIds.includes(id));
+        const orphanIds = Object.keys(loaded.workspaces).filter((id) => !listIds.includes(id));
         // currentWorkspaceId is empty when Settings is opened from the home screen (no active workspace).
         const hasCurrent = !!currentWorkspaceId && (listIds.includes(currentWorkspaceId) || orphanIds.includes(currentWorkspaceId));
         const ordered = [
@@ -88,16 +67,8 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
           ...listIds.filter((id) => id !== currentWorkspaceId),
           ...orphanIds.filter((id) => id !== currentWorkspaceId),
         ];
-
-        const cached = readCache();
-        const byKey: Record<string, string> = cached ? { ...cached.draftByKey } : {};
-        if (byKey[GLOBAL_KEY] == null) byKey[GLOBAL_KEY] = JSON.stringify(parsed.commands ?? [], null, 2);
-        ordered.forEach((id) => { if (byKey[id] == null) byKey[id] = JSON.stringify(existing[id] ?? {}, null, 2); });
-
-        const defaultKey = hasCurrent ? currentWorkspaceId : GLOBAL_KEY;
-        setDraftByKey(byKey);
         setKeyOrder(ordered);
-        setSelectedKey(cached?.selectedKey && byKey[cached.selectedKey] != null ? cached.selectedKey : defaultKey);
+        setSelectedKey(hasCurrent ? currentWorkspaceId : GLOBAL_KEY);
       } catch (err) {
         if (active) setWsError(getErrorMessage(err, 'Could not load workspace config'));
       } finally {
@@ -113,46 +84,37 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
     return ws ? ws.name : key;
   }
 
-  function setSlice(key: string, value: string) {
-    setDraftByKey((prev) => {
-      const next = { ...prev, [key]: value };
-      writeCache({ draftByKey: next, keyOrder, selectedKey });
-      return next;
+  const setup: WorkspaceSetup = (config?.workspaces[selectedKey]) ?? {};
+  const selectedWorkspacePath = workspaces.find((w) => w.id === selectedKey)?.path;
+
+  function setGlobalCommands(commands: PaletteCommand[]) {
+    setConfig((prev) => (prev ? { ...prev, commands } : prev));
+  }
+
+  function patchSetup(patch: Partial<WorkspaceSetup>) {
+    setConfig((prev) => {
+      if (!prev) return prev;
+      const current = prev.workspaces[selectedKey] ?? {};
+      return { ...prev, workspaces: { ...prev.workspaces, [selectedKey]: { ...current, ...patch } } };
     });
   }
 
-  function selectKey(key: string) {
-    setSelectedKey(key);
-    writeCache({ draftByKey, keyOrder, selectedKey: key });
-  }
-
-  const invalidKeys = useMemo(
-    () => Object.entries(draftByKey).filter(([, text]) => !isValidJson(text)).map(([key]) => key),
-    [draftByKey],
-  );
-
   async function saveWorkspace() {
-    if (invalidKeys.length) {
-      setWsError(`Invalid JSON in: ${invalidKeys.map(labelFor).join(', ')}. Fix before saving.`);
-      return;
-    }
+    if (!config) return;
     setWsSaving(true);
     setWsError(null);
     try {
-      const commands = JSON.parse(draftByKey[GLOBAL_KEY] ?? '[]');
-      const workspacesObj: Record<string, unknown> = {};
-      for (const [key, text] of Object.entries(draftByKey)) {
-        if (key === GLOBAL_KEY) continue;
-        const value = JSON.parse(text);
-        const isEmpty = value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0;
-        // Preserve existing entries; only add new workspaces if the user actually configured them.
-        if (originalKeys.has(key) || !isEmpty) workspacesObj[key] = value;
+      const workspacesObj: Record<string, WorkspaceSetup> = {};
+      for (const [key, value] of Object.entries(config.workspaces)) {
+        const cleaned = cleanSetup(value);
+        const isEmpty = !cleaned.defaultTerminalProfile && !cleaned.newSessionCommand && !cleaned.commands?.length;
+        // Keep entries the user actually configured; preserve originals so clearing one isn't a surprise.
+        if (!isEmpty || originalKeys.has(key)) workspacesObj[key] = cleaned;
       }
-      const merged = { commands, workspaces: workspacesObj };
-      const config = await api.automation.saveRaw(JSON.stringify(merged, null, 2));
-      clearCache();
-      setOriginalKeys(new Set(Object.keys(workspacesObj)));
-      onAutomationSaved(config);
+      const merged = { commands: config.commands, workspaces: workspacesObj };
+      const saved = await api.automation.saveRaw(JSON.stringify(merged, null, 2));
+      setOriginalKeys(new Set(Object.keys(saved.workspaces)));
+      onAutomationSaved(saved);
     } catch (err) {
       setWsError(getErrorMessage(err, 'Could not save workspace config'));
     } finally {
@@ -160,7 +122,6 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
     }
   }
 
-  const selectedText = draftByKey[selectedKey] ?? '';
   const orderedKeys = [GLOBAL_KEY, ...keyOrder];
 
   async function importEditorTheme() {
@@ -265,27 +226,33 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
         {tab === 'workspace' ? (
           <div className="settings-tab-body">
             <p className="muted config-hint">
-              Global <code>commands</code> show up in the Ctrl+Shift+P palette. Each workspace edits its own setup
-              (default terminal profile, a command run on every new session, and palette commands). Pick a target below.
+              <b>Global commands</b> show up in every workspace's Ctrl+Shift+P palette and run in the current workspace's folder.
+              Each workspace can also set its default terminal profile, a command run on every new session, and its own commands.
             </p>
-            <label>Editing<select value={selectedKey} disabled={wsLoading} onChange={(event) => selectKey(event.target.value)}>{orderedKeys.map((key) => <option key={key} value={key}>{labelFor(key)}{key === currentWorkspaceId ? ' (current)' : ''}</option>)}</select></label>
-            {wsLoading ? (
+            <label>Editing<select value={selectedKey} disabled={wsLoading} onChange={(event) => setSelectedKey(event.target.value)}>{orderedKeys.map((key) => <option key={key} value={key}>{labelFor(key)}{key === currentWorkspaceId ? ' (current)' : ''}</option>)}</select></label>
+            {wsLoading || !config ? (
               <div className="empty-pad muted">Loading…</div>
+            ) : selectedKey === GLOBAL_KEY ? (
+              <CommandsEditor commands={config.commands} onChange={setGlobalCommands} onRun={onRunCommand} cwdPlaceholder="Current workspace folder" />
             ) : (
-              <textarea className="config-editor" spellCheck={false} value={selectedText} onChange={(event) => setSlice(selectedKey, event.target.value)} />
+              <>
+                <label>Default terminal profile<select value={setup.defaultTerminalProfile ?? ''} onChange={(event) => patchSetup({ defaultTerminalProfile: event.target.value || undefined })}>
+                  <option value="">Use global default</option>
+                  {draft.terminalProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+                </select></label>
+                <label>Run on every new session <span className="muted">(optional)</span><input value={setup.newSessionCommand ?? ''} onChange={(event) => patchSetup({ newSessionCommand: event.target.value || undefined })} placeholder="e.g. nvm use" /></label>
+                <h3>Commands</h3>
+                <CommandsEditor commands={setup.commands ?? []} onChange={(commands) => patchSetup({ commands })} onRun={onRunCommand} showSessionFields cwdPlaceholder={selectedWorkspacePath} />
+              </>
             )}
-            {!wsLoading && invalidKeys.length ? (
-              <div className="banner error settings-warning">Invalid JSON in: {invalidKeys.map(labelFor).join(', ')}. Changes will not be saved until fixed.</div>
-            ) : null}
             {wsError ? <div className="banner error config-error">{wsError}</div> : null}
           </div>
         ) : null}
 
         {tab === 'workspace' ? (
           <div className="modal-actions">
-            <button className="ghost" disabled={wsLoading} onClick={() => setSlice(selectedKey, JSON.stringify(selectedKey === GLOBAL_KEY ? [{ id: 'dev', label: 'Start Dev Server', command: 'npm run dev' }] : workspaceTemplate(), null, 2))}>Insert template</button>
             <button className="ghost" onClick={closeWithoutSave}>Close</button>
-            <button className="primary" disabled={wsLoading || wsSaving || invalidKeys.length > 0} onClick={saveWorkspace}>{wsSaving ? 'Saving…' : 'Save workspace config'}</button>
+            <button className="primary" disabled={wsLoading || wsSaving || !config} onClick={saveWorkspace}>{wsSaving ? 'Saving…' : 'Save workspace config'}</button>
           </div>
         ) : (
           <div className="modal-actions">

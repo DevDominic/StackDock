@@ -18,7 +18,13 @@ function normalizeCommand(value: unknown): PaletteCommand | null {
   if (!label.trim() || !command.trim()) return null;
   const id = typeof record.id === 'string' && record.id.trim() ? record.id.trim() : slugify(label);
   const cwd = typeof record.cwd === 'string' && record.cwd.trim() ? record.cwd : undefined;
-  return cwd ? { id, label, command, cwd } : { id, label, command };
+  const terminalName = typeof record.terminalName === 'string' && record.terminalName.trim() ? record.terminalName : undefined;
+  const autoStart = record.autoStart === true ? true : undefined;
+  const result: PaletteCommand = { id, label, command };
+  if (cwd) result.cwd = cwd;
+  if (terminalName) result.terminalName = terminalName;
+  if (autoStart) result.autoStart = autoStart;
+  return result;
 }
 
 function normalizeCommands(value: unknown): PaletteCommand[] {

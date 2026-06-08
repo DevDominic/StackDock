@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { addWorkspace, createWorkspace, listWorkspaces, loadLayout, removeWorkspace, saveLayout, updateWorkspace } from './workspaceStore';
 import { createFile, createFolder, deletePath, readDirectory, readFile, renamePath, revealInExplorer, writeFile } from './fileService';
-import { addAll, commit, discardFile, getGitDiff, getGitStatus, stageFile, unstageFile } from './gitService';
+import { addAll, commit, discardFile, getGitDiff, getGitFileContents, getGitStatus, stageFile, unstageFile } from './gitService';
 import { createTerminal, getTerminalProfiles, killTerminal, resizeTerminal, setTerminalWindow, writeTerminal } from './terminalManager';
 import { ensureDataDirs } from './storage';
 import { logError } from './log';
@@ -107,6 +107,7 @@ function registerIpc() {
 
   ipcMain.handle('git:status', async (_event, targetPath: unknown) => getGitStatus(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('git:diff', async (_event, targetPath: unknown, filePath?: unknown, staged?: boolean) => getGitDiff(assertAbsolutePath(targetPath, 'targetPath'), filePath == null ? undefined : assertNonEmptyString(filePath, 'filePath'), staged));
+  ipcMain.handle('git:fileContents', async (_event, targetPath: unknown, filePath: unknown, staged?: boolean) => getGitFileContents(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(filePath, 'filePath'), staged));
   ipcMain.handle('git:stage', async (_event, targetPath: unknown, filePath: unknown) => stageFile(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(filePath, 'filePath')));
   ipcMain.handle('git:unstage', async (_event, targetPath: unknown, filePath: unknown) => unstageFile(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(filePath, 'filePath')));
   ipcMain.handle('git:discard', async (_event, targetPath: unknown, filePath: unknown) => discardFile(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(filePath, 'filePath')));

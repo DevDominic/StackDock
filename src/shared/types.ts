@@ -40,6 +40,7 @@ export interface StackDockSettings {
   terminalProfiles: TerminalProfile[];
 }
 
+/** @deprecated Superseded by PaletteCommand (stored in automation.json). Kept so old workspaces.json still type-checks; no longer written or surfaced. */
 export interface WorkspaceCommand {
   id: string;
   name: string;
@@ -49,12 +50,16 @@ export interface WorkspaceCommand {
   autoStart?: boolean;
 }
 
-/** A user-defined command-palette entry that runs a shell command in a terminal. */
+/** A user-defined command that runs a shell command in a terminal. Used for both global and per-workspace commands. */
 export interface PaletteCommand {
   id: string;
   label: string;
   command: string;
   cwd?: string;
+  /** Per-workspace: name given to the terminal the command spawns. */
+  terminalName?: string;
+  /** Per-workspace: run automatically when the workspace opens. */
+  autoStart?: boolean;
 }
 
 /** Per-workspace automation: applied when terminals are created for that workspace. */
@@ -102,6 +107,9 @@ export interface WorkspaceLayout {
   editors: {
     openFiles: string[];
     activeFile?: string;
+    groups?: { openFiles: string[]; activeFile?: string }[];
+    activeGroupIndex?: number;
+    splitOrientation?: 'horizontal' | 'vertical';
   };
   terminals: TerminalSession[];
 }
@@ -147,6 +155,12 @@ export interface GitStatus {
   files: GitFileStatus[];
 }
 
+export interface GitFileContents {
+  path: string;
+  original: string;
+  modified: string;
+}
+
 export interface DirectoryEntry {
   name: string;
   path: string;
@@ -190,6 +204,7 @@ export interface StackDockApi {
   git: {
     status(path: string): Promise<GitStatus>;
     diff(path: string, filePath?: string, staged?: boolean): Promise<string>;
+    fileContents(path: string, filePath: string, staged?: boolean): Promise<GitFileContents>;
     stage(path: string, filePath: string): Promise<void>;
     unstage(path: string, filePath: string): Promise<void>;
     discard(path: string, filePath: string): Promise<void>;

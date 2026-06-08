@@ -31,6 +31,7 @@ const api: StackDockApi = {
   git: {
     status: (targetPath) => ipcRenderer.invoke('git:status', targetPath),
     diff: (targetPath, filePath, staged) => ipcRenderer.invoke('git:diff', targetPath, filePath, staged),
+    fileContents: (targetPath, filePath, staged) => ipcRenderer.invoke('git:fileContents', targetPath, filePath, staged),
     stage: (targetPath, filePath) => ipcRenderer.invoke('git:stage', targetPath, filePath),
     unstage: (targetPath, filePath) => ipcRenderer.invoke('git:unstage', targetPath, filePath),
     discard: (targetPath, filePath) => ipcRenderer.invoke('git:discard', targetPath, filePath),

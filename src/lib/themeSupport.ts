@@ -155,6 +155,13 @@ export function themeToCssVars(theme: StackDockResolvedTheme): Record<string, st
   const terminalCursor = pick(c, ['terminalCursor.foreground', 'editorCursor.foreground'], primary);
   const terminalSelection = pick(c, ['terminal.selectionBackground', 'editor.selectionBackground'], withAlpha(primary, 0.28));
   const shadow = pick(c, ['widget.shadow'], light ? 'rgba(0,0,0,.16)' : 'rgba(0,0,0,.55)');
+  const buttonBg = pick(c, ['button.secondaryBackground', 'dropdown.background', 'input.background'], mix(elevated, text, light ? 0.04 : 0.07));
+  const buttonFg = ensureContrast(pick(c, ['button.secondaryForeground', 'foreground'], text), buttonBg, readableTextOn(buttonBg));
+  const buttonBorder = pick(c, ['button.border', 'contrastBorder'], withAlpha(text, light ? 0.24 : 0.22));
+  const buttonHoverBg = pick(c, ['button.secondaryHoverBackground', 'button.hoverBackground', 'toolbar.hoverBackground', 'list.hoverBackground'], mix(buttonBg, text, light ? 0.08 : 0.12));
+  const buttonHoverBorder = pick(c, ['focusBorder', 'contrastActiveBorder'], withAlpha(primary, 0.72));
+  const ghostBg = withAlpha(text, light ? 0.045 : 0.055);
+  const ghostBorder = withAlpha(text, light ? 0.22 : 0.2);
 
   return {
     '--bg': bg,
@@ -171,6 +178,16 @@ export function themeToCssVars(theme: StackDockResolvedTheme): Record<string, st
     '--primary-fg': primaryFg,
     '--accent-soft': accentSoft,
     '--danger': danger,
+    '--button-bg': buttonBg,
+    '--button-fg': buttonFg,
+    '--button-border': buttonBorder,
+    '--button-hover-bg': buttonHoverBg,
+    '--button-hover-border': buttonHoverBorder,
+    '--ghost-bg': ghostBg,
+    '--ghost-border': ghostBorder,
+    '--active-bg': active,
+    '--active-fg': text,
+    '--active-border': buttonHoverBorder,
     '--shadow': shadow,
     '--overlay': light ? 'rgba(31,35,40,.28)' : 'rgba(0,0,0,.65)',
     '--topbar-bg': withAlpha(panel, light ? 0.92 : 0.94),
