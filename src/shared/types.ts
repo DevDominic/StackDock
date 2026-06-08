@@ -1,3 +1,17 @@
+export interface StackDockSettings {
+  theme: 'dark' | 'system';
+  defaultTerminalProfileId?: string;
+  confirmBeforeDiscard: boolean;
+  showHiddenFiles: boolean;
+  emptySessionsVisible: boolean;
+  gitRefreshIntervalSeconds: number;
+  autoSave: boolean;
+  autoSaveDelayMs: number;
+  editor: { fontSize: number; fontFamily: string; tabSize: number; wordWrap: 'on' | 'off' };
+  terminal: { fontSize: number; fontFamily: string; cursorBlink: boolean };
+  terminalProfiles: TerminalProfile[];
+}
+
 export interface WorkspaceCommand {
   id: string;
   name: string;
@@ -26,6 +40,15 @@ export interface WorkspaceLayout {
     fileTreeVisible: boolean;
     gitPanelVisible: boolean;
     terminalVisible: boolean;
+    panelSizes?: {
+      sessions?: number;
+      explorer?: number;
+      main?: number;
+      editor?: number;
+      git?: number;
+      upper?: number;
+      terminal?: number;
+    };
   };
   editors: {
     openFiles: string[];
@@ -41,12 +64,20 @@ export interface TerminalProfile {
   args: string[];
 }
 
+export interface WorkspaceTerminalSession extends TerminalSession {
+  workspaceId: string;
+  workspaceName: string;
+  workspacePath: string;
+}
+
 export interface TerminalSession {
   id: string;
   name: string;
   profileId: string;
   cwd: string;
   startupCommand?: string;
+  splitGroupId?: string;
+  splitDirection?: 'row' | 'column';
   createdAt: string;
 }
 
@@ -87,13 +118,14 @@ export interface StackDockApi {
   workspaces: {
     list(): Promise<Workspace[]>;
     add(folderPath: string): Promise<Workspace>;
+    create(parentPath: string, name: string): Promise<Workspace>;
     update(workspace: Workspace): Promise<Workspace>;
     remove(id: string): Promise<void>;
     loadLayout(workspaceId: string): Promise<WorkspaceLayout | null>;
     saveLayout(layout: WorkspaceLayout): Promise<void>;
   };
   fs: {
-    readDirectory(path: string): Promise<DirectoryEntry[]>;
+    readDirectory(path: string, options?: { showHidden?: boolean }): Promise<DirectoryEntry[]>;
     readFile(path: string): Promise<ReadFileResult>;
     writeFile(path: string, content: string): Promise<void>;
     createFile(path: string): Promise<void>;
@@ -110,6 +142,10 @@ export interface StackDockApi {
     discard(path: string, filePath: string): Promise<void>;
     commit(path: string, message: string): Promise<void>;
     addAll(path: string): Promise<void>;
+  };
+  settings: {
+    load(): Promise<StackDockSettings>;
+    save(settings: StackDockSettings): Promise<StackDockSettings>;
   };
   terminal: {
     profiles(): Promise<TerminalProfile[]>;

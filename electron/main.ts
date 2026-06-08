@@ -1,11 +1,13 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import path from 'path';
-import { addWorkspace, listWorkspaces, loadLayout, removeWorkspace, saveLayout, updateWorkspace } from './workspaceStore';
+import { addWorkspace, createWorkspace, listWorkspaces, loadLayout, removeWorkspace, saveLayout, updateWorkspace } from './workspaceStore';
 import { createFile, createFolder, deletePath, readDirectory, readFile, renamePath, revealInExplorer, writeFile } from './fileService';
 import { addAll, commit, discardFile, getGitDiff, getGitStatus, stageFile, unstageFile } from './gitService';
 import { createTerminal, getTerminalProfiles, killTerminal, resizeTerminal, setTerminalWindow, writeTerminal } from './terminalManager';
 import { ensureDataDirs } from './storage';
 import { logError } from './log';
+import { loadSettings, saveSettings } from './configStore';
+import { assertAbsolutePath, assertLayoutLike, assertNonEmptyString, assertNumber, assertSafeFileName, assertString, assertWorkspaceLike } from './validation';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -49,45 +51,53 @@ function registerIpc() {
   });
 
   ipcMain.handle('workspaces:list', async () => listWorkspaces());
-  ipcMain.handle('workspaces:add', async (_event, folderPath: string) => {
-    const workspace = await addWorkspace(folderPath);
+  ipcMain.handle('workspaces:add', async (_event, folderPath: unknown) => {
+    const workspace = await addWorkspace(assertAbsolutePath(folderPath, 'folderPath'));
+    notifyWorkspaceChange();
+    return workspace;
+  });
+  ipcMain.handle('workspaces:create', async (_event, parentPath: unknown, name: unknown) => {
+    const workspace = await createWorkspace(assertAbsolutePath(parentPath, 'parentPath'), assertSafeFileName(name, 'name'));
     notifyWorkspaceChange();
     return workspace;
   });
   ipcMain.handle('workspaces:update', async (_event, workspace) => {
-    const result = await updateWorkspace(workspace);
+    const result = await updateWorkspace(assertWorkspaceLike(workspace));
     notifyWorkspaceChange();
     return result;
   });
-  ipcMain.handle('workspaces:remove', async (_event, id: string) => {
-    await removeWorkspace(id);
+  ipcMain.handle('workspaces:remove', async (_event, id: unknown) => {
+    await removeWorkspace(assertNonEmptyString(id, 'id'));
     notifyWorkspaceChange();
   });
-  ipcMain.handle('workspaces:loadLayout', async (_event, workspaceId: string) => loadLayout(workspaceId));
-  ipcMain.handle('workspaces:saveLayout', async (_event, layout) => saveLayout(layout));
+  ipcMain.handle('workspaces:loadLayout', async (_event, workspaceId: unknown) => loadLayout(assertNonEmptyString(workspaceId, 'workspaceId')));
+  ipcMain.handle('workspaces:saveLayout', async (_event, layout) => saveLayout(assertLayoutLike(layout)));
 
-  ipcMain.handle('fs:readDirectory', async (_event, targetPath: string) => readDirectory(targetPath));
-  ipcMain.handle('fs:readFile', async (_event, targetPath: string) => readFile(targetPath));
-  ipcMain.handle('fs:writeFile', async (_event, targetPath: string, content: string) => writeFile(targetPath, content));
-  ipcMain.handle('fs:createFile', async (_event, targetPath: string) => createFile(targetPath));
-  ipcMain.handle('fs:createFolder', async (_event, targetPath: string) => createFolder(targetPath));
-  ipcMain.handle('fs:renamePath', async (_event, oldPath: string, newPath: string) => renamePath(oldPath, newPath));
-  ipcMain.handle('fs:deletePath', async (_event, targetPath: string) => deletePath(targetPath));
-  ipcMain.handle('fs:revealInExplorer', async (_event, targetPath: string) => revealInExplorer(targetPath));
+  ipcMain.handle('fs:readDirectory', async (_event, targetPath: unknown, options?: { showHidden?: boolean }) => readDirectory(assertAbsolutePath(targetPath, 'targetPath'), options));
+  ipcMain.handle('fs:readFile', async (_event, targetPath: unknown) => readFile(assertAbsolutePath(targetPath, 'targetPath')));
+  ipcMain.handle('fs:writeFile', async (_event, targetPath: unknown, content: unknown) => writeFile(assertAbsolutePath(targetPath, 'targetPath'), assertString(content, 'content')));
+  ipcMain.handle('fs:createFile', async (_event, targetPath: unknown) => createFile(assertAbsolutePath(targetPath, 'targetPath')));
+  ipcMain.handle('fs:createFolder', async (_event, targetPath: unknown) => createFolder(assertAbsolutePath(targetPath, 'targetPath')));
+  ipcMain.handle('fs:renamePath', async (_event, oldPath: unknown, newPath: unknown) => renamePath(assertAbsolutePath(oldPath, 'oldPath'), assertAbsolutePath(newPath, 'newPath')));
+  ipcMain.handle('fs:deletePath', async (_event, targetPath: unknown) => deletePath(assertAbsolutePath(targetPath, 'targetPath')));
+  ipcMain.handle('fs:revealInExplorer', async (_event, targetPath: unknown) => revealInExplorer(assertAbsolutePath(targetPath, 'targetPath')));
 
-  ipcMain.handle('git:status', async (_event, targetPath: string) => getGitStatus(targetPath));
-  ipcMain.handle('git:diff', async (_event, targetPath: string, filePath?: string, staged?: boolean) => getGitDiff(targetPath, filePath, staged));
-  ipcMain.handle('git:stage', async (_event, targetPath: string, filePath: string) => stageFile(targetPath, filePath));
-  ipcMain.handle('git:unstage', async (_event, targetPath: string, filePath: string) => unstageFile(targetPath, filePath));
-  ipcMain.handle('git:discard', async (_event, targetPath: string, filePath: string) => discardFile(targetPath, filePath));
-  ipcMain.handle('git:commit', async (_event, targetPath: string, message: string) => commit(targetPath, message));
-  ipcMain.handle('git:addAll', async (_event, targetPath: string) => addAll(targetPath));
+  ipcMain.handle('git:status', async (_event, targetPath: unknown) => getGitStatus(assertAbsolutePath(targetPath, 'targetPath')));
+  ipcMain.handle('git:diff', async (_event, targetPath: unknown, filePath?: unknown, staged?: boolean) => getGitDiff(assertAbsolutePath(targetPath, 'targetPath'), filePath == null ? undefined : assertNonEmptyString(filePath, 'filePath'), staged));
+  ipcMain.handle('git:stage', async (_event, targetPath: unknown, filePath: unknown) => stageFile(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(filePath, 'filePath')));
+  ipcMain.handle('git:unstage', async (_event, targetPath: unknown, filePath: unknown) => unstageFile(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(filePath, 'filePath')));
+  ipcMain.handle('git:discard', async (_event, targetPath: unknown, filePath: unknown) => discardFile(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(filePath, 'filePath')));
+  ipcMain.handle('git:commit', async (_event, targetPath: unknown, message: unknown) => commit(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(message, 'message')));
+  ipcMain.handle('git:addAll', async (_event, targetPath: unknown) => addAll(assertAbsolutePath(targetPath, 'targetPath')));
+
+  ipcMain.handle('settings:load', async () => loadSettings());
+  ipcMain.handle('settings:save', async (_event, settings) => saveSettings(settings));
 
   ipcMain.handle('terminal:profiles', async () => getTerminalProfiles());
-  ipcMain.handle('terminal:create', async (_event, profileId: string, cwd: string, name?: string, startupCommand?: string) => createTerminal(profileId, cwd, name, startupCommand));
-  ipcMain.handle('terminal:write', async (_event, id: string, data: string) => writeTerminal(id, data));
-  ipcMain.handle('terminal:resize', async (_event, id: string, cols: number, rows: number) => resizeTerminal(id, cols, rows));
-  ipcMain.handle('terminal:kill', async (_event, id: string) => killTerminal(id));
+  ipcMain.handle('terminal:create', async (_event, profileId: unknown, cwd: unknown, name?: unknown, startupCommand?: unknown) => createTerminal(assertNonEmptyString(profileId, 'profileId'), assertAbsolutePath(cwd, 'cwd'), name == null ? undefined : assertNonEmptyString(name, 'name'), startupCommand == null ? undefined : assertNonEmptyString(startupCommand, 'startupCommand')));
+  ipcMain.handle('terminal:write', async (_event, id: unknown, data: unknown) => writeTerminal(assertNonEmptyString(id, 'id'), assertNonEmptyString(data, 'data')));
+  ipcMain.handle('terminal:resize', async (_event, id: unknown, cols: unknown, rows: unknown) => resizeTerminal(assertNonEmptyString(id, 'id'), assertNumber(cols, 'cols', 2, 500), assertNumber(rows, 'rows', 1, 500)));
+  ipcMain.handle('terminal:kill', async (_event, id: unknown) => killTerminal(assertNonEmptyString(id, 'id')));
 }
 
 app.whenReady().then(async () => {

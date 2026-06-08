@@ -8,13 +8,14 @@ const api: StackDockApi = {
   workspaces: {
     list: () => ipcRenderer.invoke('workspaces:list'),
     add: (folderPath) => ipcRenderer.invoke('workspaces:add', folderPath),
+    create: (parentPath, name) => ipcRenderer.invoke('workspaces:create', parentPath, name),
     update: (workspace) => ipcRenderer.invoke('workspaces:update', workspace),
     remove: (id) => ipcRenderer.invoke('workspaces:remove', id),
     loadLayout: (workspaceId) => ipcRenderer.invoke('workspaces:loadLayout', workspaceId),
     saveLayout: (layout) => ipcRenderer.invoke('workspaces:saveLayout', layout),
   },
   fs: {
-    readDirectory: (targetPath) => ipcRenderer.invoke('fs:readDirectory', targetPath),
+    readDirectory: (targetPath, options) => ipcRenderer.invoke('fs:readDirectory', targetPath, options),
     readFile: (targetPath) => ipcRenderer.invoke('fs:readFile', targetPath),
     writeFile: (targetPath, content) => ipcRenderer.invoke('fs:writeFile', targetPath, content),
     createFile: (targetPath) => ipcRenderer.invoke('fs:createFile', targetPath),
@@ -31,6 +32,10 @@ const api: StackDockApi = {
     discard: (targetPath, filePath) => ipcRenderer.invoke('git:discard', targetPath, filePath),
     commit: (targetPath, message) => ipcRenderer.invoke('git:commit', targetPath, message),
     addAll: (targetPath) => ipcRenderer.invoke('git:addAll', targetPath),
+  },
+  settings: {
+    load: () => ipcRenderer.invoke('settings:load'),
+    save: (settings) => ipcRenderer.invoke('settings:save', settings),
   },
   terminal: {
     profiles: () => ipcRenderer.invoke('terminal:profiles'),

@@ -5,7 +5,11 @@
       "Bash(npm install *)",
       "Bash(npm uninstall *)",
       "Bash(node -e \"const m=require\\('@mdi/js'\\); console.log\\('version', require\\('@mdi/js/package.json'\\).version\\); ['mdiLanguageLua','mdiLanguageTypescript','mdiLanguageJavascript','mdiLanguagePython','mdiLanguageRust','mdiLanguageGo','mdiLanguageCpp','mdiLanguageCsharp','mdiLanguageRuby','mdiLanguagePhp','mdiLanguageJava','mdiLanguageKotlin','mdiLanguageSwift','mdiLanguageHtml5','mdiLanguageCss3','mdiLanguageMarkdown','mdiSass','mdiVuejs','mdiCodeJson','mdiFileCodeOutline','mdiFileDocumentOutline','mdiImageOutline','mdiCogOutline','mdiFolderOutline','mdiFolderOpenOutline','mdiFileOutline','mdiConsole','mdiGit','mdiFilePdfBox'].forEach\\(k=>console.log\\(k, k in m ? 'OK' : 'MISSING'\\)\\);\")",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(command -v lean-ctx)",
+      "Bash(lean-ctx --version)",
+      "Bash(lean-ctx status *)",
+      "Bash(npm run *)"
     ]
   }
 }

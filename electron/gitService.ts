@@ -1,6 +1,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import type { GitFileStatus, GitStatus } from '../src/shared/types';
+import { parseStatusLine } from './gitParser';
 
 const execFileAsync = promisify(execFile);
 
@@ -9,25 +10,6 @@ async function runGit(cwd: string, args: string[]) {
   return stdout.toString();
 }
 
-function parseStatusLine(line: string): GitFileStatus | null {
-  if (line.startsWith('?? ')) {
-    const filePath = line.slice(3).trim();
-    return { path: filePath, indexStatus: '?', worktreeStatus: '?', staged: false, unstaged: true, untracked: true };
-  }
-  if (line.length < 4) return null;
-  const indexStatus = line[0] ?? ' ';
-  const worktreeStatus = line[1] ?? ' ';
-  let filePath = line.slice(3).trim();
-  if (filePath.includes(' -> ')) filePath = filePath.split(' -> ').pop() ?? filePath;
-  return {
-    path: filePath,
-    indexStatus,
-    worktreeStatus,
-    staged: indexStatus !== ' ',
-    unstaged: worktreeStatus !== ' ',
-    untracked: false,
-  };
-}
 
 export async function getGitStatus(cwd: string): Promise<GitStatus> {
   try {

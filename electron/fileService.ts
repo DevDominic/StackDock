@@ -3,12 +3,13 @@ import path from 'path';
 import { shell } from 'electron';
 import type { DirectoryEntry, ReadFileResult } from '../src/shared/types';
 
-const hiddenFolders = new Set(['.git', 'node_modules', 'dist', 'build', 'target', '.cache', '.vscode']);
+const noisyFolders = new Set(['node_modules', 'dist', 'build', 'target', '.cache']);
 
-export async function readDirectory(dirPath: string): Promise<DirectoryEntry[]> {
+export async function readDirectory(dirPath: string, options?: { showHidden?: boolean }): Promise<DirectoryEntry[]> {
   const entries = await fs.readdir(dirPath, { withFileTypes: true });
   return entries
-    .filter((entry) => !hiddenFolders.has(entry.name))
+    .filter((entry) => !noisyFolders.has(entry.name))
+    .filter((entry) => options?.showHidden || !entry.name.startsWith('.'))
     .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name))
     .map((entry) => ({
       name: entry.name,

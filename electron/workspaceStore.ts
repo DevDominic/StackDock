@@ -27,6 +27,13 @@ export async function listWorkspaces(): Promise<Workspace[]> {
   return workspaces.sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || a.name.localeCompare(b.name));
 }
 
+export async function createWorkspace(parentPath: string, name: string): Promise<Workspace> {
+  if (!name.trim() || name.includes('/') || name.includes('\\')) throw new Error('Workspace name cannot contain path separators');
+  const targetPath = path.join(parentPath, name.trim());
+  await fs.mkdir(targetPath, { recursive: false });
+  return addWorkspace(targetPath);
+}
+
 export async function addWorkspace(folderPath: string): Promise<Workspace> {
   const workspaces = await listWorkspaces();
   const name = path.basename(folderPath) || folderPath;

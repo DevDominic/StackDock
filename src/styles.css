@@ -32,6 +32,12 @@
   --accent-soft: rgba(59, 130, 246, 0.18);
   --danger: #ff6b6b;
 
+  /* Git status (VSCode-like) */
+  --git-modified: #e2c08d;
+  --git-untracked: #73c991;
+  --git-added: #73c991;
+  --git-deleted: #f14c4c;
+
   background: var(--bg);
   color: var(--text);
 }
@@ -61,6 +67,7 @@ button.active-toggle { border-color: var(--primary); background: var(--accent-so
 .hero h1, .topbar h2 { margin: 0; }
 .hero p, .muted { color: var(--muted); }
 .workspace-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.search-input { width: 100%; margin: 0 0 16px; background: var(--bg-panel); color: inherit; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
 .card, .panel, .banner, .empty-state { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 14px; }
 .card { padding: 16px; }
 .card-header, .card-actions, .card-meta { display: flex; gap: 8px; }
@@ -76,9 +83,25 @@ button.active-toggle { border-color: var(--primary); background: var(--accent-so
 .topbar-left, .topbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .topbar-title { min-width: 0; text-align: center; }
 .topbar-title .muted { display: block; max-width: 760px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-.workspace-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr; }
-.workspace-body.explorer-open { grid-template-columns: 240px minmax(0, 1fr); }
+.workspace-body { flex: 1; min-height: 0; display: flex; }
+.resize-handle { background: var(--border); flex-shrink: 0; }
+.resize-handle:hover { background: var(--primary); }
+.resize-handle.vertical { width: 4px; cursor: col-resize; }
+.resize-handle.horizontal { height: 4px; cursor: row-resize; }
 .workspace-explorer { min-width: 0; min-height: 0; border-right: 1px solid var(--border); background: var(--bg-panel); }
+.global-sessions-sidebar { height: 100%; background: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+.global-sessions-sidebar .panel-title { padding: 10px 12px; color: var(--muted); text-transform: uppercase; font-size: 12px; letter-spacing: .06em; }
+.global-session-list { overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 8px; }
+.global-workspace-title, .global-session { width: 100%; display: flex; justify-content: space-between; align-items: center; background: transparent; border: none; text-align: left; padding: 6px 8px; }
+.global-workspace.active .global-workspace-title, .global-session.active { background: var(--accent-soft); }
+.global-session { padding-left: 18px; }
+.global-empty { padding: 4px 18px; font-size: 12px; }
+.new-terminal-menu { position: relative; }
+.new-terminal-popover { position: absolute; z-index: 60; top: calc(100% + 6px); left: 0; width: 380px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px; padding: 10px; box-shadow: 0 12px 36px rgba(0,0,0,.7); }
+.new-terminal-popover input { width: 100%; background: var(--bg-panel); color: inherit; border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+.profile-pills { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.workspace-pick-list { max-height: 280px; overflow: auto; display: flex; flex-direction: column; gap: 4px; }
+.workspace-pick { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; background: transparent; border: none; }
 .workspace-explorer .panel { border: none; border-radius: 0; height: 100%; background: transparent; }
 
 .panel { display: flex; flex-direction: column; min-height: 0; }
@@ -154,7 +177,23 @@ button.active-toggle { border-color: var(--primary); background: var(--accent-so
 .tree-icon-node { color: var(--icon-node, #6cab5a); }
 .tree-icon-docker { color: var(--icon-docker, #4aa0e0); }
 .tree-icon-git { color: var(--icon-git, #e07b53); }
-.tree-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+
+/* Git status decorations in the explorer (VSCode-style) */
+.tree-row.git-modified .tree-label, .tree-row.git-dir .tree-label { color: var(--git-modified); }
+.tree-row.git-untracked .tree-label, .tree-row.git-added .tree-label { color: var(--git-untracked); }
+.tree-row.git-deleted .tree-label { color: var(--git-deleted); text-decoration: line-through; }
+.git-badge {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-left: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: Consolas, monospace;
+}
+.git-badge.git-modified { color: var(--git-modified); }
+.git-badge.git-untracked, .git-badge.git-added { color: var(--git-untracked); }
+.git-badge.git-deleted { color: var(--git-deleted); }
 
 /* ---- Right-click context menu ---- */
 .context-menu {
@@ -184,14 +223,18 @@ button.active-toggle { border-color: var(--primary); background: var(--accent-so
 /* ---- Git list ---- */
 .git-file { width: 100%; text-align: left; display: flex; gap: 8px; align-items: center; justify-content: space-between; border: none; background: transparent; color: inherit; padding: 6px 12px; border-radius: 0; }
 .git-file:hover { background: var(--hover); }
-.git-file.active, .tab.active, .session-tab.active { background: var(--accent-soft); }
+.git-file.active, .session-tab.active { background: var(--accent-soft); }
 
 /* ---- Terminal ---- */
 .terminal-workspace { min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 240px; background: var(--bg); }
 .terminal-main { min-width: 0; min-height: 0; display: flex; }
 .terminal-views { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1; }
+.terminal-views.split-row { display: grid; grid-template-columns: 1fr 1fr; }
+.terminal-views.split-column { display: grid; grid-template-rows: 1fr 1fr; }
 .terminal-shell { flex-direction: column; min-width: 0; min-height: 0; flex: 1; background: var(--bg); }
 .terminal-meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-panel); }
+.terminal-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.terminal-actions button { min-height: 28px; padding: 4px 8px; font-size: 12px; }
 .terminal-name { background: transparent; border: 1px solid var(--border); color: inherit; border-radius: 8px; padding: 6px 8px; max-width: 220px; }
 .terminal-mount { flex: 1; min-height: 0; padding: 8px; overflow: hidden; }
 .terminal-mount .xterm { height: 100%; }
@@ -244,16 +287,114 @@ button.active-toggle { border-color: var(--primary); background: var(--accent-so
 .new-session-item:hover { background: var(--hover); }
 .new-session-item .check { color: var(--primary); margin-left: 8px; float: right; }
 
-/* Legacy/editor/git styles kept for later phases */
+/* Editor/git/layout */
+.workspace-main-area { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+
+/* ---- Unified main tab bar (Terminal tab + open file tabs share one space) ---- */
+.main-tabbed { height: 100%; }
+.main-tab-content { flex: 1; min-height: 0; min-width: 0; display: flex; }
+.main-tab-pane { flex: 1; min-height: 0; min-width: 0; flex-direction: column; }
+.main-tab-pane > .editor-panel, .main-tab-pane > .terminal-workspace { flex: 1; min-height: 0; }
+/* The terminal tab is permanent and has no close affordance. */
+.main-terminal-tab { padding-right: 12px; }
+.workspace-editor-row { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.editor-panel { flex: 1; min-width: 0; border: none; border-radius: 0; background: var(--bg-panel); }
+.git-panel { border-radius: 0; border-top: 0; border-bottom: 0; border-right: 0; }
+.terminal-workspace { height: 100%; min-height: 0; }
 .editor-panel, .terminal-panel, .git-panel, .file-tree { height: 100%; }
-.tab-strip, .terminal-controls, .git-actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 12px; }
-.tab { display: flex; gap: 8px; align-items: center; }
-.editor-wrap { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-.editor-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 12px; }
+.terminal-controls, .git-actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 12px; }
+
+/* ---- Slim VSCode-style editor tabs ---- */
+.editor-tabbar {
+  display: flex;
+  align-items: stretch;
+  min-height: 0;
+  height: 32px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.tab-strip {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tab-strip::-webkit-scrollbar { display: none; }
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  max-width: 180px;
+  height: 32px;
+  padding: 0 8px 0 12px;
+  border: none;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--bg-panel);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.tab:hover { background: var(--bg-elevated); }
+.tab.active { background: var(--bg); color: var(--text); box-shadow: inset 0 1px 0 0 var(--primary); }
+.tab.dirty .tab-name { font-style: italic; }
+.tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1;
+}
+.tab-close:hover { background: var(--active); }
+.tab-close .dot { font-size: 9px; }
+.tab-close .x { display: none; }
+.tab:not(.dirty):not(:hover):not(.active) .tab-close { visibility: hidden; }
+.tab:not(.dirty) .tab-close .dot { display: none; }
+.tab:hover .tab-close .dot, .tab.active .tab-close .dot { display: none; }
+.tab:hover .tab-close .x, .tab.active .tab-close .x { display: inline; }
+.editor-tab-actions { display: flex; align-items: center; gap: 4px; padding: 0 8px; flex-shrink: 0; }
+.editor-tab-actions button { min-height: 24px; padding: 2px 8px; font-size: 12px; }
+.tab-saving { font-size: 11px; }
+.editor-wrap { position: relative; display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.monaco-host { flex: 1; min-height: 0; height: 100%; }
 .editor { width: 100%; flex: 1; min-height: 0; border: none; outline: none; resize: none; background: var(--bg-panel); color: var(--text); padding: 14px; font-family: Consolas, monospace; font-size: 14px; }
 .diff-view { flex: 1; min-height: 0; overflow: auto; border-top: 1px solid var(--border); }
 .diff-view pre { margin: 0; padding: 12px; white-space: pre-wrap; font-size: 12px; }
-.commit-box textarea { width: 100%; background: var(--bg-panel); color: inherit; border: 1px solid var(--border); border-radius: 8px; padding: 8px; resize: vertical; }
+.diff-add { color: #74d680; background: rgba(32, 128, 64, .14); }
+.diff-remove { color: #ff8a8a; background: rgba(160, 48, 48, .16); }
+.diff-hunk { color: #8ab4ff; background: rgba(59, 130, 246, .14); }
+.git-group-title { padding: 8px 12px 4px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+.git-error { margin: 8px 12px; }
+.mini-row { justify-content: flex-end; gap: 6px; }
+.commit-box textarea, .command-row input { width: 100%; background: var(--bg-panel); color: inherit; border: 1px solid var(--border); border-radius: 8px; padding: 8px; resize: vertical; }
+.modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: rgba(0,0,0,.65); }
+.modal { width: min(920px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 14px; padding: 12px; }
+.launcher { width: min(640px, calc(100vw - 32px)); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 14px; padding: 10px; box-shadow: 0 18px 48px rgba(0,0,0,.75); }
+.launcher input { width: 100%; background: var(--bg-panel); color: inherit; border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.launcher-list { margin-top: 8px; max-height: 360px; overflow: auto; display: flex; flex-direction: column; gap: 4px; }
+.launcher-item { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; background: transparent; border: none; }
+.launcher-item.active, .launcher-item:hover { background: var(--accent-soft); }
+.toast-stack { position: fixed; right: 16px; bottom: 16px; z-index: 200; display: flex; flex-direction: column; gap: 8px; width: min(360px, calc(100vw - 32px)); }
+.toast { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,.6); }
+.toast.success { border-color: rgba(76, 175, 80, .7); }
+.toast.error { border-color: rgba(255, 107, 107, .8); }
+.toast.info { border-color: var(--border-strong); }
+.edit-modal label, .settings-modal label { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.edit-modal input, .settings-modal input, .settings-modal select { background: var(--bg-panel); color: inherit; border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+.profile-row { grid-template-columns: 1fr 2fr 2fr auto; }
+.command-list { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; }
+.command-row { display: grid; grid-template-columns: 1fr 2fr 1fr 1fr auto auto auto; gap: 8px; align-items: center; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 @media (max-width: 900px) {
   .workspace-body.explorer-open { grid-template-columns: 220px minmax(0, 1fr); }

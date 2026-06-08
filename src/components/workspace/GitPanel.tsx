@@ -3,71 +3,75 @@ import type { GitFileStatus, GitStatus } from '../../shared/types';
 interface Props {
   status: GitStatus | null;
   diff: string;
+  error?: string | null;
   selectedFile: GitFileStatus | null;
-  onSelectFile(file: GitFileStatus): void;
+  onSelectFile(file: GitFileStatus, staged?: boolean): void;
   onStage(path: string): void;
+  onStageAll(): void;
   onUnstage(path: string): void;
   onDiscard(path: string): void;
   onCommit(message: string): void;
   onRefresh(): void;
 }
 
-export function GitPanel({ status, diff, selectedFile, onSelectFile, onStage, onUnstage, onDiscard, onCommit, onRefresh }: Props) {
+function statusText(file: GitFileStatus) {
+  if (file.untracked) return '??';
+  return `${file.indexStatus}${file.worktreeStatus}`.trim();
+}
+
+export function GitPanel({ status, diff, error, selectedFile, onSelectFile, onStage, onStageAll, onUnstage, onDiscard, onCommit, onRefresh }: Props) {
+  const staged = status?.files.filter((file) => file.staged && !file.untracked) ?? [];
+  const unstaged = status?.files.filter((file) => file.unstaged || file.untracked) ?? [];
+
   return (
     <aside className="panel git-panel">
-      <div className="panel-title row">
-        <span>Git</span>
-        <button className="ghost" onClick={onRefresh}>Refresh</button>
-      </div>
+      <div className="panel-title row"><span>Git</span><div className="row mini-row"><button className="ghost" onClick={onRefresh}>Refresh</button><button className="ghost" onClick={onStageAll}>Stage All</button></div></div>
+      {error ? <div className="banner error git-error">{error}</div> : null}
       {!status?.isRepo ? <div className="muted pad">Not a git repo.</div> : null}
       {status?.isRepo ? (
         <>
-          <div className="git-summary pad">
-            <div><strong>Branch:</strong> {status.branch ?? 'detached'}</div>
-            <div><strong>Dirty:</strong> {status.files.length}</div>
-          </div>
-          <div className="git-list">
-            {status.files.map((file) => (
-              <button key={file.path} className={selectedFile?.path === file.path ? 'git-file active' : 'git-file'} onClick={() => onSelectFile(file)}>
-                <span>{file.path}</span>
-                <small>{file.untracked ? '??' : `${file.indexStatus}${file.worktreeStatus}`}</small>
-              </button>
-            ))}
-          </div>
+          <div className="git-summary pad"><div><strong>Branch:</strong> {status.branch ?? 'detached'}</div><div><strong>Dirty:</strong> {status.files.length}</div></div>
+          <GitGroup title="Staged" files={staged} selectedFile={selectedFile} onSelectFile={(file) => onSelectFile(file, true)} />
+          <GitGroup title="Changes" files={unstaged} selectedFile={selectedFile} onSelectFile={(file) => onSelectFile(file, false)} />
           <div className="git-actions pad">
-            {selectedFile ? (
-              <>
-                <button className="ghost" onClick={() => onStage(selectedFile.path)}>Stage</button>
-                <button className="ghost" onClick={() => onUnstage(selectedFile.path)}>Unstage</button>
-                <button className="ghost danger" onClick={() => onDiscard(selectedFile.path)}>Discard</button>
-              </>
-            ) : null}
+            {selectedFile?.staged ? <button className="ghost" onClick={() => onUnstage(selectedFile.path)}>Unstage</button> : null}
+            {selectedFile && (selectedFile.unstaged || selectedFile.untracked) ? <button className="ghost" onClick={() => onStage(selectedFile.path)}>Stage</button> : null}
+            {selectedFile && (selectedFile.unstaged || selectedFile.untracked) ? <button className="ghost danger" onClick={() => onDiscard(selectedFile.path)}>Discard</button> : null}
+            {selectedFile?.staged && selectedFile.unstaged ? <><button className="ghost" onClick={() => onSelectFile(selectedFile, true)}>Staged diff</button><button className="ghost" onClick={() => onSelectFile(selectedFile, false)}>Unstaged diff</button></> : null}
           </div>
           <CommitBox onCommit={onCommit} />
-          <div className="diff-view">
-            <pre>{diff || 'Select file for diff.'}</pre>
-          </div>
+          <DiffView diff={diff} />
         </>
       ) : null}
     </aside>
   );
 }
 
+function GitGroup({ title, files, selectedFile, onSelectFile }: { title: string; files: GitFileStatus[]; selectedFile: GitFileStatus | null; onSelectFile(file: GitFileStatus): void }) {
+  return (
+    <div className="git-group">
+      <div className="git-group-title">{title} ({files.length})</div>
+      <div className="git-list">
+        {files.map((file) => (
+          <button key={`${title}:${file.path}`} className={selectedFile?.path === file.path ? 'git-file active' : 'git-file'} onClick={() => onSelectFile(file)}>
+            <span>{file.path}</span><small>{statusText(file)}</small>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DiffView({ diff }: { diff: string }) {
+  const lines = diff ? diff.split('\n') : ['Select file for diff.'];
+  return <div className="diff-view"><pre>{lines.map((line, index) => <div key={index} className={line.startsWith('@@') ? 'diff-hunk' : line.startsWith('+') && !line.startsWith('+++') ? 'diff-add' : line.startsWith('-') && !line.startsWith('---') ? 'diff-remove' : 'diff-line'}>{line || ' '}</div>)}</pre></div>;
+}
+
 function CommitBox({ onCommit }: { onCommit(message: string): void }) {
   return (
     <div className="commit-box pad">
       <textarea id="commit-message" placeholder="Commit message" rows={3} />
-      <button
-        className="primary"
-        onClick={() => {
-          const input = document.getElementById('commit-message') as HTMLTextAreaElement | null;
-          if (!input?.value.trim()) return;
-          onCommit(input.value.trim());
-          input.value = '';
-        }}
-      >
-        Commit
-      </button>
+      <button className="primary" onClick={() => { const input = document.getElementById('commit-message') as HTMLTextAreaElement | null; if (!input?.value.trim()) return; onCommit(input.value.trim()); input.value = ''; }}>Commit</button>
     </div>
   );
 }

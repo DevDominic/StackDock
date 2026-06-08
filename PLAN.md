@@ -1328,6 +1328,107 @@ Only consider these after v1 is stable:
 
 ---
 
+## 19.1 Implementation Detail Addenda
+
+### Test Plan
+
+- Run `npm run typecheck` before release.
+- Keep Git parser unit tests for porcelain status cases.
+- Add file service tests with temp folders for create/read/write/rename/delete.
+- Add workspace store JSON tests for add/update/remove/layout load/save.
+- Run manual Electron smoke for dashboard, workspace open, terminal, editor save, Git panel.
+- Run packaging smoke after `npm run dist`.
+
+### Data Versioning and Migration
+
+Persist future JSON as versioned objects:
+
+```json
+{
+  "schemaVersion": 1,
+  "workspaces": []
+}
+```
+
+Rules:
+
+- Config, workspace, and layout files include `schemaVersion` once migrated.
+- App keeps loading old unversioned arrays for v0 compatibility.
+- Saves write latest schema.
+- Corrupt JSON gets backed up to `*.corrupt.<timestamp>.json` before replacement.
+
+### Packaging and Distribution
+
+- Windows-first portable target for MVP.
+- Installer optional later.
+- `node-pty` must stay unpacked from ASAR.
+- Code signing deferred unless distribution requires it.
+- Packaged smoke checklist lives in `docs/packaging-checklist.md`.
+
+### Update Strategy
+
+- v1 uses manual download/release only.
+- No auto-update service in MVP.
+- Add auto-update later only after signing and release channel exist.
+
+### Accessibility
+
+- Buttons and menus keyboard reachable.
+- Visible focus states required.
+- Icon-only buttons need ARIA labels.
+- Escape closes modals/menus.
+- Dialog focus trap if practical.
+- Git states must not rely on color alone.
+
+### Performance Limits
+
+- Do not open files larger than 5 MB without confirmation.
+- Detect binary files and block editor open.
+- Lazy-load folders.
+- Git diff max buffer remains 10 MB; show readable error if exceeded.
+- No project-wide indexing in v1.
+
+### Security Threat Model
+
+- Renderer is untrusted.
+- Main process validates IPC inputs.
+- File operations should be constrained to workspace roots where possible.
+- Saved auto-start commands require user opt-in.
+- Destructive actions require confirmation.
+- No plugins or remote config execution in v1.
+
+### Error Taxonomy
+
+- User action error: toast.
+- Recoverable service error: inline panel error.
+- Fatal app error: log and banner.
+- Developer details go to logs, not UI.
+
+### Global Sessions Sidebar
+
+- Layout order: `Sessions | File Explorer | Main`.
+- Sessions sidebar groups active terminal sessions by workspace.
+- User can jump from workspace A session to workspace B session.
+- `emptySessionsVisible` controls whether workspaces with no active terminal sessions appear.
+- Top-left `New Terminal` menu searches all workspaces and creates terminal in selected workspace.
+- Sessions survive workspace navigation while app runs.
+- Terminal process state and scrollback are not persisted across app quit.
+
+### Release Checklist
+
+- Clean install with `npm ci`.
+- `npm run typecheck`.
+- `npm test`.
+- `npm run build`.
+- `npm run dist`.
+- Packaged terminal test.
+- Add/open workspace test.
+- Git status/diff/action test.
+- Editor edit/save test.
+- Config persistence test.
+
+---
+
 ## 20. Summary
 
 The app should be a simple local project workspace manager with:

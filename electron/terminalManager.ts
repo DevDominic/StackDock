@@ -1,7 +1,7 @@
 import fs from 'fs';
-import path from 'path';
 import * as pty from 'node-pty';
 import type { TerminalProfile, TerminalSession } from '../src/shared/types';
+import { getDefaultSettings, loadSettings } from './configStore';
 
 interface RecordEntry {
   session: TerminalSession;
@@ -15,18 +15,13 @@ export function setTerminalWindow(window: Electron.BrowserWindow | null) {
   mainWindow = window;
 }
 
-export function getTerminalProfiles(): TerminalProfile[] {
-  const programFiles = process.env['ProgramFiles'] ?? 'C:\\Program Files';
-  return [
-    { id: 'powershell', name: 'PowerShell', shell: 'powershell.exe', args: ['-NoLogo', '-NoExit'] },
-    { id: 'cmd', name: 'Command Prompt', shell: 'cmd.exe', args: [] },
-    { id: 'git-bash', name: 'Git Bash', shell: path.join(programFiles, 'Git', 'bin', 'bash.exe'), args: ['--login', '-i'] },
-    { id: 'wsl', name: 'WSL', shell: 'wsl.exe', args: [] },
-  ];
+export async function getTerminalProfiles(): Promise<TerminalProfile[]> {
+  return (await loadSettings()).terminalProfiles;
 }
 
-function resolveShell(profileId: string) {
-  return getTerminalProfiles().find((profile) => profile.id === profileId) ?? getTerminalProfiles()[0];
+async function resolveShell(profileId: string) {
+  const profiles = await getTerminalProfiles().catch(() => getDefaultSettings().terminalProfiles);
+  return profiles.find((profile) => profile.id === profileId) ?? profiles[0];
 }
 
 function resolveCwd(cwd: string) {
@@ -38,7 +33,7 @@ function resolveCwd(cwd: string) {
 }
 
 export async function createTerminal(profileId: string, cwd: string, name?: string, startupCommand?: string): Promise<TerminalSession> {
-  const profile = resolveShell(profileId);
+  const profile = await resolveShell(profileId);
   const resolvedCwd = resolveCwd(cwd);
   const session: TerminalSession = {
     id: `term_${crypto.randomUUID()}`,

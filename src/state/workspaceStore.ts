@@ -9,6 +9,8 @@ interface WorkspaceState {
   error: string | null;
   reload(): Promise<void>;
   addWorkspace(path: string): Promise<void>;
+  createWorkspace(parentPath: string, name: string): Promise<void>;
+  duplicateWorkspace(workspace: Workspace): Promise<void>;
   openWorkspace(id: string): Promise<void>;
   closeWorkspace(): void;
   removeWorkspace(id: string): Promise<void>;
@@ -38,6 +40,25 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       set({ workspaces: [workspace, ...get().workspaces], activeWorkspaceId: workspace.id, loading: false });
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Could not add workspace', loading: false });
+    }
+  },
+  async createWorkspace(parentPath, name) {
+    set({ loading: true, error: null });
+    try {
+      const workspace = await api.workspaces.create(parentPath, name);
+      set({ workspaces: [workspace, ...get().workspaces], activeWorkspaceId: workspace.id, loading: false });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : 'Could not create workspace', loading: false });
+    }
+  },
+  async duplicateWorkspace(workspace) {
+    set({ loading: true, error: null });
+    try {
+      const added = await api.workspaces.add(workspace.path);
+      const saved = await api.workspaces.update({ ...added, name: `${workspace.name} Copy`, commands: workspace.commands ?? [], pinned: false });
+      set({ workspaces: [saved, ...get().workspaces], loading: false });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : 'Could not duplicate workspace', loading: false });
     }
   },
   async openWorkspace(id) {

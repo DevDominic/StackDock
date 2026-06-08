@@ -15,11 +15,17 @@ interface Props {
   onCreate(profileId?: string, name?: string, startupCommand?: string): Promise<void>;
   onActivate(id: string): void;
   onRename(id: string, name: string): void;
+  onRestart(id: string): void;
+  onDuplicate(id: string): void;
+  onSetCwd(id: string, cwd: string): void;
+  onSplit(id: string, direction: 'row' | 'column'): void;
   onClose(id: string): void;
 }
 
-export function TerminalPanel({ sessions, activeId, profiles, onCreate, onActivate, onRename, onClose }: Props) {
+export function TerminalPanel({ sessions, activeId, profiles, onCreate, onActivate, onRename, onRestart, onDuplicate, onSetCwd, onSplit, onClose }: Props) {
   const active = sessions.find((session) => session.id === activeId) ?? sessions[0] ?? null;
+  const visibleSessions = active?.splitGroupId ? sessions.filter((session) => session.splitGroupId === active.splitGroupId) : active ? [active] : [];
+  const splitDirection = active?.splitDirection ?? 'row';
   const [menuOpen, setMenuOpen] = useState(false);
   const [lastProfileId, setLastProfileId] = useState<string | null>(() => localStorage.getItem(LAST_PROFILE_KEY));
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -49,9 +55,9 @@ export function TerminalPanel({ sessions, activeId, profiles, onCreate, onActiva
     <section className="terminal-workspace">
       <div className="terminal-main">
         {sessions.length ? (
-          <div className="terminal-views">
-            {sessions.map((session) => (
-              <TerminalView key={session.id} session={session} active={session.id === active?.id} onRename={onRename} />
+          <div className={visibleSessions.length > 1 ? `terminal-views split-${splitDirection}` : 'terminal-views'}>
+            {visibleSessions.map((session) => (
+              <TerminalView key={session.id} session={session} active={session.id === active?.id} onRename={onRename} onRestart={onRestart} onDuplicate={onDuplicate} onSetCwd={onSetCwd} onSplit={onSplit} />
             ))}
           </div>
         ) : (
@@ -110,7 +116,7 @@ export function TerminalPanel({ sessions, activeId, profiles, onCreate, onActiva
   );
 }
 
-function TerminalView({ session, active, onRename }: { session: TerminalSession; active: boolean; onRename(id: string, name: string): void }) {
+function TerminalView({ session, active, onRename, onRestart, onDuplicate, onSetCwd, onSplit }: { session: TerminalSession; active: boolean; onRename(id: string, name: string): void; onRestart(id: string): void; onDuplicate(id: string): void; onSetCwd(id: string, cwd: string): void; onSplit(id: string, direction: 'row' | 'column'): void }) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -182,6 +188,13 @@ function TerminalView({ session, active, onRename }: { session: TerminalSession;
           onBlur={() => onRename(session.id, label.trim() || session.name)}
         />
         <span className="muted">{session.cwd}</span>
+        <div className="terminal-actions">
+          <button className="ghost" onClick={() => onRestart(session.id)}>Restart</button>
+          <button className="ghost" onClick={() => onDuplicate(session.id)}>Duplicate</button>
+          <button className="ghost" onClick={() => { const cwd = window.prompt('CWD', session.cwd); if (cwd) onSetCwd(session.id, cwd); }}>Cwd</button>
+          <button className="ghost" onClick={() => onSplit(session.id, 'row')}>Split Right</button>
+          <button className="ghost" onClick={() => onSplit(session.id, 'column')}>Split Down</button>
+        </div>
       </div>
       <div ref={mountRef} className="terminal-mount" />
     </div>
