@@ -4,6 +4,7 @@ import type { StackDockApi } from '../src/shared/types';
 const api: StackDockApi = {
   app: {
     pickWorkspaceFolder: () => ipcRenderer.invoke('app:pickWorkspaceFolder'),
+    importJsonFile: () => ipcRenderer.invoke('app:importJsonFile'),
   },
   workspaces: {
     list: () => ipcRenderer.invoke('workspaces:list'),
@@ -24,6 +25,9 @@ const api: StackDockApi = {
     deletePath: (targetPath) => ipcRenderer.invoke('fs:deletePath', targetPath),
     revealInExplorer: (targetPath) => ipcRenderer.invoke('fs:revealInExplorer', targetPath),
   },
+  shell: {
+    openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+  },
   git: {
     status: (targetPath) => ipcRenderer.invoke('git:status', targetPath),
     diff: (targetPath, filePath, staged) => ipcRenderer.invoke('git:diff', targetPath, filePath, staged),
@@ -36,6 +40,11 @@ const api: StackDockApi = {
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
     save: (settings) => ipcRenderer.invoke('settings:save', settings),
+  },
+  automation: {
+    load: () => ipcRenderer.invoke('automation:load'),
+    loadRaw: () => ipcRenderer.invoke('automation:loadRaw'),
+    saveRaw: (content) => ipcRenderer.invoke('automation:saveRaw', content),
   },
   terminal: {
     profiles: () => ipcRenderer.invoke('terminal:profiles'),

@@ -9,7 +9,8 @@
       "Bash(command -v lean-ctx)",
       "Bash(lean-ctx --version)",
       "Bash(lean-ctx status *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "PowerShell(npm run *)"
     ]
   }
 }

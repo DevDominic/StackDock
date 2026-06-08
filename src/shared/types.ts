@@ -1,13 +1,41 @@
+export interface EditorThemeRule {
+  token: string;
+  foreground?: string;
+  background?: string;
+  fontStyle?: string;
+}
+
+export interface StackDockTheme {
+  id: string;
+  label: string;
+  base: 'vs' | 'vs-dark' | 'hc-black' | 'hc-light';
+  inherit: boolean;
+  rules: EditorThemeRule[];
+  /** Raw VS Code workbench colors used to drive both Monaco and StackDock UI CSS variables. */
+  colors?: Record<string, string>;
+}
+
+/** @deprecated Use StackDockTheme. */
+export type ImportedEditorTheme = StackDockTheme;
+
 export interface StackDockSettings {
-  theme: 'dark' | 'system';
+  /** Unified app + Monaco theme id. */
+  themeId: string;
+  /** User-imported VS Code JSON/JSONC themes. */
+  importedThemes: StackDockTheme[];
+  /** @deprecated Migrated from the old app-shell theme option. */
+  theme?: 'dark' | 'system';
   defaultTerminalProfileId?: string;
   confirmBeforeDiscard: boolean;
   showHiddenFiles: boolean;
   emptySessionsVisible: boolean;
+  showSessionCwdForAll: boolean;
   gitRefreshIntervalSeconds: number;
   autoSave: boolean;
   autoSaveDelayMs: number;
-  editor: { fontSize: number; fontFamily: string; tabSize: number; wordWrap: 'on' | 'off' };
+  /** When true, clicking a terminal link opens the system browser instead of an in-app web tab. */
+  openLinksExternally: boolean;
+  editor: { fontSize: number; fontFamily: string; tabSize: number; wordWrap: 'on' | 'off'; /** @deprecated Use StackDockSettings.themeId. */ themeId?: string; /** @deprecated Use StackDockSettings.importedThemes. */ importedThemes?: StackDockTheme[] };
   terminal: { fontSize: number; fontFamily: string; cursorBlink: boolean };
   terminalProfiles: TerminalProfile[];
 }
@@ -19,6 +47,27 @@ export interface WorkspaceCommand {
   cwd?: string;
   terminalName?: string;
   autoStart?: boolean;
+}
+
+/** A user-defined command-palette entry that runs a shell command in a terminal. */
+export interface PaletteCommand {
+  id: string;
+  label: string;
+  command: string;
+  cwd?: string;
+}
+
+/** Per-workspace automation: applied when terminals are created for that workspace. */
+export interface WorkspaceSetup {
+  defaultTerminalProfile?: string;
+  newSessionCommand?: string;
+  commands?: PaletteCommand[];
+}
+
+/** Hand-editable automation.json: global palette commands + per-workspace setups. */
+export interface AutomationConfig {
+  commands: PaletteCommand[];
+  workspaces: Record<string, WorkspaceSetup>;
 }
 
 export interface Workspace {
@@ -114,6 +163,7 @@ export interface ReadFileResult {
 export interface StackDockApi {
   app: {
     pickWorkspaceFolder(): Promise<string | null>;
+    importJsonFile(): Promise<{ path: string; content: string } | null>;
   };
   workspaces: {
     list(): Promise<Workspace[]>;
@@ -134,6 +184,9 @@ export interface StackDockApi {
     deletePath(path: string): Promise<void>;
     revealInExplorer(path: string): Promise<void>;
   };
+  shell: {
+    openExternal(url: string): Promise<void>;
+  };
   git: {
     status(path: string): Promise<GitStatus>;
     diff(path: string, filePath?: string, staged?: boolean): Promise<string>;
@@ -146,6 +199,11 @@ export interface StackDockApi {
   settings: {
     load(): Promise<StackDockSettings>;
     save(settings: StackDockSettings): Promise<StackDockSettings>;
+  };
+  automation: {
+    load(): Promise<AutomationConfig>;
+    loadRaw(): Promise<string>;
+    saveRaw(content: string): Promise<AutomationConfig>;
   };
   terminal: {
     profiles(): Promise<TerminalProfile[]>;

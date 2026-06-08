@@ -1,145 +1,90 @@
-import { useEffect, useRef, useState } from 'react';
-import { FitAddon } from '@xterm/addon-fit';
-import { Terminal } from 'xterm';
-import type { TerminalProfile, TerminalSession } from '../../shared/types';
+import { useEffect, useRef } from 'react';
+import { Terminal, type ILink } from 'xterm';
+import type { StackDockSettings, TerminalSession } from '../../shared/types';
 import { api } from '../../lib/api';
 
 import 'xterm/css/xterm.css';
 
-const LAST_PROFILE_KEY = 'stackdock.lastProfileId';
-
 interface Props {
   sessions: TerminalSession[];
   activeId: string | null;
-  profiles: TerminalProfile[];
-  onCreate(profileId?: string, name?: string, startupCommand?: string): Promise<void>;
-  onActivate(id: string): void;
-  onRename(id: string, name: string): void;
-  onRestart(id: string): void;
-  onDuplicate(id: string): void;
-  onSetCwd(id: string, cwd: string): void;
-  onSplit(id: string, direction: 'row' | 'column'): void;
-  onClose(id: string): void;
+  onOpenLink?(url: string): void;
+  settings?: StackDockSettings | null;
 }
 
-export function TerminalPanel({ sessions, activeId, profiles, onCreate, onActivate, onRename, onRestart, onDuplicate, onSetCwd, onSplit, onClose }: Props) {
+// URLs printed by dev servers, loggers, etc. Trailing punctuation is trimmed on
+// click so "see http://localhost:5173." doesn't capture the period.
+const URL_PATTERN = /https?:\/\/[^\s"'`<>)\]}]+/g;
+
+function cssVar(name: string, fallback: string) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+}
+
+function terminalThemeFromCss() {
+  return {
+    background: cssVar('--terminal-bg', '#000000'),
+    foreground: cssVar('--terminal-fg', '#ffffff'),
+    cursor: cssVar('--terminal-cursor', '#ffffff'),
+    selectionBackground: cssVar('--terminal-selection', 'rgba(255,255,255,.2)'),
+  };
+}
+
+export function TerminalPanel({ sessions, activeId, onOpenLink, settings }: Props) {
   const active = sessions.find((session) => session.id === activeId) ?? sessions[0] ?? null;
   const visibleSessions = active?.splitGroupId ? sessions.filter((session) => session.splitGroupId === active.splitGroupId) : active ? [active] : [];
   const splitDirection = active?.splitDirection ?? 'row';
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [lastProfileId, setLastProfileId] = useState<string | null>(() => localStorage.getItem(LAST_PROFILE_KEY));
-  const menuRef = useRef<HTMLDivElement | null>(null);
-
-  // Close the type picker on any outside click.
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handle = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false);
-    };
-    window.addEventListener('mousedown', handle);
-    return () => window.removeEventListener('mousedown', handle);
-  }, [menuOpen]);
-
-  // "New" defaults to the last chosen profile, falling back to the first (terminal default).
-  const defaultProfile = profiles.find((profile) => profile.id === lastProfileId) ?? profiles[0] ?? null;
-
-  function createWith(profile: TerminalProfile | null) {
-    if (profile) {
-      setLastProfileId(profile.id);
-      localStorage.setItem(LAST_PROFILE_KEY, profile.id);
-    }
-    void onCreate(profile?.id, profile?.name);
-  }
 
   return (
     <section className="terminal-workspace">
       <div className="terminal-main">
         {sessions.length ? (
           <div className={visibleSessions.length > 1 ? `terminal-views split-${splitDirection}` : 'terminal-views'}>
-            {visibleSessions.map((session) => (
-              <TerminalView key={session.id} session={session} active={session.id === active?.id} onRename={onRename} onRestart={onRestart} onDuplicate={onDuplicate} onSetCwd={onSetCwd} onSplit={onSplit} />
-            ))}
+            {visibleSessions.map((session) => <TerminalView key={session.id} session={session} focused={session.id === active?.id} onOpenLink={onOpenLink} settings={settings} />)}
           </div>
         ) : (
-          <div className="empty-pad muted">Open terminal.</div>
+          <div className="empty-pad muted">Open terminal from Sessions.</div>
         )}
       </div>
-
-      <aside className="session-sidebar">
-        <div className="session-header">
-          <strong>Sessions</strong>
-          <div className="new-session" ref={menuRef}>
-            <button className="new-session-main" onClick={() => createWith(defaultProfile)}>New</button>
-            <button
-              className="new-session-caret"
-              aria-label="Choose terminal type"
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((open) => !open)}
-            >
-              ▾
-            </button>
-            {menuOpen ? (
-              <div className="new-session-menu" role="menu">
-                {profiles.map((profile) => (
-                  <button
-                    key={profile.id}
-                    className="new-session-item"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      createWith(profile);
-                    }}
-                  >
-                    {profile.name}
-                    {profile.id === defaultProfile?.id ? <span className="check">✓</span> : null}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        </div>
-        <div className="session-list">
-          {sessions.map((session, index) => (
-            <button key={session.id} className={session.id === active?.id ? 'session-tab active' : 'session-tab'} onClick={() => onActivate(session.id)}>
-              <span className="session-index">{index + 1}</span>
-              <span className="session-name">{session.name}</span>
-              <span className="tab-close" onClick={(event) => {
-                event.stopPropagation();
-                onClose(session.id);
-              }}>×</span>
-            </button>
-          ))}
-        </div>
-      </aside>
     </section>
   );
 }
 
-function TerminalView({ session, active, onRename, onRestart, onDuplicate, onSetCwd, onSplit }: { session: TerminalSession; active: boolean; onRename(id: string, name: string): void; onRestart(id: string): void; onDuplicate(id: string): void; onSetCwd(id: string, cwd: string): void; onSplit(id: string, direction: 'row' | 'column'): void }) {
+function TerminalView({ session, focused, onOpenLink, settings }: { session: TerminalSession; focused: boolean; onOpenLink?(url: string): void; settings?: StackDockSettings | null }) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
-  const [label, setLabel] = useState(session.name);
+  const onOpenLinkRef = useRef(onOpenLink);
+  onOpenLinkRef.current = onOpenLink;
 
-  useEffect(() => {
-    setLabel(session.name);
-  }, [session.name]);
-
-  useEffect(() => {
-    const terminal = new Terminal({
-      fontSize: 14,
-      cursorBlink: true,
-      theme: { background: '#000000' },
-    });
-    const fitAddon = new FitAddon();
-    terminal.loadAddon(fitAddon);
-    terminalRef.current = terminal;
-    fitRef.current = fitAddon;
-    if (mountRef.current) {
-      terminal.open(mountRef.current);
-      fitAddon.fit();
+  const resizeTerminal = () => {
+    const mount = mountRef.current;
+    const terminal = terminalRef.current;
+    if (!mount || !terminal) return;
+    const rect = mount.getBoundingClientRect();
+    if (rect.width < 20 || rect.height < 20) return;
+    const cols = Math.max(2, Math.floor((rect.width - 16) / 8));
+    const rows = Math.max(1, Math.floor((rect.height - 16) / 17));
+    if (cols === terminal.cols && rows === terminal.rows) return;
+    try {
+      terminal.resize(cols, rows);
+      void api.terminal.resize(session.id, cols, rows);
+    } catch {
+      // xterm can briefly lack render dimensions while a parent tab is hidden.
+      // Next resize/focus retries safely.
     }
+  };
+
+  useEffect(() => {
+    let disposed = false;
+    let opened = false;
+    let observer: ResizeObserver | null = null;
+
+    const terminal = new Terminal({
+      fontSize: settings?.terminal.fontSize ?? 14,
+      fontFamily: settings?.terminal.fontFamily,
+      cursorBlink: settings?.terminal.cursorBlink ?? true,
+      theme: terminalThemeFromCss(),
+    });
+    terminalRef.current = terminal;
 
     const disposeData = api.onTerminalData(({ id, data }) => {
       if (id === session.id) terminal.write(data);
@@ -147,55 +92,78 @@ function TerminalView({ session, active, onRename, onRestart, onDuplicate, onSet
     const disposeExit = api.onTerminalExit(({ id, exitCode }) => {
       if (id === session.id) terminal.writeln(`\r\n[process exited ${exitCode ?? 0}]`);
     });
-
-    terminal.onData((data) => {
-      api.terminal.write(session.id, data);
+    const dataDisposable = terminal.onData((data) => {
+      void api.terminal.write(session.id, data);
     });
 
-    const resize = () => {
-      fitAddon.fit();
-      api.terminal.resize(session.id, terminal.cols, terminal.rows);
-    };
-    const observer = new ResizeObserver(() => resize());
-    if (mountRef.current) observer.observe(mountRef.current);
-    resize();
+    const linkProvider = terminal.registerLinkProvider({
+      provideLinks(bufferLineNumber, callback) {
+        const line = terminal.buffer.active.getLine(bufferLineNumber - 1);
+        if (!line) return callback(undefined);
+        const text = line.translateToString(true);
+        const links: ILink[] = [];
+        URL_PATTERN.lastIndex = 0;
+        let match: RegExpExecArray | null;
+        while ((match = URL_PATTERN.exec(text)) !== null) {
+          const url = match[0].replace(/[.,;:!?)\]}'"]+$/, '');
+          if (!url) continue;
+          const startX = match.index + 1;
+          links.push({
+            text: url,
+            range: { start: { x: startX, y: bufferLineNumber }, end: { x: startX + url.length - 1, y: bufferLineNumber } },
+            activate: (event: MouseEvent, clicked: string) => { event.preventDefault(); onOpenLinkRef.current?.(clicked); },
+            decorations: { pointerCursor: true, underline: true },
+          });
+        }
+        callback(links.length ? links : undefined);
+      },
+    });
+
+    // Defer open by one frame. React StrictMode mounts, cleans up, then mounts
+    // again in dev; opening immediately leaves xterm internal timers alive after
+    // dispose and causes "reading 'dimensions'" errors.
+    const openFrame = window.requestAnimationFrame(() => {
+      if (disposed || !mountRef.current) return;
+      terminal.open(mountRef.current);
+      opened = true;
+      observer = new ResizeObserver(() => window.requestAnimationFrame(() => resizeTerminal()));
+      observer.observe(mountRef.current);
+      resizeTerminal();
+    });
 
     return () => {
-      observer.disconnect();
+      disposed = true;
+      window.cancelAnimationFrame(openFrame);
+      observer?.disconnect();
       disposeData();
       disposeExit();
-      terminal.dispose();
+      dataDisposable.dispose();
+      linkProvider.dispose();
+      if (opened) terminal.dispose();
+      if (terminalRef.current === terminal) terminalRef.current = null;
     };
   }, [session.id]);
 
   useEffect(() => {
-    if (!active) return;
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    terminal.options.theme = terminalThemeFromCss();
+    terminal.options.fontSize = settings?.terminal.fontSize ?? 14;
+    terminal.options.fontFamily = settings?.terminal.fontFamily ?? 'Consolas, monospace';
+    terminal.options.cursorBlink = settings?.terminal.cursorBlink ?? true;
+    window.requestAnimationFrame(() => resizeTerminal());
+  }, [settings?.themeId, settings?.importedThemes, settings?.terminal.fontSize, settings?.terminal.fontFamily, settings?.terminal.cursorBlink]);
+
+  useEffect(() => {
+    if (!focused) return;
     window.requestAnimationFrame(() => {
-      fitRef.current?.fit();
-      const terminal = terminalRef.current;
-      if (terminal) void api.terminal.resize(session.id, terminal.cols, terminal.rows);
-      terminal?.focus();
+      resizeTerminal();
+      terminalRef.current?.focus();
     });
-  }, [active, session.id]);
+  }, [focused, session.id]);
 
   return (
-    <div className="terminal-shell" style={{ display: active ? 'flex' : 'none' }}>
-      <div className="terminal-meta pad">
-        <input
-          className="terminal-name"
-          value={label}
-          onChange={(event) => setLabel(event.target.value)}
-          onBlur={() => onRename(session.id, label.trim() || session.name)}
-        />
-        <span className="muted">{session.cwd}</span>
-        <div className="terminal-actions">
-          <button className="ghost" onClick={() => onRestart(session.id)}>Restart</button>
-          <button className="ghost" onClick={() => onDuplicate(session.id)}>Duplicate</button>
-          <button className="ghost" onClick={() => { const cwd = window.prompt('CWD', session.cwd); if (cwd) onSetCwd(session.id, cwd); }}>Cwd</button>
-          <button className="ghost" onClick={() => onSplit(session.id, 'row')}>Split Right</button>
-          <button className="ghost" onClick={() => onSplit(session.id, 'column')}>Split Down</button>
-        </div>
-      </div>
+    <div className={focused ? 'terminal-shell focused' : 'terminal-shell'}>
       <div ref={mountRef} className="terminal-mount" />
     </div>
   );

@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
+import fs from 'fs/promises';
 import path from 'path';
 import { addWorkspace, createWorkspace, listWorkspaces, loadLayout, removeWorkspace, saveLayout, updateWorkspace } from './workspaceStore';
 import { createFile, createFolder, deletePath, readDirectory, readFile, renamePath, revealInExplorer, writeFile } from './fileService';
@@ -7,6 +8,7 @@ import { createTerminal, getTerminalProfiles, killTerminal, resizeTerminal, setT
 import { ensureDataDirs } from './storage';
 import { logError } from './log';
 import { loadSettings, saveSettings } from './configStore';
+import { loadAutomation, loadAutomationRaw, saveAutomationRaw } from './automationStore';
 import { assertAbsolutePath, assertLayoutLike, assertNonEmptyString, assertNumber, assertSafeFileName, assertString, assertWorkspaceLike } from './validation';
 
 let mainWindow: BrowserWindow | null = null;
@@ -17,13 +19,17 @@ async function createWindow() {
     height: 1000,
     backgroundColor: '#0b0d12',
     title: 'StackDock',
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      webviewTag: true,
     },
   });
+
+  mainWindow.setMenuBarVisibility(false);
 
   setTerminalWindow(mainWindow);
 
@@ -48,6 +54,17 @@ function registerIpc() {
   ipcMain.handle('app:pickWorkspaceFolder', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
     return result.canceled ? null : result.filePaths[0] ?? null;
+  });
+
+  ipcMain.handle('app:importJsonFile', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'JSON files', extensions: ['json'] }],
+    });
+    if (result.canceled) return null;
+    const filePath = result.filePaths[0];
+    if (!filePath) return null;
+    return { path: filePath, content: await fs.readFile(filePath, 'utf8') };
   });
 
   ipcMain.handle('workspaces:list', async () => listWorkspaces());
@@ -82,6 +99,12 @@ function registerIpc() {
   ipcMain.handle('fs:deletePath', async (_event, targetPath: unknown) => deletePath(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('fs:revealInExplorer', async (_event, targetPath: unknown) => revealInExplorer(assertAbsolutePath(targetPath, 'targetPath')));
 
+  ipcMain.handle('shell:openExternal', async (_event, url: unknown) => {
+    const target = assertNonEmptyString(url, 'url');
+    if (!/^https?:\/\//i.test(target)) throw new Error('Only http(s) URLs can be opened externally');
+    await shell.openExternal(target);
+  });
+
   ipcMain.handle('git:status', async (_event, targetPath: unknown) => getGitStatus(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('git:diff', async (_event, targetPath: unknown, filePath?: unknown, staged?: boolean) => getGitDiff(assertAbsolutePath(targetPath, 'targetPath'), filePath == null ? undefined : assertNonEmptyString(filePath, 'filePath'), staged));
   ipcMain.handle('git:stage', async (_event, targetPath: unknown, filePath: unknown) => stageFile(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(filePath, 'filePath')));
@@ -93,14 +116,26 @@ function registerIpc() {
   ipcMain.handle('settings:load', async () => loadSettings());
   ipcMain.handle('settings:save', async (_event, settings) => saveSettings(settings));
 
+  ipcMain.handle('automation:load', async () => loadAutomation());
+  ipcMain.handle('automation:loadRaw', async () => loadAutomationRaw());
+  ipcMain.handle('automation:saveRaw', async (_event, content: unknown) => saveAutomationRaw(assertString(content, 'content')));
+
   ipcMain.handle('terminal:profiles', async () => getTerminalProfiles());
-  ipcMain.handle('terminal:create', async (_event, profileId: unknown, cwd: unknown, name?: unknown, startupCommand?: unknown) => createTerminal(assertNonEmptyString(profileId, 'profileId'), assertAbsolutePath(cwd, 'cwd'), name == null ? undefined : assertNonEmptyString(name, 'name'), startupCommand == null ? undefined : assertNonEmptyString(startupCommand, 'startupCommand')));
-  ipcMain.handle('terminal:write', async (_event, id: unknown, data: unknown) => writeTerminal(assertNonEmptyString(id, 'id'), assertNonEmptyString(data, 'data')));
+  ipcMain.handle('terminal:create', async (_event, profileId: unknown, cwd: unknown, name?: unknown, startupCommand?: unknown) => createTerminal(
+    assertNonEmptyString(profileId, 'profileId'),
+    assertAbsolutePath(cwd, 'cwd'),
+    name == null ? undefined : assertNonEmptyString(name, 'name'),
+    startupCommand == null || (typeof startupCommand === 'string' && !startupCommand.trim()) ? undefined : assertNonEmptyString(startupCommand, 'startupCommand'),
+  ));
+  ipcMain.handle('terminal:write', async (_event, id: unknown, data: unknown) => writeTerminal(assertNonEmptyString(id, 'id'), assertString(data, 'data')));
   ipcMain.handle('terminal:resize', async (_event, id: unknown, cols: unknown, rows: unknown) => resizeTerminal(assertNonEmptyString(id, 'id'), assertNumber(cols, 'cols', 2, 500), assertNumber(rows, 'rows', 1, 500)));
   ipcMain.handle('terminal:kill', async (_event, id: unknown) => killTerminal(assertNonEmptyString(id, 'id')));
 }
 
 app.whenReady().then(async () => {
+  // Drop the default OS application menu (File / Edit / View / …). StackDock
+  // ships its own in-app topbar, so the native menu bar is just noise.
+  Menu.setApplicationMenu(null);
   await ensureDataDirs();
   registerIpc();
   await createWindow();

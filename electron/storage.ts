@@ -14,6 +14,10 @@ export function getConfigPath() {
   return path.join(getDataDir(), 'config.json');
 }
 
+export function getAutomationPath() {
+  return path.join(getDataDir(), 'automation.json');
+}
+
 export function getLayoutsDir() {
   return path.join(getDataDir(), 'layouts');
 }

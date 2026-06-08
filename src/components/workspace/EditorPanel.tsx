@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import '../../lib/monacoEnvironment';
 import * as monaco from 'monaco-editor';
 import { api } from '../../lib/api';
+import { languageFor, registerEditorSupport } from '../../lib/editorSupport';
+import { DEFAULT_THEME_ID, applyTheme, registerThemes } from '../../lib/themeSupport';
+import type { StackDockSettings } from '../../shared/types';
 
 export interface OpenFileTab {
   path: string;
@@ -16,22 +20,12 @@ interface Props {
   onChangeFile(path: string, content: string): void;
   onSaveFile(path: string): Promise<void>;
   onCloseFile(path: string): void;
+  settings?: StackDockSettings;
   /** Render the built-in file tab strip. Disabled when an outer unified tab bar owns the tabs. */
   showTabs?: boolean;
 }
 
-function languageFor(path: string) {
-  const ext = path.split('.').pop()?.toLowerCase();
-  if (ext === 'ts' || ext === 'tsx') return 'typescript';
-  if (ext === 'js' || ext === 'jsx') return 'javascript';
-  if (ext === 'json') return 'json';
-  if (ext === 'md') return 'markdown';
-  if (ext === 'css') return 'css';
-  if (ext === 'html') return 'html';
-  return 'plaintext';
-}
-
-export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, onSaveFile, onCloseFile, showTabs = true }: Props) {
+export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, onSaveFile, onCloseFile, settings, showTabs = true }: Props) {
   const active = openFiles.find((file) => file.path === activePath) ?? null;
   const [saving, setSaving] = useState(false);
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -40,12 +34,23 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
 
   useEffect(() => {
     if (!hostRef.current || editorRef.current) return;
+    registerEditorSupport(settings?.importedThemes ?? []);
+    const themeId = settings?.themeId ?? DEFAULT_THEME_ID;
+    applyTheme(themeId, settings?.importedThemes ?? []);
     editorRef.current = monaco.editor.create(hostRef.current, {
       automaticLayout: true,
       minimap: { enabled: false },
-      fontSize: 13,
-      theme: 'vs-dark',
+      fontSize: settings?.editor.fontSize ?? 13,
+      fontFamily: settings?.editor.fontFamily,
+      tabSize: settings?.editor.tabSize ?? 2,
+      wordWrap: settings?.editor.wordWrap ?? 'off',
+      theme: themeId,
       scrollBeyondLastLine: false,
+      scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8, useShadows: false },
+      overviewRulerLanes: 0,
+      hideCursorInOverviewRuler: true,
+      bracketPairColorization: { enabled: true },
+      guides: { bracketPairs: true, indentation: true },
     });
     const sub = editorRef.current.onDidChangeModelContent(() => {
       const path = activePathRef.current;
@@ -57,6 +62,17 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
       editorRef.current = null;
     };
   }, [onChangeFile]);
+
+  useEffect(() => {
+    registerThemes(settings?.importedThemes ?? []);
+    applyTheme(settings?.themeId ?? DEFAULT_THEME_ID, settings?.importedThemes ?? []);
+    editorRef.current?.updateOptions({
+      fontSize: settings?.editor.fontSize ?? 13,
+      fontFamily: settings?.editor.fontFamily,
+      tabSize: settings?.editor.tabSize ?? 2,
+      wordWrap: settings?.editor.wordWrap ?? 'off',
+    });
+  }, [settings?.editor.fontSize, settings?.editor.fontFamily, settings?.editor.tabSize, settings?.editor.wordWrap, settings?.themeId, settings?.importedThemes]);
 
   useEffect(() => {
     activePathRef.current = active?.path ?? null;
