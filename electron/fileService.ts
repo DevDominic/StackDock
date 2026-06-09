@@ -1,9 +1,38 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { shell } from 'electron';
-import type { DirectoryEntry, ReadFileResult } from '../src/shared/types';
+import type { DirectoryEntry, ReadFileDataUrlResult, ReadFileResult } from '../src/shared/types';
 
 const noisyFolders = new Set(['node_modules', 'dist', 'build', 'target', '.cache']);
+
+const mimeByExtension: Record<string, string> = {
+  '.apng': 'image/apng',
+  '.avif': 'image/avif',
+  '.gif': 'image/gif',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.oga': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.flac': 'audio/flac',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.ogv': 'video/ogg',
+  '.mov': 'video/quicktime',
+  '.m4v': 'video/x-m4v',
+};
+
+function mimeTypeFor(filePath: string) {
+  return mimeByExtension[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream';
+}
 
 export async function readDirectory(dirPath: string, options?: { showHidden?: boolean }): Promise<DirectoryEntry[]> {
   const entries = await fs.readdir(dirPath, { withFileTypes: true });
@@ -22,6 +51,16 @@ export async function readDirectory(dirPath: string, options?: { showHidden?: bo
 
 export async function readFile(filePath: string): Promise<ReadFileResult> {
   return { path: filePath, content: await fs.readFile(filePath, 'utf8') };
+}
+
+const MAX_MEDIA_BYTES = 50 * 1024 * 1024;
+
+export async function readFileDataUrl(filePath: string): Promise<ReadFileDataUrlResult> {
+  const stat = await fs.stat(filePath);
+  if (stat.size > MAX_MEDIA_BYTES) throw new Error(`File too large to preview (${Math.round(stat.size / 1024 / 1024)} MB). Maximum is 50 MB.`);
+  const buffer = await fs.readFile(filePath);
+  const mimeType = mimeTypeFor(filePath);
+  return { path: filePath, mimeType, dataUrl: `data:${mimeType};base64,${buffer.toString('base64')}` };
 }
 
 export async function writeFile(filePath: string, content: string) {

@@ -1,5 +1,5 @@
 import path from 'path';
-import type { AppRestoreState, TerminalAttachmentOptions, TerminalAttachmentSource, Workspace, WorkspaceLayout } from '../src/shared/types';
+import type { AppRestoreState, TerminalAttachmentOptions, TerminalAttachmentSource, TerminalSessionContext, Workspace, WorkspaceLayout } from '../src/shared/types';
 
 export function assertString(value: unknown, name: string): string {
   if (typeof value !== 'string') throw new Error(`${name} must be string`);
@@ -51,6 +51,16 @@ export function assertLayoutLike(value: unknown): WorkspaceLayout {
   assertNonEmptyString(layout?.workspaceId, 'layout.workspaceId');
   if (!layout.panels || !layout.editors || !Array.isArray(layout.terminals)) throw new Error('layout shape invalid');
   return layout;
+}
+export function assertTerminalSessionContext(value: unknown): TerminalSessionContext | undefined {
+  if (value == null) return undefined;
+  if (typeof value !== 'object') throw new Error('terminal context invalid');
+  const context = value as TerminalSessionContext;
+  return {
+    workspaceId: context.workspaceId == null ? undefined : assertNonEmptyString(context.workspaceId, 'context.workspaceId'),
+    workspaceName: context.workspaceName == null ? undefined : assertNonEmptyString(context.workspaceName, 'context.workspaceName'),
+    workspacePath: context.workspacePath == null ? undefined : assertAbsolutePath(context.workspacePath, 'context.workspacePath'),
+  };
 }
 export function assertTerminalAttachmentSource(value: unknown, name: string): TerminalAttachmentSource {
   const source = assertNonEmptyString(value, name);

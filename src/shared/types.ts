@@ -138,6 +138,26 @@ export interface WorkspaceTerminalSession extends TerminalSession {
   workspacePath: string;
 }
 
+export interface TerminalSessionContext {
+  workspaceId?: string;
+  workspaceName?: string;
+  workspacePath?: string;
+}
+
+export interface TerminalPersistedTab extends TerminalSession {
+  workspaceId?: string;
+  workspaceName?: string;
+  workspacePath?: string;
+  lastActiveAt?: string;
+  resumeStartupCommand?: string;
+}
+
+export interface TerminalPersistedState {
+  version: 1;
+  savedAt: string;
+  tabs: TerminalPersistedTab[];
+}
+
 export interface TerminalSession {
   id: string;
   restoreId?: string;
@@ -219,6 +239,12 @@ export interface ReadFileResult {
   content: string;
 }
 
+export interface ReadFileDataUrlResult {
+  path: string;
+  dataUrl: string;
+  mimeType: string;
+}
+
 export type WindowControlsStyle = 'native' | 'custom';
 
 export interface WindowTitleBarOverlayOptions {
@@ -252,6 +278,8 @@ export interface StackDockApi {
   fs: {
     readDirectory(path: string, options?: { showHidden?: boolean }): Promise<DirectoryEntry[]>;
     readFile(path: string): Promise<ReadFileResult>;
+    readFileDataUrl(path: string): Promise<ReadFileDataUrlResult>;
+    watchWorkspace(path: string): Promise<void>;
     writeFile(path: string, content: string): Promise<void>;
     createFile(path: string): Promise<void>;
     createFolder(path: string): Promise<void>;
@@ -291,7 +319,8 @@ export interface StackDockApi {
   };
   terminal: {
     profiles(): Promise<TerminalProfile[]>;
-    create(profileId: string, cwd: string, name?: string, startupCommand?: string, restoreId?: string): Promise<TerminalSession>;
+    create(profileId: string, cwd: string, name?: string, startupCommand?: string, restoreId?: string, context?: TerminalSessionContext): Promise<TerminalSession>;
+    restoreState(): Promise<TerminalPersistedState | null>;
     write(id: string, data: string): Promise<void>;
     resize(id: string, cols: number, rows: number): Promise<void>;
     setVisible(ids: string[]): Promise<void>;
@@ -302,6 +331,7 @@ export interface StackDockApi {
   onTerminalData(callback: (payload: { id: string; data: string }) => void): () => void;
   onTerminalExit(callback: (payload: { id: string; exitCode: number | null }) => void): () => void;
   onWorkspaceChanged(callback: () => void): () => void;
+  onFileSystemChanged(callback: (payload: { rootPath: string }) => void): () => void;
 }
 
 declare global {

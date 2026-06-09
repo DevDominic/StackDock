@@ -42,6 +42,8 @@ const api: StackDockApi = {
   fs: {
     readDirectory: (targetPath, options) => ipcRenderer.invoke('fs:readDirectory', targetPath, options),
     readFile: (targetPath) => ipcRenderer.invoke('fs:readFile', targetPath),
+    readFileDataUrl: (targetPath) => ipcRenderer.invoke('fs:readFileDataUrl', targetPath),
+    watchWorkspace: (targetPath) => ipcRenderer.invoke('fs:watchWorkspace', targetPath),
     writeFile: (targetPath, content) => ipcRenderer.invoke('fs:writeFile', targetPath, content),
     createFile: (targetPath) => ipcRenderer.invoke('fs:createFile', targetPath),
     createFolder: (targetPath) => ipcRenderer.invoke('fs:createFolder', targetPath),
@@ -85,7 +87,8 @@ const api: StackDockApi = {
   },
   terminal: {
     profiles: () => ipcRenderer.invoke('terminal:profiles'),
-    create: (profileId, cwd, name, startupCommand, restoreId) => ipcRenderer.invoke('terminal:create', profileId, cwd, name, startupCommand, restoreId),
+    create: (profileId, cwd, name, startupCommand, restoreId, context) => ipcRenderer.invoke('terminal:create', profileId, cwd, name, startupCommand, restoreId, context),
+    restoreState: () => ipcRenderer.invoke('terminal:restoreState'),
     write: (id, data) => ipcRenderer.invoke('terminal:write', id, data),
     resize: (id, cols, rows) => ipcRenderer.invoke('terminal:resize', id, cols, rows),
     setVisible: (ids) => ipcRenderer.invoke('terminal:setVisible', ids),
@@ -107,6 +110,11 @@ const api: StackDockApi = {
     const listener = () => callback();
     ipcRenderer.on('workspace:changed', listener);
     return () => ipcRenderer.off('workspace:changed', listener);
+  },
+  onFileSystemChanged(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { rootPath: string }) => callback(payload);
+    ipcRenderer.on('fs:changed', listener);
+    return () => ipcRenderer.off('fs:changed', listener);
   },
 };
 

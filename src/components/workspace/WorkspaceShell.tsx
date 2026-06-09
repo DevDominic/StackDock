@@ -1,12 +1,12 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import type { AutomationConfig, GitFileStatus, GitStatus, PaletteCommand, StackDockSettings, TerminalProfile, Workspace, WorkspaceLayout, WorkspaceTerminalSession } from '../../shared/types';
+import type { AutomationConfig, GitFileStatus, GitStatus, PaletteCommand, StackDockSettings, TerminalPersistedTab, TerminalProfile, Workspace, WorkspaceLayout, WorkspaceTerminalSession } from '../../shared/types';
 import { api } from '../../lib/api';
 import { getErrorMessage } from '../../lib/errors';
 import { useToast } from '../common/ToastProvider';
 import { useSessionStore } from '../../state/sessionStore';
 import { FileTree } from './FileTree';
-import type { EditorDiffMode, EditorDiffModel, OpenFileTab } from './EditorPanel';
+import type { EditorDiffMode, EditorDiffModel, MediaKind, OpenFileTab } from './EditorPanel';
 import { WebTabPanel, type WebTab } from './WebTabPanel';
 import { GitPanel } from './GitPanel';
 import { TerminalPanel } from './TerminalPanel';
@@ -75,6 +75,17 @@ function joinPath(base: string, file: string) {
 
 function baseName(targetPath: string) {
   return targetPath.split(/[\\/]/).filter(Boolean).pop() ?? targetPath;
+}
+
+const mediaExtensions: Record<string, MediaKind> = {
+  apng: 'image', avif: 'image', bmp: 'image', gif: 'image', ico: 'image', jpeg: 'image', jpg: 'image', png: 'image', svg: 'image', webp: 'image',
+  aac: 'audio', flac: 'audio', m4a: 'audio', mp3: 'audio', oga: 'audio', ogg: 'audio', wav: 'audio',
+  m4v: 'video', mov: 'video', mp4: 'video', ogv: 'video', webm: 'video',
+};
+
+function mediaKindForPath(targetPath: string): MediaKind | null {
+  const ext = baseName(targetPath).split('.').pop()?.toLowerCase() ?? '';
+  return mediaExtensions[ext] ?? null;
 }
 
 function stripAnsi(value: string) {
@@ -175,12 +186,13 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     let active = true;
     setLayoutHydrated(false);
     (async () => {
-      const [loadedLayout, status, loadedSettings, terminalProfiles, loadedAutomation] = await Promise.all([
+      const [loadedLayout, status, loadedSettings, terminalProfiles, loadedAutomation, persistedTerminals] = await Promise.all([
         api.workspaces.loadLayout(workspace.id),
         api.git.status(workspace.path),
         api.settings.load(),
         api.terminal.profiles(),
         api.automation.load(),
+        api.terminal.restoreState(),
       ]);
       if (!active) return;
       setLayout(loadedLayout);
@@ -197,17 +209,23 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       let firstSessionId: string | null = sessionsRef.current[0]?.id ?? null;
       let createdSessions = false;
       try {
-        if (!sessionsRef.current.length && loadedLayout?.terminals.length) {
+        const persistedWorkspaceTerminals = (persistedTerminals?.tabs ?? []).filter((session): session is TerminalPersistedTab => session.workspaceId === workspace.id || session.workspacePath === workspace.path);
+        const restoreById = new Map<string, WorkspaceLayout['terminals'][number] | TerminalPersistedTab>();
+        for (const session of loadedLayout?.terminals ?? []) restoreById.set(session.restoreId ?? session.id, session);
+        for (const session of persistedWorkspaceTerminals) restoreById.set(session.restoreId ?? session.id, session);
+        const terminalsToRestore = [...restoreById.values()];
+        const persistedActiveRestoreId = persistedWorkspaceTerminals[persistedWorkspaceTerminals.length - 1]?.restoreId;
+        if (!sessionsRef.current.length && terminalsToRestore.length) {
           let restoredActiveRuntimeId: string | null = null;
-          for (const session of loadedLayout.terminals) {
+          for (const session of terminalsToRestore) {
             const snapshot = session.restoreId ? await api.terminal.snapshot(session.restoreId).catch(() => null) : null;
             const piResumeCommand = session.piResumeCommand ?? snapshot?.piResumeCommand;
-            const startupCommand = piResumeCommand || session.startupCommand || (isPiSnapshotOutput(snapshot?.output) ? 'pi --continue' : undefined);
+            const startupCommand = 'resumeStartupCommand' in session && session.resumeStartupCommand ? session.resumeStartupCommand : piResumeCommand || session.startupCommand || (isPiSnapshotOutput(snapshot?.output) ? 'pi -r' : undefined);
             const created = await sessionStore.createSession({ workspaceId: workspace.id, workspaceName: workspace.name, workspacePath: workspace.path, profileId: session.profileId, cwd: session.cwd, name: session.name, startupCommand, restoreId: session.restoreId });
             const restoredSession = { ...created, originalStartupCommand: session.originalStartupCommand ?? session.startupCommand, piSessionId: session.piSessionId ?? snapshot?.piSessionId, piResumeCommand, splitGroupId: session.splitGroupId, splitDirection: session.splitDirection };
             sessionStore.replaceSession(created.id, restoredSession);
-            if (session.restoreId && session.restoreId === loadedLayout.activeTerminalRestoreId) restoredActiveRuntimeId = restoredSession.id;
-            if (session.id === loadedLayout.activeTerminalRuntimeId) restoredActiveRuntimeId = restoredSession.id;
+            if (session.restoreId && (session.restoreId === loadedLayout?.activeTerminalRestoreId || session.restoreId === persistedActiveRestoreId)) restoredActiveRuntimeId = restoredSession.id;
+            if (session.id === loadedLayout?.activeTerminalRuntimeId) restoredActiveRuntimeId = restoredSession.id;
             firstSessionId ??= restoredSession.id;
             createdSessions = true;
           }
@@ -231,8 +249,14 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         const tabByPath = new Map<string, OpenFileTab>();
         for (const filePath of paths) {
           try {
-            const file = await api.fs.readFile(filePath);
-            tabByPath.set(filePath, { path: filePath, name: filePath.split(/[\\/]/).pop() ?? filePath, content: file.content, dirty: false });
+            const mediaKind = mediaKindForPath(filePath);
+            if (mediaKind) {
+              const media = await api.fs.readFileDataUrl(filePath);
+              tabByPath.set(filePath, { path: filePath, name: filePath.split(/[\\/]/).pop() ?? filePath, content: '', dirty: false, mediaKind, mimeType: media.mimeType, dataUrl: media.dataUrl });
+            } else {
+              const file = await api.fs.readFile(filePath);
+              tabByPath.set(filePath, { path: filePath, name: filePath.split(/[\\/]/).pop() ?? filePath, content: file.content, dirty: false });
+            }
           } catch {
             tabByPath.set(filePath, { path: filePath, name: filePath.split(/[\\/]/).pop() ?? filePath, content: '', dirty: false });
           }
@@ -454,8 +478,17 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         }));
         return;
       }
-      const file = await api.fs.readFile(path);
-      const tab: OpenFileTab = { path, name: path.split(/[\\/]/).pop() ?? path, content: file.content, dirty: false };
+      const mediaKind = mediaKindForPath(path);
+      const tab: OpenFileTab = mediaKind
+        ? (() => {
+            return { path, name: path.split(/[\\/]/).pop() ?? path, content: '', dirty: false, mediaKind };
+          })()
+        : { path, name: path.split(/[\\/]/).pop() ?? path, content: (await api.fs.readFile(path)).content, dirty: false };
+      if (mediaKind) {
+        const media = await api.fs.readFileDataUrl(path);
+        tab.dataUrl = media.dataUrl;
+        tab.mimeType = media.mimeType;
+      }
       patchSession(sessionId, (prev) => ({
         ...prev,
         activeKind: 'editor',
@@ -649,7 +682,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     const old = allSessions.find((session) => session.id === id);
     if (!old) return;
     await api.terminal.kill(old.id);
-    const next = await api.terminal.create(old.profileId, cwd ?? old.cwd, old.name, old.piResumeCommand || old.startupCommand, old.restoreId);
+    const next = await api.terminal.create(old.profileId, cwd ?? old.cwd, old.name, old.piResumeCommand || old.startupCommand, old.restoreId, { workspaceId: old.workspaceId, workspaceName: old.workspaceName, workspacePath: old.workspacePath });
     const replacement: WorkspaceTerminalSession = { ...next, workspaceId: old.workspaceId, workspaceName: old.workspaceName, workspacePath: old.workspacePath, originalStartupCommand: old.originalStartupCommand ?? old.startupCommand, piSessionId: old.piSessionId, piResumeCommand: old.piResumeCommand, splitGroupId: old.splitGroupId, splitDirection: old.splitDirection };
     sessionStore.replaceSession(id, replacement);
   }

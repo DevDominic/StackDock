@@ -6,11 +6,16 @@ import { languageFor, registerEditorSupport } from '../../lib/editorSupport';
 import { DEFAULT_THEME_ID, applyTheme, registerThemes } from '../../lib/themeSupport';
 import type { StackDockSettings } from '../../shared/types';
 
+export type MediaKind = 'image' | 'audio' | 'video';
+
 export interface OpenFileTab {
   path: string;
   name: string;
   content: string;
   dirty: boolean;
+  mediaKind?: MediaKind;
+  mimeType?: string;
+  dataUrl?: string;
 }
 
 export type EditorDiffMode = 'side-by-side' | 'inline' | 'compare-only';
@@ -100,6 +105,18 @@ function layoutDiffEditor(editor: monaco.editor.IStandaloneDiffEditor | null, ho
   editor.getModifiedEditor().render();
 }
 
+function MediaPreview({ file }: { file: OpenFileTab }) {
+  if (!file.dataUrl || !file.mediaKind) return <div className="empty-pad muted">Preview unavailable.</div>;
+  return (
+    <div className="media-preview">
+      {file.mediaKind === 'image' ? <img src={file.dataUrl} alt={file.name} /> : null}
+      {file.mediaKind === 'audio' ? <audio src={file.dataUrl} controls /> : null}
+      {file.mediaKind === 'video' ? <video src={file.dataUrl} controls /> : null}
+      <div className="media-meta muted">{file.mimeType ?? file.mediaKind}</div>
+    </div>
+  );
+}
+
 function changedLineDecorations(original: string, modified: string) {
   const originalLines = original.split('\n');
   const modifiedLines = modified.split('\n');
@@ -120,7 +137,7 @@ function changedLineDecorations(original: string, modified: string) {
 
 export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, onSaveFile, onCloseFile, settings, diff, diffMode = 'side-by-side', showTabs = true, visible = true }: Props) {
   const active = openFiles.find((file) => file.path === activePath) ?? null;
-  const activeDiff = active && diff?.path === active.path ? diff : null;
+  const activeDiff = active && !active.mediaKind && diff?.path === active.path ? diff : null;
   // An untracked/new file has no original revision to diff against. Any diff
   // mode would render a blank "Original" pane (wasting half the width) and let
   // Monaco's diff gutter draw revert arrows over non-existent lines, which
@@ -183,9 +200,11 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
     modelSubscriptionRef.current?.dispose();
     modelSubscriptionRef.current = null;
 
-    if (!active) {
+    if (!active || active.mediaKind) {
       editor.setModel(null);
       diffEditorRef.current?.setModel(null);
+      compareOriginalRef.current?.setModel(null);
+      compareModifiedRef.current?.setModel(null);
       return;
     }
 
@@ -310,8 +329,9 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
         </div>
       ) : null}
       <div className="editor-wrap">
-        <div ref={editorHostRef} className="monaco-host" style={{ display: showAsDiff ? 'none' : 'block' }} />
-        <div ref={diffHostRef} className="monaco-host monaco-diff-host" style={{ display: showAsDiff && diffMode !== 'compare-only' ? 'block' : 'none' }} />
+        {active?.mediaKind ? <MediaPreview file={active} /> : null}
+        <div ref={editorHostRef} className="monaco-host" style={{ display: !active?.mediaKind && !showAsDiff ? 'block' : 'none' }} />
+        <div ref={diffHostRef} className="monaco-host monaco-diff-host" style={{ display: !active?.mediaKind && showAsDiff && diffMode !== 'compare-only' ? 'block' : 'none' }} />
         <div className="compare-only-grid" style={{ display: showAsDiff && diffMode === 'compare-only' ? 'grid' : 'none' }}>
           <div className="compare-pane"><div className="compare-pane-title muted">Original</div><div ref={compareOriginalHostRef} className="monaco-host compare-host" /></div>
           <div className="compare-pane"><div className="compare-pane-title muted">Modified</div><div ref={compareModifiedHostRef} className="monaco-host compare-host" /></div>

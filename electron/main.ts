@@ -1,20 +1,24 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import fs from 'fs/promises';
+import { watch, type FSWatcher } from 'fs';
 import os from 'os';
 import path from 'path';
 import { addWorkspace, createWorkspace, listWorkspaces, loadLayout, loadRestoreState, removeWorkspace, saveLayout, saveRestoreState, updateWorkspace } from './workspaceStore';
-import { createFile, createFolder, deletePath, readDirectory, readFile, renamePath, revealInExplorer, writeFile } from './fileService';
+import { createFile, createFolder, deletePath, readDirectory, readFile, readFileDataUrl, renamePath, revealInExplorer, writeFile } from './fileService';
 import { addAll, commit, discardFile, getGitDiff, getGitFileContents, getGitStatus, stageFile, unstageFile } from './gitService';
-import { createTerminal, flushTerminalSnapshots, forgetTerminalSnapshot, getTerminalProfiles, getTerminalSnapshot, killTerminal, resizeTerminal, setTerminalWindow, setVisibleTerminals, writeTerminal } from './terminalManager';
+import { createTerminal, forgetTerminalSnapshot, getTerminalProfiles, getTerminalSnapshot, killTerminal, loadOpenTerminalState, resizeTerminal, saveOpenTerminalState, setTerminalWindow, setVisibleTerminals, writeTerminal } from './terminalManager';
 import { ensureDataDirs } from './storage';
 import { logError } from './log';
 import { loadSettings, saveSettings } from './configStore';
 import { loadAutomation, loadAutomationRaw, saveAutomationRaw } from './automationStore';
 import { inspectAttachmentPath, savePastedImageAttachment } from './attachmentService';
-import { assertAbsolutePath, assertLayoutLike, assertNonEmptyString, assertNumber, assertRestoreStateLike, assertSafeFileName, assertString, assertTerminalAttachmentOptions, assertTerminalAttachmentSource, assertWorkspaceLike } from './validation';
+import { assertAbsolutePath, assertLayoutLike, assertNonEmptyString, assertNumber, assertRestoreStateLike, assertSafeFileName, assertString, assertTerminalAttachmentOptions, assertTerminalAttachmentSource, assertTerminalSessionContext, assertWorkspaceLike } from './validation';
 
 let mainWindow: BrowserWindow | null = null;
 let quittingAfterSnapshotFlush = false;
+let closingAfterTerminalSave = false;
+const watchedWorkspaces = new Map<string, { watcher: FSWatcher; timer: NodeJS.Timeout | null }>();
+const noisyWatchSegments = new Set(['node_modules', 'dist', 'build', 'target', '.cache', '.git']);
 const nativeWindowControls = isWindows11();
 
 // Make dev Electron sessions attachable by browser automation tools such as
@@ -78,7 +82,19 @@ async function createWindow() {
     }
   });
 
+  mainWindow.on('close', (event) => {
+    if (closingAfterTerminalSave) return;
+    event.preventDefault();
+    closingAfterTerminalSave = true;
+    const saveWithTimeout = Promise.race([
+      saveOpenTerminalState(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('saveOpenTerminalState timeout')), 3000)),
+    ]);
+    void saveWithTimeout.catch((error) => logError('saveOpenTerminalState', error)).finally(() => mainWindow?.close());
+  });
+
   mainWindow.on('closed', () => {
+    closingAfterTerminalSave = false;
     mainWindow = null;
     setTerminalWindow(null);
   });
@@ -86,6 +102,28 @@ async function createWindow() {
 
 function notifyWorkspaceChange() {
   mainWindow?.webContents.send('workspace:changed');
+}
+
+function watchWorkspace(rootPath: string) {
+  if (watchedWorkspaces.has(rootPath)) return;
+  try {
+    const state = { watcher: watch(rootPath, { recursive: true }, (_eventType, filename) => {
+      if (filename) {
+        const firstSegment = filename.split(/[\\/]/)[0];
+        if (firstSegment && noisyWatchSegments.has(firstSegment)) return;
+      }
+      if (state.timer) clearTimeout(state.timer);
+      state.timer = setTimeout(() => mainWindow?.webContents.send('fs:changed', { rootPath }), 150);
+    }), timer: null as NodeJS.Timeout | null };
+    state.watcher.on('error', (error) => {
+      void logError('watchWorkspace', error);
+      state.watcher.close();
+      watchedWorkspaces.delete(rootPath);
+    });
+    watchedWorkspaces.set(rootPath, state);
+  } catch (error) {
+    void logError('watchWorkspace', error);
+  }
 }
 
 function registerIpc() {
@@ -150,6 +188,8 @@ function registerIpc() {
 
   ipcMain.handle('fs:readDirectory', async (_event, targetPath: unknown, options?: { showHidden?: boolean }) => readDirectory(assertAbsolutePath(targetPath, 'targetPath'), options));
   ipcMain.handle('fs:readFile', async (_event, targetPath: unknown) => readFile(assertAbsolutePath(targetPath, 'targetPath')));
+  ipcMain.handle('fs:readFileDataUrl', async (_event, targetPath: unknown) => readFileDataUrl(assertAbsolutePath(targetPath, 'targetPath')));
+  ipcMain.handle('fs:watchWorkspace', async (_event, targetPath: unknown) => watchWorkspace(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('fs:writeFile', async (_event, targetPath: unknown, content: unknown) => writeFile(assertAbsolutePath(targetPath, 'targetPath'), assertString(content, 'content')));
   ipcMain.handle('fs:createFile', async (_event, targetPath: unknown) => createFile(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('fs:createFolder', async (_event, targetPath: unknown) => createFolder(assertAbsolutePath(targetPath, 'targetPath')));
@@ -183,13 +223,15 @@ function registerIpc() {
   ipcMain.handle('attachments:savePastedImage', async (_event, dataUrl: unknown, name?: unknown, options?: unknown) => savePastedImageAttachment(assertNonEmptyString(dataUrl, 'dataUrl'), name == null ? undefined : assertNonEmptyString(name, 'name'), assertTerminalAttachmentOptions(options)));
 
   ipcMain.handle('terminal:profiles', async () => getTerminalProfiles());
-  ipcMain.handle('terminal:create', async (_event, profileId: unknown, cwd: unknown, name?: unknown, startupCommand?: unknown, restoreId?: unknown) => createTerminal(
+  ipcMain.handle('terminal:create', async (_event, profileId: unknown, cwd: unknown, name?: unknown, startupCommand?: unknown, restoreId?: unknown, context?: unknown) => createTerminal(
     assertNonEmptyString(profileId, 'profileId'),
     assertAbsolutePath(cwd, 'cwd'),
     name == null ? undefined : assertNonEmptyString(name, 'name'),
     startupCommand == null || (typeof startupCommand === 'string' && !startupCommand.trim()) ? undefined : assertNonEmptyString(startupCommand, 'startupCommand'),
     restoreId == null ? undefined : assertNonEmptyString(restoreId, 'restoreId'),
+    assertTerminalSessionContext(context),
   ));
+  ipcMain.handle('terminal:restoreState', async () => loadOpenTerminalState());
   ipcMain.handle('terminal:write', async (_event, id: unknown, data: unknown) => writeTerminal(assertNonEmptyString(id, 'id'), assertString(data, 'data')));
   ipcMain.handle('terminal:resize', async (_event, id: unknown, cols: unknown, rows: unknown) => resizeTerminal(assertNonEmptyString(id, 'id'), assertNumber(cols, 'cols', 2, 500), assertNumber(rows, 'rows', 1, 500)));
   ipcMain.handle('terminal:setVisible', async (_event, ids: unknown) => {
@@ -218,7 +260,7 @@ app.on('before-quit', (event) => {
   if (quittingAfterSnapshotFlush) return;
   event.preventDefault();
   quittingAfterSnapshotFlush = true;
-  void flushTerminalSnapshots().catch((error) => logError('flushTerminalSnapshots', error)).finally(() => app.quit());
+  void saveOpenTerminalState().catch((error) => logError('saveOpenTerminalState', error)).finally(() => app.quit());
 });
 
 app.on('window-all-closed', () => {

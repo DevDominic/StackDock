@@ -14,7 +14,7 @@ interface Props {
 interface GitDecoration { letter: string; cls: string }
 type GitLookup = (entry: DirectoryEntry) => GitDecoration | null;
 
-interface ContextTarget { entry: DirectoryEntry; x: number; y: number; }
+interface ContextTarget { entry: DirectoryEntry | null; x: number; y: number; }
 interface NodeProps {
   entry: DirectoryEntry;
   depth: number;
@@ -56,7 +56,15 @@ function FileNode({ entry, depth, version, gitLookup, onOpenFile, onContextMenu,
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<DirectoryEntry[] | null>(null);
 
-  useEffect(() => { setChildren(null); setExpanded(false); }, [version]);
+  useEffect(() => {
+    if (!expanded) {
+      setChildren(null);
+      return;
+    }
+    let active = true;
+    loadChildren(entry.path).then((items) => { if (active) setChildren(items); });
+    return () => { active = false; };
+  }, [version, expanded, entry.path, loadChildren]);
 
   const toggle = async () => {
     if (!entry.isDirectory) { onOpenFile(entry.path); return; }
@@ -67,6 +75,7 @@ function FileNode({ entry, depth, version, gitLookup, onOpenFile, onContextMenu,
 
   const handleContextMenu = (event: React.MouseEvent) => {
     event.preventDefault();
+    event.stopPropagation();
     onContextMenu({ entry, x: event.clientX, y: event.clientY });
   };
 
@@ -82,7 +91,7 @@ function FileNode({ entry, depth, version, gitLookup, onOpenFile, onContextMenu,
       </button>
       {entry.isDirectory && expanded && children ? (
         <div>
-          {children.map((child) => <FileNode key={`${child.path}:${version}`} entry={child} depth={depth + 1} version={version} gitLookup={gitLookup} onOpenFile={onOpenFile} onContextMenu={onContextMenu} loadChildren={loadChildren} />)}
+          {children.map((child) => <FileNode key={child.path} entry={child} depth={depth + 1} version={version} gitLookup={gitLookup} onOpenFile={onOpenFile} onContextMenu={onContextMenu} loadChildren={loadChildren} />)}
         </div>
       ) : null}
     </div>
@@ -106,6 +115,13 @@ export function FileTree({ rootPath, gitFiles, onOpenFile, onOpenTerminalHere, r
   }, [rootPath, refreshToken, treeVersion]);
 
   useEffect(() => {
+    void api.fs.watchWorkspace(rootPath);
+    return api.onFileSystemChanged((payload) => {
+      if (normalizePath(payload.rootPath).toLowerCase() === normalizePath(rootPath).toLowerCase()) setTreeVersion((version) => version + 1);
+    });
+  }, [rootPath]);
+
+  useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setMenu(null); };
@@ -121,17 +137,17 @@ export function FileTree({ rootPath, gitFiles, onOpenFile, onOpenTerminalHere, r
     if (openPath) onOpenFile(openPath);
   }
 
-  async function createFile(entry: DirectoryEntry) {
+  async function createFileIn(folderPath: string) {
     const name = window.prompt('File name');
     if (!name) return;
-    const target = joinPath(entry.path, name);
+    const target = joinPath(folderPath, name);
     await api.fs.createFile(target);
     await afterAction(target);
   }
-  async function createFolder(entry: DirectoryEntry) {
+  async function createFolderIn(folderPath: string) {
     const name = window.prompt('Folder name');
     if (!name) return;
-    await api.fs.createFolder(joinPath(entry.path, name));
+    await api.fs.createFolder(joinPath(folderPath, name));
     await afterAction();
   }
   async function rename(entry: DirectoryEntry) {
@@ -148,20 +164,23 @@ export function FileTree({ rootPath, gitFiles, onOpenFile, onOpenTerminalHere, r
   }
 
   return (
-    <aside className="panel file-tree">
-      <div className="panel-title row"><span>Files</span></div>
+    <aside className="panel file-tree" onContextMenu={(event) => { event.preventDefault(); setMenu({ entry: null, x: event.clientX, y: event.clientY }); }}>
+      <div className="panel-title row">
+        <span>Files</span>
+        <button className="panel-icon-btn" title="New file" aria-label="New file" onClick={() => createFileIn(rootPath)}>＋</button>
+      </div>
       {loading ? <div className="muted pad">Loading...</div> : null}
       <div className="tree-list">
-        {rootChildren.map((entry) => <FileNode key={`${entry.path}:${treeVersion}`} entry={entry} depth={0} version={treeVersion} gitLookup={gitLookup} onOpenFile={onOpenFile} onContextMenu={setMenu} loadChildren={loadChildren} />)}
+        {rootChildren.map((entry) => <FileNode key={entry.path} entry={entry} depth={0} version={treeVersion} gitLookup={gitLookup} onOpenFile={onOpenFile} onContextMenu={setMenu} loadChildren={loadChildren} />)}
       </div>
       {menu ? (
-        <div ref={menuRef} className="context-menu" style={{ top: menu.y, left: menu.x }} onMouseDown={(event) => event.stopPropagation()}>
-          {menu.entry.isDirectory ? <button className="context-menu-item" onClick={() => { onOpenTerminalHere(menu.entry.path); setMenu(null); }}>Open terminal here</button> : null}
-          {menu.entry.isDirectory ? <button className="context-menu-item" onClick={() => createFile(menu.entry)}>New file</button> : null}
-          {menu.entry.isDirectory ? <button className="context-menu-item" onClick={() => createFolder(menu.entry)}>New folder</button> : null}
-          <button className="context-menu-item" onClick={() => rename(menu.entry)}>Rename</button>
-          <button className="context-menu-item" onClick={() => { void api.fs.revealInExplorer(menu.entry.path); setMenu(null); }}>Reveal in Explorer</button>
-          <button className="context-menu-item danger" onClick={() => remove(menu.entry)}>Delete</button>
+        <div ref={menuRef} className="context-menu" style={{ top: menu.y, left: menu.x }} onMouseDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.stopPropagation()}>
+          {menu.entry?.isDirectory ? <button className="context-menu-item" onClick={() => { onOpenTerminalHere(menu.entry!.path); setMenu(null); }}>Open terminal here</button> : null}
+          {menu.entry?.isDirectory || !menu.entry ? <button className="context-menu-item" onClick={() => createFileIn(menu.entry?.path ?? rootPath)}>New file</button> : null}
+          {menu.entry?.isDirectory || !menu.entry ? <button className="context-menu-item" onClick={() => createFolderIn(menu.entry?.path ?? rootPath)}>New folder</button> : null}
+          {menu.entry ? <button className="context-menu-item" onClick={() => rename(menu.entry!)}>Rename</button> : null}
+          {menu.entry ? <button className="context-menu-item" onClick={() => { void api.fs.revealInExplorer(menu.entry!.path); setMenu(null); }}>Reveal in Explorer</button> : null}
+          {menu.entry ? <button className="context-menu-item danger" onClick={() => remove(menu.entry!)}>Delete</button> : null}
         </div>
       ) : null}
     </aside>

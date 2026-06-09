@@ -1,5 +1,23 @@
 node_modules
 /dist
 /dist-electron
+/release
 .DS_Store
 *.log
+
+# Claude Code local settings (machine-specific permissions)
+.claude/settings.local.json
+
+# Agent/automation session artifacts
+.pi-agent-browser-artifacts/
+pi-session-*.html
+
+# Temporary and debug working files
+tmp-*.txt
+tmp-*.json
+diff-children.json
+side-layout.json
+compare-only-gap.png
+side-by-side-gap.png
+side-by-side-gap-fixed.png
+stackdock-source-control.png

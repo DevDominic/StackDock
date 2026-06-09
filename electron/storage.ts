@@ -30,6 +30,10 @@ export function getTerminalSnapshotsDir() {
   return path.join(getDataDir(), 'terminal-snapshots');
 }
 
+export function getTerminalStatePath() {
+  return path.join(getDataDir(), 'terminal-state.json');
+}
+
 export function getLogsDir() {
   return path.join(getDataDir(), 'logs');
 }

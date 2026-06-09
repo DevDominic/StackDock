@@ -359,6 +359,23 @@ html[data-window-controls="native"] .topbar-right { padding-right: 138px; }
   text-transform: uppercase;
   color: var(--muted);
 }
+.panel-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  box-shadow: none;
+}
+.panel-icon-btn:hover { background: var(--hover); color: var(--text); border: none; }
+.panel-icon-btn:active { transform: none; box-shadow: none; }
 .tree-list { flex: 1; overflow: auto; min-height: 0; scrollbar-gutter: stable; }
 .git-panel { overflow: auto; scrollbar-gutter: stable; }
 .git-list { overflow: visible; min-height: 0; }
@@ -681,6 +698,10 @@ html[data-window-controls="native"] .topbar-right { padding-right: 138px; }
 .web-toolbar .web-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); padding: 0 6px; }
 .web-frame { display: flex; flex: 1; min-height: 0; width: 100%; border: none; background: var(--bg); }
 .editor-wrap { position: relative; display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.media-preview { flex: 1; min-width: 0; min-height: 0; display: grid; place-items: center; gap: 10px; padding: 18px; overflow: auto; background: var(--editor-bg); }
+.media-preview img, .media-preview video { max-width: 100%; max-height: calc(100vh - 150px); object-fit: contain; }
+.media-preview audio { width: min(640px, 100%); }
+.media-meta { align-self: end; font-size: 12px; }
 .monaco-host { flex: 1; min-width: 0; min-height: 0; width: 100%; height: 100%; overflow: hidden; }
 .monaco-host .monaco-editor, .monaco-host .monaco-monospace, .monaco-host .view-line { font-family: var(--code-font) !important; font-weight: var(--code-font-weight); font-stretch: var(--code-font-width); font-feature-settings: var(--code-font-features); font-variation-settings: var(--code-font-variations); }
 .monaco-diff-host { display: block; }
