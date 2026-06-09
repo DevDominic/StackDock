@@ -1,5 +1,5 @@
 import path from 'path';
-import type { Workspace, WorkspaceLayout } from '../src/shared/types';
+import type { AppRestoreState, TerminalAttachmentOptions, TerminalAttachmentSource, Workspace, WorkspaceLayout } from '../src/shared/types';
 
 export function assertString(value: unknown, name: string): string {
   if (typeof value !== 'string') throw new Error(`${name} must be string`);
@@ -36,9 +36,31 @@ export function assertWorkspaceLike(value: unknown): Workspace {
   assertAbsolutePath(workspace?.path, 'workspace.path');
   return workspace;
 }
+export function assertRestoreStateLike(value: unknown): AppRestoreState {
+  if (value == null || typeof value !== 'object') throw new Error('restore state invalid');
+  const state = value as AppRestoreState;
+  return {
+    lastWorkspaceId: state.lastWorkspaceId == null ? undefined : assertNonEmptyString(state.lastWorkspaceId, 'lastWorkspaceId'),
+    lastTerminalRestoreId: state.lastTerminalRestoreId == null ? undefined : assertNonEmptyString(state.lastTerminalRestoreId, 'lastTerminalRestoreId'),
+    lastTerminalRuntimeId: state.lastTerminalRuntimeId == null ? undefined : assertNonEmptyString(state.lastTerminalRuntimeId, 'lastTerminalRuntimeId'),
+  };
+}
+
 export function assertLayoutLike(value: unknown): WorkspaceLayout {
   const layout = value as WorkspaceLayout;
   assertNonEmptyString(layout?.workspaceId, 'layout.workspaceId');
   if (!layout.panels || !layout.editors || !Array.isArray(layout.terminals)) throw new Error('layout shape invalid');
   return layout;
+}
+export function assertTerminalAttachmentSource(value: unknown, name: string): TerminalAttachmentSource {
+  const source = assertNonEmptyString(value, name);
+  if (source !== 'drop' && source !== 'paste-file' && source !== 'paste-image') throw new Error(`${name} invalid`);
+  return source;
+}
+export function assertTerminalAttachmentOptions(value: unknown): TerminalAttachmentOptions | undefined {
+  if (value == null) return undefined;
+  if (typeof value !== 'object') throw new Error('attachment options invalid');
+  const options = value as TerminalAttachmentOptions;
+  if (options.largeFileThresholdBytes == null) return {};
+  return { largeFileThresholdBytes: assertNumber(options.largeFileThresholdBytes, 'largeFileThresholdBytes', 1, 1024 * 1024 * 1024) };
 }

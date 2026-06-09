@@ -122,7 +122,7 @@ export function WorkspaceDashboard({ workspaces, onAdd, onCreate, onOpen, onRemo
         <div className="workspace-grid">
           {filtered.map((workspace) => {
             const status = statuses[workspace.id];
-            const dirty = status?.files.length ?? 0;
+            const changeCount = status?.files.length ?? 0;
             const when = workspace.lastOpenedAt ? `Opened ${new Date(workspace.lastOpenedAt).toLocaleDateString()}` : `Created ${new Date(workspace.createdAt).toLocaleDateString()}`;
             return (
               <article key={workspace.id} className={`ws-card${workspace.pinned ? ' pinned' : ''}`} onDoubleClick={() => onOpen(workspace.id)}>
@@ -138,7 +138,7 @@ export function WorkspaceDashboard({ workspaces, onAdd, onCreate, onOpen, onRemo
                 </div>
                 <div className="ws-chips">
                   <span className="chip"><Icon path={mdiSourceBranch} /> {status?.branch ?? '—'}</span>
-                  <span className={`chip${dirty ? ' dirty' : ''}`}>{dirty ? `${dirty} dirty` : 'Clean'}</span>
+                  <span className={`chip${changeCount ? ' dirty' : ''}`}>{changeCount ? `${changeCount} ${changeCount === 1 ? 'change' : 'changes'}` : 'Clean'}</span>
                   <span className="chip subtle">{when}</span>
                 </div>
                 <div className="ws-actions">

@@ -1,17 +1,38 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import fs from 'fs/promises';
+import os from 'os';
 import path from 'path';
-import { addWorkspace, createWorkspace, listWorkspaces, loadLayout, removeWorkspace, saveLayout, updateWorkspace } from './workspaceStore';
+import { addWorkspace, createWorkspace, listWorkspaces, loadLayout, loadRestoreState, removeWorkspace, saveLayout, saveRestoreState, updateWorkspace } from './workspaceStore';
 import { createFile, createFolder, deletePath, readDirectory, readFile, renamePath, revealInExplorer, writeFile } from './fileService';
 import { addAll, commit, discardFile, getGitDiff, getGitFileContents, getGitStatus, stageFile, unstageFile } from './gitService';
-import { createTerminal, getTerminalProfiles, killTerminal, resizeTerminal, setTerminalWindow, writeTerminal } from './terminalManager';
+import { createTerminal, flushTerminalSnapshots, forgetTerminalSnapshot, getTerminalProfiles, getTerminalSnapshot, killTerminal, resizeTerminal, setTerminalWindow, setVisibleTerminals, writeTerminal } from './terminalManager';
 import { ensureDataDirs } from './storage';
 import { logError } from './log';
 import { loadSettings, saveSettings } from './configStore';
 import { loadAutomation, loadAutomationRaw, saveAutomationRaw } from './automationStore';
-import { assertAbsolutePath, assertLayoutLike, assertNonEmptyString, assertNumber, assertSafeFileName, assertString, assertWorkspaceLike } from './validation';
+import { inspectAttachmentPath, savePastedImageAttachment } from './attachmentService';
+import { assertAbsolutePath, assertLayoutLike, assertNonEmptyString, assertNumber, assertRestoreStateLike, assertSafeFileName, assertString, assertTerminalAttachmentOptions, assertTerminalAttachmentSource, assertWorkspaceLike } from './validation';
 
 let mainWindow: BrowserWindow | null = null;
+let quittingAfterSnapshotFlush = false;
+const nativeWindowControls = isWindows11();
+
+// Make dev Electron sessions attachable by browser automation tools such as
+// dev-only by default; packaged builds can opt in explicitly with
+// STACKDOCK_REMOTE_DEBUGGING_PORT if needed for QA.
+const remoteDebuggingPort = process.env.STACKDOCK_REMOTE_DEBUGGING_PORT ?? (!app.isPackaged ? '9222' : '');
+if (remoteDebuggingPort) app.commandLine.appendSwitch('remote-debugging-port', remoteDebuggingPort);
+const automationMode = process.env.STACKDOCK_AGENT_BROWSER === '1' || process.argv.includes('--agent-browser');
+
+function isWindows11() {
+  if (process.platform !== 'win32') return false;
+  const build = Number(os.release().split('.')[2] ?? 0);
+  return build >= 22000;
+}
+
+function windowControlsStyle() {
+  return nativeWindowControls ? 'native' : 'custom';
+}
 
 async function createWindow() {
   mainWindow = new BrowserWindow({
@@ -20,6 +41,9 @@ async function createWindow() {
     backgroundColor: '#0b0d12',
     title: 'StackDock',
     autoHideMenuBar: true,
+    ...(nativeWindowControls
+      ? { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#1e2227', symbolColor: '#abb2bf', height: 42 } }
+      : { frame: false }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -35,10 +59,24 @@ async function createWindow() {
 
   if (!app.isPackaged) {
     await mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
+    if (process.env.STACKDOCK_OPEN_DEVTOOLS !== '0') mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     await mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
   }
+
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    const key = input.key.toLowerCase();
+    const reload = key === 'f5' || ((input.control || input.meta) && key === 'r');
+    const devtools = key === 'f12' || ((input.control || input.meta) && input.shift && key === 'i');
+    if (reload) {
+      event.preventDefault();
+      if (input.shift) mainWindow?.webContents.reloadIgnoringCache();
+      else mainWindow?.webContents.reload();
+    } else if (devtools) {
+      event.preventDefault();
+      mainWindow?.webContents.toggleDevTools();
+    }
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -66,6 +104,26 @@ function registerIpc() {
     if (!filePath) return null;
     return { path: filePath, content: await fs.readFile(filePath, 'utf8') };
   });
+  ipcMain.handle('app:minimizeWindow', async () => { mainWindow?.minimize(); });
+  ipcMain.handle('app:toggleMaximizeWindow', async () => {
+    if (!mainWindow) return false;
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    else mainWindow.maximize();
+    return mainWindow.isMaximized();
+  });
+  ipcMain.handle('app:closeWindow', async () => { mainWindow?.close(); });
+  ipcMain.handle('app:isWindowMaximized', async () => mainWindow?.isMaximized() ?? false);
+  ipcMain.handle('app:windowControlsStyle', async () => windowControlsStyle());
+  ipcMain.handle('app:setTitleBarOverlay', async (_event, options: unknown) => {
+    if (!mainWindow || !nativeWindowControls) return;
+    const value = options && typeof options === 'object' ? options as { color?: unknown; symbolColor?: unknown; height?: unknown } : {};
+    const color = typeof value.color === 'string' ? value.color : '#1e2227';
+    const symbolColor = typeof value.symbolColor === 'string' ? value.symbolColor : '#abb2bf';
+    const height = typeof value.height === 'number' ? Math.max(32, Math.min(64, Math.round(value.height))) : 42;
+    mainWindow.setTitleBarOverlay({ color, symbolColor, height });
+  });
+  ipcMain.handle('app:loadRestoreState', async () => loadRestoreState());
+  ipcMain.handle('app:saveRestoreState', async (_event, state: unknown) => saveRestoreState(assertRestoreStateLike(state)));
 
   ipcMain.handle('workspaces:list', async () => listWorkspaces());
   ipcMain.handle('workspaces:add', async (_event, folderPath: unknown) => {
@@ -121,16 +179,26 @@ function registerIpc() {
   ipcMain.handle('automation:loadRaw', async () => loadAutomationRaw());
   ipcMain.handle('automation:saveRaw', async (_event, content: unknown) => saveAutomationRaw(assertString(content, 'content')));
 
+  ipcMain.handle('attachments:inspectPath', async (_event, targetPath: unknown, source: unknown, options?: unknown) => inspectAttachmentPath(assertAbsolutePath(targetPath, 'targetPath'), assertTerminalAttachmentSource(source, 'source'), assertTerminalAttachmentOptions(options)));
+  ipcMain.handle('attachments:savePastedImage', async (_event, dataUrl: unknown, name?: unknown, options?: unknown) => savePastedImageAttachment(assertNonEmptyString(dataUrl, 'dataUrl'), name == null ? undefined : assertNonEmptyString(name, 'name'), assertTerminalAttachmentOptions(options)));
+
   ipcMain.handle('terminal:profiles', async () => getTerminalProfiles());
-  ipcMain.handle('terminal:create', async (_event, profileId: unknown, cwd: unknown, name?: unknown, startupCommand?: unknown) => createTerminal(
+  ipcMain.handle('terminal:create', async (_event, profileId: unknown, cwd: unknown, name?: unknown, startupCommand?: unknown, restoreId?: unknown) => createTerminal(
     assertNonEmptyString(profileId, 'profileId'),
     assertAbsolutePath(cwd, 'cwd'),
     name == null ? undefined : assertNonEmptyString(name, 'name'),
     startupCommand == null || (typeof startupCommand === 'string' && !startupCommand.trim()) ? undefined : assertNonEmptyString(startupCommand, 'startupCommand'),
+    restoreId == null ? undefined : assertNonEmptyString(restoreId, 'restoreId'),
   ));
   ipcMain.handle('terminal:write', async (_event, id: unknown, data: unknown) => writeTerminal(assertNonEmptyString(id, 'id'), assertString(data, 'data')));
   ipcMain.handle('terminal:resize', async (_event, id: unknown, cols: unknown, rows: unknown) => resizeTerminal(assertNonEmptyString(id, 'id'), assertNumber(cols, 'cols', 2, 500), assertNumber(rows, 'rows', 1, 500)));
+  ipcMain.handle('terminal:setVisible', async (_event, ids: unknown) => {
+    if (!Array.isArray(ids)) throw new Error('ids must be an array');
+    setVisibleTerminals(ids.map((id, index) => assertNonEmptyString(id, `ids[${index}]`)));
+  });
   ipcMain.handle('terminal:kill', async (_event, id: unknown) => killTerminal(assertNonEmptyString(id, 'id')));
+  ipcMain.handle('terminal:snapshot', async (_event, idOrRestoreId: unknown) => getTerminalSnapshot(assertNonEmptyString(idOrRestoreId, 'idOrRestoreId')));
+  ipcMain.handle('terminal:forgetSnapshot', async (_event, idOrRestoreId: unknown) => forgetTerminalSnapshot(assertNonEmptyString(idOrRestoreId, 'idOrRestoreId')));
 }
 
 app.whenReady().then(async () => {
@@ -144,6 +212,13 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow();
   });
+});
+
+app.on('before-quit', (event) => {
+  if (quittingAfterSnapshotFlush) return;
+  event.preventDefault();
+  quittingAfterSnapshotFlush = true;
+  void flushTerminalSnapshots().catch((error) => logError('flushTerminalSnapshots', error)).finally(() => app.quit());
 });
 
 app.on('window-all-closed', () => {

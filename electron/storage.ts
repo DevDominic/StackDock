@@ -22,12 +22,26 @@ export function getLayoutsDir() {
   return path.join(getDataDir(), 'layouts');
 }
 
+export function getRestoreStatePath() {
+  return path.join(getDataDir(), 'restore-state.json');
+}
+
+export function getTerminalSnapshotsDir() {
+  return path.join(getDataDir(), 'terminal-snapshots');
+}
+
 export function getLogsDir() {
   return path.join(getDataDir(), 'logs');
+}
+
+export function getAttachmentCacheDir() {
+  return path.join(getDataDir(), 'attachments');
 }
 
 export async function ensureDataDirs() {
   await fs.mkdir(getDataDir(), { recursive: true });
   await fs.mkdir(getLayoutsDir(), { recursive: true });
+  await fs.mkdir(getTerminalSnapshotsDir(), { recursive: true });
   await fs.mkdir(getLogsDir(), { recursive: true });
+  await fs.mkdir(getAttachmentCacheDir(), { recursive: true });
 }

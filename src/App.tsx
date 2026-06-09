@@ -1,5 +1,6 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { WorkspaceDashboard } from './components/dashboard/WorkspaceDashboard';
+import { TitleBar } from './components/TitleBar';
 import { api } from './lib/api';
 import { useWorkspaceStore } from './state/workspaceStore';
 import { applyTheme } from './lib/themeSupport';
@@ -7,9 +8,15 @@ import type { StackDockSettings } from './shared/types';
 
 const WorkspaceShell = lazy(() => import('./components/workspace/WorkspaceShell.js').then((module) => ({ default: module.WorkspaceShell })));
 
+function applyUiFont(settings: StackDockSettings) {
+  document.documentElement.style.setProperty('--ui-font', settings.ui.fontFamily);
+  document.documentElement.style.setProperty('--ui-font-size', `${settings.ui.fontSize}px`);
+}
+
 export default function App() {
   const { workspaces, activeWorkspaceId, loading, error, reload, addWorkspace, createWorkspace, duplicateWorkspace, openWorkspace, closeWorkspace, removeWorkspace, updateWorkspace } = useWorkspaceStore();
   const [settings, setSettings] = useState<StackDockSettings | null>(null);
+  const restoredRef = useRef(false);
 
   useEffect(() => {
     void reload();
@@ -20,13 +27,23 @@ export default function App() {
     api.settings.load().then((loaded) => {
       if (!active) return;
       setSettings(loaded);
+      applyUiFont(loaded);
       applyTheme(loaded.themeId, loaded.importedThemes);
     }).catch(() => undefined);
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    if (restoredRef.current || loading || activeWorkspaceId || !workspaces.length || !settings) return;
+    restoredRef.current = true;
+    api.app.loadRestoreState().then((state) => {
+      if (state.lastWorkspaceId && workspaces.some((workspace) => workspace.id === state.lastWorkspaceId)) return openWorkspace(state.lastWorkspaceId);
+    }).catch(() => undefined);
+  }, [activeWorkspaceId, loading, openWorkspace, settings, workspaces]);
+
   function handleSettingsApplied(next: StackDockSettings) {
     setSettings(next);
+    applyUiFont(next);
     applyTheme(next.themeId, next.importedThemes);
   }
 
@@ -45,16 +62,20 @@ export default function App() {
 
   if (activeWorkspace) {
     return (
-      <Suspense fallback={<main className="app-shell"><div className="empty-pad muted">Loading workspace…</div></main>}>
-        <WorkspaceShell workspace={activeWorkspace} workspaces={workspaces} settings={settings} onSettingsApplied={handleSettingsApplied} onBack={closeWorkspace} onUpdateWorkspace={updateWorkspace} onOpenWorkspace={openWorkspace} />
-      </Suspense>
+      <div className="root-shell">
+        <Suspense fallback={<main className="app-shell"><div className="empty-pad muted">Loading workspace…</div></main>}>
+          <WorkspaceShell workspace={activeWorkspace} workspaces={workspaces} settings={settings} onSettingsApplied={handleSettingsApplied} onBack={closeWorkspace} onUpdateWorkspace={updateWorkspace} onOpenWorkspace={openWorkspace} />
+        </Suspense>
+      </div>
     );
   }
 
   return (
-    <main className="app-shell">
-      {error ? <div className="banner error">{error}</div> : null}
-      <WorkspaceDashboard
+    <div className="root-shell">
+      <TitleBar title="StackDock" />
+      <main className="app-shell">
+        {error ? <div className="banner error">{error}</div> : null}
+        <WorkspaceDashboard
         workspaces={workspaces}
         onAdd={handleAdd}
         onOpen={openWorkspace}
@@ -66,7 +87,8 @@ export default function App() {
         busy={loading}
         settings={settings}
         onSettingsApplied={handleSettingsApplied}
-      />
-    </main>
+        />
+      </main>
+    </div>
   );
 }

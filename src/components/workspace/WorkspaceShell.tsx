@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import type { AutomationConfig, GitFileStatus, GitStatus, PaletteCommand, StackDockSettings, TerminalProfile, Workspace, WorkspaceLayout, WorkspaceTerminalSession } from '../../shared/types';
 import { api } from '../../lib/api';
@@ -11,10 +11,13 @@ import { WebTabPanel, type WebTab } from './WebTabPanel';
 import { GitPanel } from './GitPanel';
 import { TerminalPanel } from './TerminalPanel';
 import { CommandLauncher, type CommandAction } from './CommandLauncher';
+import { SessionSwitcher } from './SessionSwitcher';
 import { SettingsModal, type SettingsTab } from './SettingsModal';
 import { StatusBar } from './StatusBar';
 import { applyTheme } from '../../lib/themeSupport';
 import { GlobalSessionsSidebar } from './GlobalSessionsSidebar';
+import { WindowControls } from '../TitleBar';
+import { FolderIcon, FolderOpenIcon, GitBranchIcon, HomeIcon, PanelLeftIcon, SettingsIcon } from '../icons';
 
 const EditorPanel = lazy(() => import('./EditorPanel.js').then((module) => ({ default: module.EditorPanel })));
 
@@ -74,6 +77,16 @@ function baseName(targetPath: string) {
   return targetPath.split(/[\\/]/).filter(Boolean).pop() ?? targetPath;
 }
 
+function stripAnsi(value: string) {
+  return value.replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '').replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
+}
+
+function isPiSnapshotOutput(output?: string) {
+  if (!output) return false;
+  const text = stripAnsi(output);
+  return /\bpi\s+v\d+\.\d+\.\d+/i.test(text) && /(Model scope:|caveman level:|OpenAI cache|\bMCP:\s*\d+\/\d+)/i.test(text);
+}
+
 interface Props {
   workspace: Workspace;
   onBack(): void;
@@ -87,6 +100,7 @@ interface Props {
 export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspaces, onOpenWorkspace, settings: appSettings, onSettingsApplied }: Props) {
   const { showToast } = useToast();
   const [layout, setLayout] = useState<WorkspaceLayout | null>(null);
+  const [layoutHydrated, setLayoutHydrated] = useState(false);
   const [git, setGit] = useState<GitStatus | null>(null);
   const [editorDiff, setEditorDiff] = useState<EditorDiffModel | null>(null);
   const [diffMode, setDiffMode] = useState<EditorDiffMode>('side-by-side');
@@ -115,15 +129,22 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   if (mainView === 'web' && !openLinks.length) mainView = 'terminal';
   const [selectedGitFile, setSelectedGitFile] = useState<GitFileStatus | null>(null);
   const [selectedGitStaged, setSelectedGitStaged] = useState(false);
+  const [selectedStagedGitPaths, setSelectedStagedGitPaths] = useState<string[]>([]);
+  const [selectedChangeGitPaths, setSelectedChangeGitPaths] = useState<string[]>([]);
+  const [lastSelectedGitPath, setLastSelectedGitPath] = useState<{ group: 'staged' | 'changes'; path: string } | null>(null);
   const [gitError, setGitError] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [launcherOpen, setLauncherOpen] = useState(false);
+  const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>('general');
   const [tabMenu, setTabMenu] = useState<{ file: OpenFileTab; groupId: string; x: number; y: number } | null>(null);
-  const [sidebarTab, setSidebarTab] = useState<'explorer' | 'git'>('explorer');
+  const [terminalTabMenu, setTerminalTabMenu] = useState<{ x: number; y: number } | null>(null);
+  const [tabOverflow, setTabOverflow] = useState({ left: false, right: false });
   const autoStartedRef = useRef<string | null>(null);
   const sessionsRef = useRef<WorkspaceTerminalSession[]>([]);
+  const savedLayoutRef = useRef<WorkspaceLayout | null>(null);
+  const tabStripRef = useRef<HTMLDivElement>(null);
 
   const defaultProfile = useMemo(() => profiles[0], [profiles]);
 
@@ -139,7 +160,6 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     sessionsRef.current = sessions;
   }, [sessions]);
 
-
   function updatePanels(next: Partial<WorkspaceLayout['panels']>) {
     setLayout((current) => {
       const base = current ?? getDefaultLayout(workspace.id);
@@ -153,6 +173,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
 
   useEffect(() => {
     let active = true;
+    setLayoutHydrated(false);
     (async () => {
       const [loadedLayout, status, loadedSettings, terminalProfiles, loadedAutomation] = await Promise.all([
         api.workspaces.loadLayout(workspace.id),
@@ -177,11 +198,20 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       let createdSessions = false;
       try {
         if (!sessionsRef.current.length && loadedLayout?.terminals.length) {
+          let restoredActiveRuntimeId: string | null = null;
           for (const session of loadedLayout.terminals) {
-            const created = await sessionStore.createSession({ workspaceId: workspace.id, workspaceName: workspace.name, workspacePath: workspace.path, profileId: session.profileId, cwd: session.cwd, name: session.name, startupCommand: session.startupCommand });
-            firstSessionId ??= created.id;
+            const snapshot = session.restoreId ? await api.terminal.snapshot(session.restoreId).catch(() => null) : null;
+            const piResumeCommand = session.piResumeCommand ?? snapshot?.piResumeCommand;
+            const startupCommand = piResumeCommand || session.startupCommand || (isPiSnapshotOutput(snapshot?.output) ? 'pi --continue' : undefined);
+            const created = await sessionStore.createSession({ workspaceId: workspace.id, workspaceName: workspace.name, workspacePath: workspace.path, profileId: session.profileId, cwd: session.cwd, name: session.name, startupCommand, restoreId: session.restoreId });
+            const restoredSession = { ...created, originalStartupCommand: session.originalStartupCommand ?? session.startupCommand, piSessionId: session.piSessionId ?? snapshot?.piSessionId, piResumeCommand, splitGroupId: session.splitGroupId, splitDirection: session.splitDirection };
+            sessionStore.replaceSession(created.id, restoredSession);
+            if (session.restoreId && session.restoreId === loadedLayout.activeTerminalRestoreId) restoredActiveRuntimeId = restoredSession.id;
+            if (session.id === loadedLayout.activeTerminalRuntimeId) restoredActiveRuntimeId = restoredSession.id;
+            firstSessionId ??= restoredSession.id;
             createdSessions = true;
           }
+          if (restoredActiveRuntimeId) firstSessionId = restoredActiveRuntimeId;
         } else if (!sessionsRef.current.length && terminalProfiles[0]) {
           const created = await sessionStore.createSession({ workspaceId: workspace.id, workspaceName: workspace.name, workspacePath: workspace.path, profileId: setupProfile ?? terminalProfiles[0].id, cwd: workspace.path, name: 'Terminal', startupCommand: setup?.newSessionCommand });
           firstSessionId ??= created.id;
@@ -228,6 +258,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
           await runPaletteCommand(command);
         }
       }
+      if (active) setLayoutHydrated(true);
     })();
     return () => {
       active = false;
@@ -239,32 +270,41 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }, [workspace.id]);
 
   useEffect(() => {
+    if (!layoutHydrated) return;
+    const nextLayout: WorkspaceLayout = {
+      workspaceId: workspace.id,
+      panels: layout?.panels ?? {
+        fileTreeWidth: 280,
+        gitPanelWidth: 320,
+        terminalHeight: 280,
+        fileTreeVisible: true,
+        gitPanelVisible: true,
+        terminalVisible: true,
+      },
+      editors: {
+        // Persist the union of files open across this workspace's sessions so
+        // none are lost on reload; split groups restore from the active session.
+        openFiles: [...new Set(sessions.flatMap((session) => normalizeEditors(editorsBySession[session.id]).editorGroups.flatMap((group) => group.openFiles.map((file) => file.path))))],
+        activeFile: activeFilePath ?? undefined,
+        groups: activeEditors.editorGroups.map((group) => ({ openFiles: group.openFiles.map((file) => file.path), activeFile: group.activeFile ?? undefined })),
+        activeGroupIndex: Math.max(0, activeEditors.editorGroups.findIndex((group) => group.id === activeEditors.activeEditorGroup)),
+        splitOrientation: activeEditors.splitOrientation,
+      },
+      activeTerminalRestoreId: activeTerminalId ? sessions.find((session) => session.id === activeTerminalId)?.restoreId : undefined,
+      activeTerminalRuntimeId: activeTerminalId ?? undefined,
+      terminals: sessions,
+    };
+    savedLayoutRef.current = nextLayout;
     const save = window.setTimeout(() => {
-      const nextLayout: WorkspaceLayout = {
-        workspaceId: workspace.id,
-        panels: layout?.panels ?? {
-          fileTreeWidth: 280,
-          gitPanelWidth: 320,
-          terminalHeight: 280,
-          fileTreeVisible: true,
-          gitPanelVisible: true,
-          terminalVisible: true,
-        },
-        editors: {
-          // Persist the union of files open across this workspace's sessions so
-          // none are lost on reload; split groups restore from the active session.
-          openFiles: [...new Set(sessions.flatMap((session) => normalizeEditors(editorsBySession[session.id]).editorGroups.flatMap((group) => group.openFiles.map((file) => file.path))))],
-          activeFile: activeFilePath ?? undefined,
-          groups: activeEditors.editorGroups.map((group) => ({ openFiles: group.openFiles.map((file) => file.path), activeFile: group.activeFile ?? undefined })),
-          activeGroupIndex: Math.max(0, activeEditors.editorGroups.findIndex((group) => group.id === activeEditors.activeEditorGroup)),
-          splitOrientation: activeEditors.splitOrientation,
-        },
-        terminals: sessions,
-      };
       api.workspaces.saveLayout(nextLayout).catch(() => undefined);
     }, 500);
     return () => window.clearTimeout(save);
-  }, [workspace.id, layout, editorsBySession, activeFilePath, sessions]);
+  }, [workspace.id, layout, editorsBySession, activeFilePath, sessions, layoutHydrated]);
+
+  useEffect(() => () => {
+    const latest = savedLayoutRef.current;
+    if (latest) void api.workspaces.saveLayout(latest).catch(() => undefined);
+  }, []);
 
   // Drop per-session tab state once a session is closed so it doesn't leak.
   useEffect(() => {
@@ -276,14 +316,39 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }, [allSessions]);
 
   useEffect(() => {
-    if (!tabMenu) return;
-    const close = () => setTabMenu(null);
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setTabMenu(null); };
+    if (!tabMenu && !terminalTabMenu) return;
+    const close = () => { setTabMenu(null); setTerminalTabMenu(null); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
     window.addEventListener('mousedown', close);
     window.addEventListener('resize', close);
     window.addEventListener('keydown', onKey);
     return () => { window.removeEventListener('mousedown', close); window.removeEventListener('resize', close); window.removeEventListener('keydown', onKey); };
-  }, [tabMenu]);
+  }, [tabMenu, terminalTabMenu]);
+
+  // Track whether the tab strip overflows so the scroll chevrons (which also
+  // signal hidden tabs) only show when there's something off-screen.
+  function updateTabOverflow() {
+    const el = tabStripRef.current;
+    if (!el) return;
+    const left = el.scrollLeft > 1;
+    const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+    setTabOverflow((prev) => (prev.left === left && prev.right === right ? prev : { left, right }));
+  }
+
+  useEffect(() => {
+    updateTabOverflow();
+    const el = tabStripRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(updateTabOverflow);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [contentTabCount, activeEditorGroup.id, openLinks.length, activeEditors.editorGroups.length]);
+
+  function scrollTabs(direction: -1 | 1) {
+    const el = tabStripRef.current;
+    if (!el) return;
+    el.scrollBy({ left: direction * Math.max(120, el.clientWidth * 0.6), behavior: 'smooth' });
+  }
 
   useEffect(() => {
     if (settings?.autoSave === false) return;
@@ -307,19 +372,29 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     return () => { window.clearInterval(interval); window.removeEventListener('focus', tick); };
   }, [workspace.path, settings?.gitRefreshIntervalSeconds, selectedGitFile?.path]);
 
-  // If the repo goes away (or never existed), don't sit on a hidden Git tab.
+  // If the repo goes away (or never existed), hide Source Control and clear its selection.
   useEffect(() => {
-    if (git && !git.isRepo && sidebarTab === 'git') setSidebarTab('explorer');
-  }, [git?.isRepo, sidebarTab]);
+    if (git && !git.isRepo) {
+      updatePanels({ gitPanelVisible: false });
+      setSelectedStagedGitPaths([]);
+      setSelectedChangeGitPaths([]);
+      setLastSelectedGitPath(null);
+    }
+  }, [git?.isRepo]);
 
   async function loadEditorDiff(file: GitFileStatus, staged = file.staged && !file.unstaged) {
     const contents = await api.git.fileContents(workspace.path, file.path, staged);
-    setEditorDiff({ path: joinPath(workspace.path, file.path), original: contents.original, staged });
+    setEditorDiff({ path: joinPath(workspace.path, file.path), original: contents.original, staged, untracked: file.untracked });
   }
 
   async function refreshGit() {
     const status = await api.git.status(workspace.path);
     setGit(status);
+    const stagedPaths = new Set(status.files.filter((file) => file.staged && !file.untracked).map((file) => file.path));
+    const changePaths = new Set(status.files.filter((file) => file.unstaged || file.untracked).map((file) => file.path));
+    setSelectedStagedGitPaths((paths) => paths.filter((path) => stagedPaths.has(path)));
+    setSelectedChangeGitPaths((paths) => paths.filter((path) => changePaths.has(path)));
+    setLastSelectedGitPath((last) => last && ((last.group === 'staged' && stagedPaths.has(last.path)) || (last.group === 'changes' && changePaths.has(last.path))) ? last : null);
     if (selectedGitFile) {
       const currentFile = status.files.find((file) => file.path === selectedGitFile.path);
       if (currentFile) {
@@ -435,6 +510,15 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         return { ...group, openFiles, activeFile };
       }).filter((group, _index, groups) => group.openFiles.length || groups.length === 1);
       return { ...prev, editorGroups, activeKind: anyOpenFiles ? prev.activeKind : prev.openLinks.length ? 'web' : 'terminal' };
+    });
+  }
+
+  // "Close Others" from the permanent Terminal tab: drop every file and web tab
+  // for the active session and fall back to the terminal view.
+  function closeAllContentTabs() {
+    patchActive((prev) => {
+      const group = createEditorGroup([], null);
+      return { ...prev, editorGroups: [group], activeEditorGroup: group.id, openLinks: [], activeKind: 'terminal', activeWeb: null };
     });
   }
 
@@ -565,8 +649,8 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     const old = allSessions.find((session) => session.id === id);
     if (!old) return;
     await api.terminal.kill(old.id);
-    const next = await api.terminal.create(old.profileId, cwd ?? old.cwd, old.name, old.startupCommand);
-    const replacement: WorkspaceTerminalSession = { ...next, workspaceId: old.workspaceId, workspaceName: old.workspaceName, workspacePath: old.workspacePath, splitGroupId: old.splitGroupId, splitDirection: old.splitDirection };
+    const next = await api.terminal.create(old.profileId, cwd ?? old.cwd, old.name, old.piResumeCommand || old.startupCommand, old.restoreId);
+    const replacement: WorkspaceTerminalSession = { ...next, workspaceId: old.workspaceId, workspaceName: old.workspaceName, workspacePath: old.workspacePath, originalStartupCommand: old.originalStartupCommand ?? old.startupCommand, piSessionId: old.piSessionId, piResumeCommand: old.piResumeCommand, splitGroupId: old.splitGroupId, splitDirection: old.splitDirection };
     sessionStore.replaceSession(id, replacement);
   }
 
@@ -600,36 +684,61 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     setGitError(error instanceof Error ? error.message : String(error));
   }
 
-  async function selectGitFile(file: GitFileStatus, staged = file.staged && !file.unstaged) {
+  async function openGitDiff(file: GitFileStatus, staged = file.staged && !file.unstaged) {
+    const absolutePath = joinPath(workspace.path, file.path);
+    const contents = await api.git.fileContents(workspace.path, file.path, staged);
+    setSelectedGitFile(file);
+    setSelectedGitStaged(staged);
+    setEditorDiff({ path: absolutePath, original: contents.original, staged, untracked: file.untracked });
+    patchActive((prev) => {
+      const targetGroupId = prev.activeEditorGroup;
+      const tab: OpenFileTab = { path: absolutePath, name: absolutePath.split(/[\\/]/).pop() ?? absolutePath, content: contents.modified, dirty: false };
+      return {
+        ...prev,
+        activeKind: 'editor',
+        activeEditorGroup: targetGroupId,
+        editorGroups: prev.editorGroups.map((group) => {
+          if (group.id !== targetGroupId) return group;
+          const exists = group.openFiles.some((item) => item.path === absolutePath);
+          const openFiles = exists
+            ? group.openFiles.map((item) => (item.path === absolutePath && !item.dirty ? { ...item, content: contents.modified } : item))
+            : [...group.openFiles, tab];
+          return { ...group, openFiles, activeFile: absolutePath };
+        }),
+      };
+    });
+  }
+
+  async function selectGitFile(file: GitFileStatus, staged = file.staged && !file.unstaged, event?: MouseEvent<HTMLButtonElement>, groupFiles: GitFileStatus[] = []) {
     try {
       setGitError(null);
-      const absolutePath = joinPath(workspace.path, file.path);
-      const contents = await api.git.fileContents(workspace.path, file.path, staged);
-      setSelectedGitFile(file);
-      setSelectedGitStaged(staged);
-      setEditorDiff({ path: absolutePath, original: contents.original, staged });
-      patchActive((prev) => {
-        const targetGroupId = prev.activeEditorGroup;
-        const tab: OpenFileTab = { path: absolutePath, name: absolutePath.split(/[\\/]/).pop() ?? absolutePath, content: contents.modified, dirty: false };
-        return {
-          ...prev,
-          activeKind: 'editor',
-          activeEditorGroup: targetGroupId,
-          editorGroups: prev.editorGroups.map((group) => {
-            if (group.id !== targetGroupId) return group;
-            const exists = group.openFiles.some((item) => item.path === absolutePath);
-            const openFiles = exists
-              ? group.openFiles.map((item) => (item.path === absolutePath && !item.dirty ? { ...item, content: contents.modified } : item))
-              : [...group.openFiles, tab];
-            return { ...group, openFiles, activeFile: absolutePath };
-          }),
-        };
-      });
+      const group: 'staged' | 'changes' = staged ? 'staged' : 'changes';
+      const currentPaths = group === 'staged' ? selectedStagedGitPaths : selectedChangeGitPaths;
+      let nextPaths = [file.path];
+      if (event?.shiftKey && lastSelectedGitPath?.group === group) {
+        const start = groupFiles.findIndex((item) => item.path === lastSelectedGitPath.path);
+        const end = groupFiles.findIndex((item) => item.path === file.path);
+        if (start >= 0 && end >= 0) {
+          const [from, to] = start < end ? [start, end] : [end, start];
+          nextPaths = groupFiles.slice(from, to + 1).map((item) => item.path);
+        }
+      } else if (event?.ctrlKey || event?.metaKey) {
+        nextPaths = currentPaths.includes(file.path) ? currentPaths.filter((path) => path !== file.path) : [...currentPaths, file.path];
+        if (!nextPaths.length) nextPaths = [file.path];
+      }
+      if (group === 'staged') { setSelectedStagedGitPaths(nextPaths); setSelectedChangeGitPaths([]); }
+      else { setSelectedChangeGitPaths(nextPaths); setSelectedStagedGitPaths([]); }
+      setLastSelectedGitPath({ group, path: file.path });
+      await openGitDiff(file, staged);
     } catch (error) { showGitError(error); }
   }
 
   async function stage(path: string) {
     try { setGitError(null); await api.git.stage(workspace.path, path); await refreshGit(); } catch (error) { showGitError(error); }
+  }
+
+  async function stagePaths(paths: string[]) {
+    try { setGitError(null); for (const path of paths) await api.git.stage(workspace.path, path); await refreshGit(); } catch (error) { showGitError(error); }
   }
 
   async function stageAll() {
@@ -640,13 +749,32 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     try { setGitError(null); await api.git.unstage(workspace.path, path); await refreshGit(); } catch (error) { showGitError(error); }
   }
 
+  async function unstagePaths(paths: string[]) {
+    try { setGitError(null); for (const path of paths) await api.git.unstage(workspace.path, path); await refreshGit(); } catch (error) { showGitError(error); }
+  }
+
+  async function discardPath(path: string) {
+    const file = selectedGitFile?.path === path ? selectedGitFile : git?.files.find((item) => item.path === path);
+    if (file?.untracked) await api.fs.deletePath(joinPath(workspace.path, path));
+    else await api.git.discard(workspace.path, path);
+  }
+
   async function discard(path: string) {
     if (settings?.confirmBeforeDiscard !== false && !window.confirm(`Discard changes in ${path}? This cannot be undone.`)) return;
     try {
       setGitError(null);
-      const file = selectedGitFile?.path === path ? selectedGitFile : git?.files.find((item) => item.path === path);
-      if (file?.untracked) await api.fs.deletePath(joinPath(workspace.path, path));
-      else await api.git.discard(workspace.path, path);
+      await discardPath(path);
+      await refreshGit();
+      setRefreshToken((token) => token + 1);
+    } catch (error) { showGitError(error); }
+  }
+
+  async function discardPaths(paths: string[]) {
+    if (!paths.length) return;
+    if (settings?.confirmBeforeDiscard !== false && !window.confirm(`Discard changes in ${paths.length} selected ${paths.length === 1 ? 'file' : 'files'}? This cannot be undone.`)) return;
+    try {
+      setGitError(null);
+      for (const path of paths) await discardPath(path);
       await refreshGit();
       setRefreshToken((token) => token + 1);
     } catch (error) { showGitError(error); }
@@ -656,29 +784,26 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     try { setGitError(null); await api.git.commit(workspace.path, message); await refreshGit(); showToast('Commit created', 'success'); } catch (error) { showGitError(error); showToast(getErrorMessage(error, 'Commit failed'), 'error'); }
   }
 
-  // Explorer and Git share the one sidebar pane. Clicking the active tab hides
-  // the sidebar; clicking the inactive tab switches to it (revealing it first).
   function selectSidebar(tab: 'explorer' | 'git') {
-    // Source control is only meaningful inside a repo.
-    const target = tab === 'git' && !isRepo ? 'explorer' : tab;
-    if (mergedLayout.panels.fileTreeVisible && sidebarTab === target) {
-      updatePanels({ fileTreeVisible: false });
-    } else {
-      setSidebarTab(target);
-      updatePanels({ fileTreeVisible: true });
-    }
+    if (tab === 'git' && !isRepo) return;
+    if (tab === 'explorer') updatePanels({ fileTreeVisible: !mergedLayout.panels.fileTreeVisible });
+    else updatePanels({ gitPanelVisible: !mergedLayout.panels.gitPanelVisible });
   }
 
   const defaultLayout = getDefaultLayout(workspace.id);
   const mergedLayout = layout ?? defaultLayout;
+  const explorerVisible = !!mergedLayout.panels.fileTreeVisible;
+  const gitVisible = !!mergedLayout.panels.gitPanelVisible && isRepo;
+  const sidebarVisible = explorerVisible || gitVisible;
+  const sessionsVisible = mergedLayout.panels.sessionsVisible !== false;
   const panelSizes = mergedLayout.panels.panelSizes ?? { sessions: 14, explorer: 18, main: 68, editor: 72, git: 28, upper: 62, terminal: 38 };
-  const safePanelSizes = getSafePanelSizes(panelSizes, mergedLayout.panels.fileTreeVisible);
+  const safePanelSizes = getSafePanelSizes(panelSizes, sidebarVisible, sessionsVisible);
   const launcherActions: CommandAction[] = [
     // User-defined commands first so they're front-and-center in the palette.
     ...(workspaceSetup?.commands ?? []).map((command) => ({ id: `ws:${command.id}`, label: command.label, description: command.command, run: () => runPaletteCommand(command) })),
     ...(automation?.commands ?? []).map((command) => ({ id: `global:${command.id}`, label: command.label, description: command.command, run: () => runPaletteCommand(command) })),
     { id: 'new-terminal', label: 'New Terminal', run: () => createTerminal(undefined, 'Terminal', '') },
-    { id: 'toggle-tree', label: 'Toggle Sidebar', run: () => updatePanels({ fileTreeVisible: !mergedLayout.panels.fileTreeVisible }) },
+    { id: 'toggle-tree', label: 'Toggle Sidebar', run: () => updatePanels({ fileTreeVisible: !explorerVisible, gitPanelVisible: false }) },
     { id: 'show-explorer', label: 'Show Explorer', run: () => selectSidebar('explorer') },
     ...(isRepo ? [{ id: 'show-git', label: 'Show Source Control', run: () => selectSidebar('git') }] : []),
     { id: 'show-terminal', label: 'Show Terminal', run: showTerminal },
@@ -693,9 +818,10 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       const inField = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT' || target?.isContentEditable;
       const key = event.key.toLowerCase();
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 'p') { event.preventDefault(); setLauncherOpen(true); return; }
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && key === 'p') { event.preventDefault(); setSessionSwitcherOpen(true); return; }
       if (inField) return;
       if ((event.ctrlKey || event.metaKey) && event.key === '`') { event.preventDefault(); toggleMainView(); }
-      if ((event.ctrlKey || event.metaKey) && key === 'b') { event.preventDefault(); updatePanels({ fileTreeVisible: !mergedLayout.panels.fileTreeVisible }); }
+      if ((event.ctrlKey || event.metaKey) && key === 'b') { event.preventDefault(); updatePanels({ fileTreeVisible: !explorerVisible, gitPanelVisible: false }); }
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 'e') { event.preventDefault(); selectSidebar('explorer'); }
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 'g') { event.preventDefault(); selectSidebar('git'); }
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 't') { event.preventDefault(); void createTerminal(undefined, 'Terminal', ''); }
@@ -706,63 +832,83 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [activeFilePath, activeWebId, mainView, activeTerminalId, defaultProfile?.id, sidebarTab, mergedLayout.panels.fileTreeVisible, openFiles.length, openLinks.length, workspaceSetup, profiles]);
+  }, [activeFilePath, activeWebId, mainView, activeTerminalId, defaultProfile?.id, explorerVisible, gitVisible, openFiles.length, openLinks.length, workspaceSetup, profiles]);
 
   return (
     <div className="workspace-shell workspace-terminal-mode">
-      <header className="topbar compact-topbar">
+      <header className="topbar compact-topbar workspace-titlebar">
         <div className="topbar-left">
-          <button className="ghost topbar-back" onClick={onBack} title="Back to workspaces">‹ Back</button>
+          <button className="topbar-icon-btn" onClick={onBack} title="Back to workspaces" aria-label="Back to workspaces"><HomeIcon /></button>
+          <span className="topbar-divider" aria-hidden />
           <div className="topbar-nav">
-            <button className={mergedLayout.panels.fileTreeVisible && sidebarTab === 'explorer' ? 'active-toggle' : ''} onClick={() => selectSidebar('explorer')}>Explorer</button>
-            {isRepo ? <button className={mergedLayout.panels.fileTreeVisible && sidebarTab === 'git' ? 'active-toggle' : ''} onClick={() => selectSidebar('git')}>Git</button> : null}
+            <button className={sessionsVisible ? 'topbar-icon-btn active-toggle' : 'topbar-icon-btn'} onClick={() => updatePanels({ sessionsVisible: !sessionsVisible })} title="Toggle Sessions" aria-label="Toggle Sessions"><PanelLeftIcon /></button>
+            <button className={explorerVisible ? 'topbar-icon-btn active-toggle' : 'topbar-icon-btn'} onClick={() => selectSidebar('explorer')} title="Explorer" aria-label="Explorer"><FolderIcon /></button>
+            {isRepo ? <button className={gitVisible ? 'topbar-icon-btn active-toggle' : 'topbar-icon-btn'} onClick={() => selectSidebar('git')} title="Source Control" aria-label="Source Control"><GitBranchIcon /></button> : null}
           </div>
         </div>
         <div className="topbar-title">
           <h2>{workspace.name}</h2>
           <span className="muted">{workspace.path}</span>
         </div>
-        <div className="topbar-actions">
-          {editorDiff ? (
-            <div className="diff-mode-control" title="Editor diff display mode">
-              <button className={diffMode === 'inline' ? 'active-toggle' : 'ghost'} onClick={() => setDiffMode('inline')}>Inline</button>
-              <button className={diffMode === 'side-by-side' ? 'active-toggle' : 'ghost'} onClick={() => setDiffMode('side-by-side')}>Side by side</button>
-              <button className={diffMode === 'compare-only' ? 'active-toggle' : 'ghost'} onClick={() => setDiffMode('compare-only')}>Compare only</button>
-            </div>
-          ) : null}
-          <button className="ghost" onClick={() => { setSettingsInitialTab('general'); setSettingsOpen(true); }}>Settings</button>
-          <button className="ghost" onClick={() => void api.fs.revealInExplorer(workspace.path)}>Open Folder</button>
+        <div className="topbar-right">
+          <div className="topbar-actions">
+            {editorDiff && !editorDiff.untracked ? (
+              <div className="diff-mode-control" role="group" aria-label="Editor diff display mode">
+                <button className={diffMode === 'inline' ? 'active-toggle' : ''} onClick={() => setDiffMode('inline')}>Inline</button>
+                <button className={diffMode === 'side-by-side' ? 'active-toggle' : ''} onClick={() => setDiffMode('side-by-side')}>Side by side</button>
+                <button className={diffMode === 'compare-only' ? 'active-toggle' : ''} onClick={() => setDiffMode('compare-only')}>Compare only</button>
+              </div>
+            ) : null}
+            <button className="topbar-icon-btn" onClick={() => { setSettingsInitialTab('general'); setSettingsOpen(true); }} title="Settings" aria-label="Settings"><SettingsIcon /></button>
+            <button className="topbar-icon-btn" onClick={() => void api.fs.revealInExplorer(workspace.path)} title="Open Folder" aria-label="Open Folder"><FolderOpenIcon /></button>
+          </div>
+          <span className="topbar-divider" aria-hidden />
+          <WindowControls />
         </div>
       </header>
 
-      <PanelGroup key={mergedLayout.panels.fileTreeVisible ? 'with-explorer' : 'without-explorer'} direction="horizontal" className="workspace-body with-global-sessions" onLayout={([sessionsSize, explorer, main]) => updatePanelSizes(mergedLayout.panels.fileTreeVisible ? { sessions: sessionsSize, explorer, main } : { sessions: sessionsSize, main: explorer })}>
-        <Panel id="sessions" order={1} defaultSize={safePanelSizes.sessions} minSize={10} className="global-sessions-panel">
-          <GlobalSessionsSidebar
-            workspaces={workspaces}
-            activeWorkspaceId={workspace.id}
-            activeSessionId={sessionStore.activeSessionId}
-            sessions={allSessions}
-            profiles={profiles}
-            defaultProfileId={workspaceSetup?.defaultTerminalProfile ?? settings?.defaultTerminalProfileId}
-            emptySessionsVisible={!!settings?.emptySessionsVisible}
-            showSessionCwdForAll={!!settings?.showSessionCwdForAll}
-            onCreateSession={async (target, profileId) => { const setup = automation?.workspaces[target.id]; await sessionStore.createSession({ workspaceId: target.id, workspaceName: target.name, workspacePath: target.path, profileId, cwd: target.path, name: 'Terminal', startupCommand: setup?.newSessionCommand }); if (target.id !== workspace.id) await onOpenWorkspace(target.id); }}
-            onSelectSession={(id) => { const target = allSessions.find((session) => session.id === id); sessionStore.setActiveSession(id); if (target && target.workspaceId !== workspace.id) void onOpenWorkspace(target.workspaceId); }}
-            onOpenWorkspace={(id) => void onOpenWorkspace(id)}
-            onCloseSession={(id) => void closeTerminal(id)}
-            onRenameSession={renameTerminal}
-            onRestartSession={(id) => void restartTerminal(id)}
-            onDuplicateSession={(id) => void duplicateTerminal(id)}
-            onSetCwd={(id, cwd) => void setTerminalCwd(id, cwd)}
-            onSplitSession={(id, direction) => void splitTerminal(id, direction)}
-          />
-        </Panel>
-        <PanelResizeHandle id="sessions-resize" className="resize-handle vertical" />
-        {mergedLayout.panels.fileTreeVisible ? (
+      <PanelGroup key={`${sessionsVisible ? 'sessions' : 'no-sessions'}-${sidebarVisible ? 'with-sidebar' : 'without-sidebar'}`} direction="horizontal" className="workspace-body with-global-sessions" onLayout={(sizes) => { let i = 0; const next: NonNullable<WorkspaceLayout['panels']['panelSizes']> = {}; if (sessionsVisible) next.sessions = sizes[i++]; if (sidebarVisible) next.explorer = sizes[i++]; next.main = sizes[i++]; updatePanelSizes(next); }}>
+        {sessionsVisible ? (
+          <>
+            <Panel id="sessions" order={1} defaultSize={safePanelSizes.sessions} minSize={10} className="global-sessions-panel">
+              <GlobalSessionsSidebar
+                workspaces={workspaces}
+                activeWorkspaceId={workspace.id}
+                activeSessionId={sessionStore.activeSessionId}
+                sessions={allSessions}
+                profiles={profiles}
+                defaultProfileId={workspaceSetup?.defaultTerminalProfile ?? settings?.defaultTerminalProfileId}
+                emptySessionsVisible={!!settings?.emptySessionsVisible}
+                showSessionCwdForAll={!!settings?.showSessionCwdForAll}
+                onCreateSession={async (target, profileId) => { const setup = automation?.workspaces[target.id]; await sessionStore.createSession({ workspaceId: target.id, workspaceName: target.name, workspacePath: target.path, profileId, cwd: target.path, name: 'Terminal', startupCommand: setup?.newSessionCommand }); if (target.id !== workspace.id) await onOpenWorkspace(target.id); }}
+                onSelectSession={(id) => { const target = allSessions.find((session) => session.id === id); sessionStore.setActiveSession(id); if (target && target.workspaceId !== workspace.id) void onOpenWorkspace(target.workspaceId); }}
+                onOpenWorkspace={(id) => void onOpenWorkspace(id)}
+                onCloseSession={(id) => void closeTerminal(id)}
+                onRenameSession={renameTerminal}
+                onRestartSession={(id) => void restartTerminal(id)}
+                onDuplicateSession={(id) => void duplicateTerminal(id)}
+                onSetCwd={(id, cwd) => void setTerminalCwd(id, cwd)}
+                onSplitSession={(id, direction) => void splitTerminal(id, direction)}
+              />
+            </Panel>
+            <PanelResizeHandle id="sessions-resize" className="resize-handle vertical" />
+          </>
+        ) : null}
+        {sidebarVisible ? (
           <>
             <Panel id="explorer" order={2} defaultSize={safePanelSizes.explorer} minSize={12} className="workspace-explorer">
-              {sidebarTab === 'git' && isRepo ? (
-                <GitPanel status={git} error={gitError} selectedFile={selectedGitFile} onSelectFile={selectGitFile} onStage={stage} onStageAll={stageAll} onUnstage={unstage} onDiscard={discard} onCommit={commit} onRefresh={refreshGit} />
+              {explorerVisible && gitVisible ? (
+                <PanelGroup direction="vertical" className="sidebar-stack" onLayout={([upper, gitSize]) => updatePanelSizes({ upper, git: gitSize })}>
+                  <Panel id="sidebar-files" defaultSize={panelSizes.upper ?? 58} minSize={20}>
+                    <FileTree rootPath={workspace.path} gitFiles={git?.files ?? []} onOpenFile={openFile} onOpenTerminalHere={openTerminalHere} refreshToken={refreshToken} />
+                  </Panel>
+                  <PanelResizeHandle id="sidebar-stack-resize" className="resize-handle horizontal" />
+                  <Panel id="sidebar-git" defaultSize={panelSizes.git ?? 42} minSize={20}>
+                    <GitPanel status={git} error={gitError} selectedFile={selectedGitFile} selectedStagedPaths={selectedStagedGitPaths} selectedChangePaths={selectedChangeGitPaths} onSelectFile={selectGitFile} onStage={stage} onStageSelected={stagePaths} onStageAll={stageAll} onUnstage={unstage} onUnstageSelected={unstagePaths} onDiscard={discard} onDiscardSelected={discardPaths} onCommit={commit} onRefresh={refreshGit} />
+                  </Panel>
+                </PanelGroup>
+              ) : gitVisible ? (
+                <GitPanel status={git} error={gitError} selectedFile={selectedGitFile} selectedStagedPaths={selectedStagedGitPaths} selectedChangePaths={selectedChangeGitPaths} onSelectFile={selectGitFile} onStage={stage} onStageSelected={stagePaths} onStageAll={stageAll} onUnstage={unstage} onUnstageSelected={unstagePaths} onDiscard={discard} onDiscardSelected={discardPaths} onCommit={commit} onRefresh={refreshGit} />
               ) : (
                 <FileTree rootPath={workspace.path} gitFiles={git?.files ?? []} onOpenFile={openFile} onOpenTerminalHere={openTerminalHere} refreshToken={refreshToken} />
               )}
@@ -776,14 +922,33 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
                 just the terminal there is nothing to switch between. */}
             {contentTabCount > 0 ? (
               <div className="editor-tabbar main-tabbar">
-                <div className="tab-strip">
+                {tabOverflow.left ? (
+                  <button className="tab-scroll-btn left" onClick={() => scrollTabs(-1)} title="Scroll tabs left" aria-label="Scroll tabs left">‹</button>
+                ) : null}
+                <div className="tab-strip" ref={tabStripRef} onScroll={updateTabOverflow} onWheel={(event) => { if (event.deltaY !== 0 && tabStripRef.current) tabStripRef.current.scrollLeft += event.deltaY; }}>
                   <div
                     className={`tab main-terminal-tab${mainView === 'terminal' ? ' active' : ''}`}
                     title="Terminal"
                     onClick={showTerminal}
+                    onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setTerminalTabMenu({ x: event.clientX, y: event.clientY }); }}
                   >
                     <span className="tab-name">Terminal</span>
                   </div>
+                  {activeEditorGroup.openFiles.map((file) => (
+                    <div
+                      key={`${activeEditorGroup.id}:${file.path}`}
+                      className={`tab${mainView === 'editor' && file.path === activeFilePath ? ' active' : ''}${file.dirty ? ' dirty' : ''}`}
+                      title={file.path}
+                      onClick={() => selectFile(file.path, activeEditorGroup.id)}
+                      onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setTabMenu({ file, groupId: activeEditorGroup.id, x: event.clientX, y: event.clientY }); }}
+                      onMouseDown={(event) => { if (event.button === 1) { event.preventDefault(); closeFile(file.path, activeEditorGroup.id); } }}
+                    >
+                      <span className="tab-name">{file.name}</span>
+                      <span className="tab-close" onClick={(event) => { event.stopPropagation(); closeFile(file.path, activeEditorGroup.id); }}>
+                        <span className="dot">●</span><span className="x">×</span>
+                      </span>
+                    </div>
+                  ))}
                   {openLinks.map((link) => (
                     <div
                       key={link.id}
@@ -800,6 +965,9 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
                     </div>
                   ))}
                 </div>
+                {tabOverflow.right ? (
+                  <button className="tab-scroll-btn right" onClick={() => scrollTabs(1)} title="Scroll tabs right" aria-label="Scroll tabs right">›</button>
+                ) : null}
                 {mainView === 'editor' && activeFilePath ? (
                   <div className="editor-tab-actions">
                     <button className="ghost" onClick={() => saveFile(activeFilePath)}>Save</button>
@@ -808,9 +976,14 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
                 ) : null}
               </div>
             ) : null}
+            {terminalTabMenu ? (
+              <div className="context-menu tab-context-menu" style={{ top: terminalTabMenu.y, left: terminalTabMenu.x }} onMouseDown={(event) => event.stopPropagation()}>
+                <button className="context-menu-item" disabled={contentTabCount === 0} onClick={() => { closeAllContentTabs(); setTerminalTabMenu(null); }}>Close Others</button>
+              </div>
+            ) : null}
             <div className="main-tab-content">
               <div className="main-tab-pane" style={{ display: mainView === 'terminal' ? 'flex' : 'none' }}>
-                <TerminalPanel sessions={sessions} activeId={activeTerminalId} onOpenLink={openLink} settings={settings} />
+                <TerminalPanel sessions={sessions} activeId={activeTerminalId} onOpenLink={openLink} settings={settings} isVisible={mainView === 'terminal'} onAttachmentError={(message) => showToast(message, 'error')} />
               </div>
               <div className="main-tab-pane" style={{ display: mainView === 'editor' ? 'flex' : 'none' }}>
                 {openFiles.length ? (
@@ -819,25 +992,6 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
                       {activeEditors.editorGroups.flatMap((group, index) => [
                         <Panel key={group.id} id={`editor-${group.id}`} minSize={20} className={group.id === activeEditors.activeEditorGroup ? 'editor-group-pane active' : 'editor-group-pane'}>
                           <div className="editor-group-shell" onMouseDown={() => patchActive((prev) => ({ ...prev, activeEditorGroup: group.id }))}>
-                            <div className="editor-tabbar editor-group-tabbar">
-                              <div className="tab-strip">
-                                {group.openFiles.map((file) => (
-                                  <div
-                                    key={`${group.id}:${file.path}`}
-                                    className={`tab${file.path === group.activeFile ? ' active' : ''}${file.dirty ? ' dirty' : ''}`}
-                                    title={file.path}
-                                    onClick={() => selectFile(file.path, group.id)}
-                                    onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setTabMenu({ file, groupId: group.id, x: event.clientX, y: event.clientY }); }}
-                                    onMouseDown={(event) => { if (event.button === 1) { event.preventDefault(); closeFile(file.path, group.id); } }}
-                                  >
-                                    <span className="tab-name">{file.name}</span>
-                                    <span className="tab-close" onClick={(event) => { event.stopPropagation(); closeFile(file.path, group.id); }}>
-                                      <span className="dot">●</span><span className="x">×</span>
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
                             <EditorPanel openFiles={group.openFiles} activePath={group.activeFile} onOpenFile={(path) => selectFile(path, group.id)} onChangeFile={changeFile} onSaveFile={saveFile} onCloseFile={(path) => closeFile(path, group.id)} settings={settings ?? undefined} diff={editorDiff} diffMode={diffMode} showTabs={false} visible={mainView === 'editor'} />
                           </div>
                         </Panel>,
@@ -874,6 +1028,13 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         actions={{ openGit: () => selectSidebar('git'), revealFolder: () => void api.fs.revealInExplorer(workspace.path) }}
       />
       <CommandLauncher open={launcherOpen} actions={launcherActions} onClose={() => setLauncherOpen(false)} />
+      <SessionSwitcher
+        open={sessionSwitcherOpen}
+        sessions={allSessions}
+        activeSessionId={sessionStore.activeSessionId}
+        onSelect={(id) => { const target = allSessions.find((session) => session.id === id); sessionStore.setActiveSession(id); if (target && target.workspaceId !== workspace.id) void onOpenWorkspace(target.workspaceId); }}
+        onClose={() => setSessionSwitcherOpen(false)}
+      />
       {settingsOpen && settings ? <SettingsModal settings={settings} currentWorkspaceId={workspace.id} initialTab={settingsInitialTab} onSave={async (next) => { const saved = await api.settings.save(next); setSettings(saved); applyTheme(saved.themeId, saved.importedThemes); onSettingsApplied?.(saved); setProfiles(await api.terminal.profiles()); }} onAutomationSaved={(config) => setAutomation(config)} onRunCommand={(command) => void runPaletteCommand(command)} onClose={() => setSettingsOpen(false)} /> : null}
     </div>
   );
@@ -883,8 +1044,8 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function getSafePanelSizes(panelSizes: NonNullable<WorkspaceLayout['panels']['panelSizes']>, explorerVisible: boolean) {
-  const sessions = clamp(panelSizes.sessions ?? 14, 10, 24);
+function getSafePanelSizes(panelSizes: NonNullable<WorkspaceLayout['panels']['panelSizes']>, explorerVisible: boolean, sessionsVisible = true) {
+  const sessions = sessionsVisible ? clamp(panelSizes.sessions ?? 14, 10, 24) : 0;
   if (!explorerVisible) return { sessions, explorer: panelSizes.explorer ?? 18, main: 100 - sessions };
 
   const maxExplorer = Math.max(12, 100 - sessions - 30);

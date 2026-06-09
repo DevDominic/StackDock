@@ -22,6 +22,26 @@ export interface StackDockResolvedTheme {
 const registeredThemes = new Map<string, StackDockResolvedTheme>();
 let builtinsRegistered = false;
 
+const CATPPUCCIN_NOCTIS_MOCHA_OVERRIDES: ThemeColors = {
+  // Upstream theme keeps focusBorder transparent and button.background very close
+  // to panels. StackDock uses those colors as interactive accents, so give the
+  // built-in a real accent and clearer button states.
+  'focusBorder': '#89b4fa',
+  'contrastActiveBorder': '#89b4fa',
+  'activityBarBadge.background': '#89b4fa',
+  'activityBarBadge.foreground': '#11111b',
+  'button.background': '#89b4fa',
+  'button.foreground': '#11111b',
+  'button.hoverBackground': '#74c7ec',
+  'button.border': '#89b4fa',
+  'button.secondaryBackground': '#313244',
+  'button.secondaryForeground': '#cdd6f4',
+  'button.secondaryHoverBackground': '#45475a',
+  'list.activeSelectionBackground': '#313244',
+  'list.activeSelectionForeground': '#cdd6f4',
+  'tab.activeBorderTop': '#89b4fa',
+};
+
 const STACKDOCK_DARK: BuiltinTheme = {
   id: 'stackdock-dark',
   label: 'StackDock Dark',
@@ -86,7 +106,8 @@ export function registerTheme(theme: StackDockTheme): void {
 export function registerThemes(importedThemes: StackDockTheme[] = []): void {
   if (!builtinsRegistered) {
     builtinsRegistered = true;
-    registerTheme(convertVsCodeThemeToMonacoTheme(JSON.parse(stripJsonComments(catppuccinNoctisMochaRaw)), DEFAULT_THEME_ID));
+    const catppuccinNoctisMocha = convertVsCodeThemeToMonacoTheme(JSON.parse(stripJsonComments(catppuccinNoctisMochaRaw)), DEFAULT_THEME_ID);
+    registerTheme({ ...catppuccinNoctisMocha, colors: { ...catppuccinNoctisMocha.colors, ...CATPPUCCIN_NOCTIS_MOCHA_OVERRIDES } });
     registerTheme(STACKDOCK_DARK);
   }
   for (const theme of importedThemes) registerTheme(theme);
@@ -115,6 +136,10 @@ export function applyTheme(themeId?: string, importedThemes: StackDockTheme[] = 
     root.dataset.theme = theme.id;
     root.dataset.themeBase = isHighContrastTheme(theme) ? 'hc' : isLightTheme(theme) ? 'light' : 'dark';
     root.style.colorScheme = isLightTheme(theme) ? 'light' : 'dark';
+    const bridge = (window as unknown as {
+      stackdock?: { app?: { setTitleBarOverlay?(options: { color: string; symbolColor: string; height: number }): Promise<void> } };
+    }).stackdock;
+    void bridge?.app?.setTitleBarOverlay?.({ color: vars['--titlebar-bg'], symbolColor: vars['--titlebar-fg'], height: 42 }).catch(() => undefined);
   }
   return theme;
 }
@@ -127,6 +152,22 @@ export function getTerminalTheme(themeId?: string, importedThemes: StackDockThem
     foreground: vars['--terminal-fg'],
     cursor: vars['--terminal-cursor'],
     selectionBackground: vars['--terminal-selection'],
+    black: vars['--terminal-ansi-black'],
+    red: vars['--terminal-ansi-red'],
+    green: vars['--terminal-ansi-green'],
+    yellow: vars['--terminal-ansi-yellow'],
+    blue: vars['--terminal-ansi-blue'],
+    magenta: vars['--terminal-ansi-magenta'],
+    cyan: vars['--terminal-ansi-cyan'],
+    white: vars['--terminal-ansi-white'],
+    brightBlack: vars['--terminal-ansi-bright-black'],
+    brightRed: vars['--terminal-ansi-bright-red'],
+    brightGreen: vars['--terminal-ansi-bright-green'],
+    brightYellow: vars['--terminal-ansi-bright-yellow'],
+    brightBlue: vars['--terminal-ansi-bright-blue'],
+    brightMagenta: vars['--terminal-ansi-bright-magenta'],
+    brightCyan: vars['--terminal-ansi-bright-cyan'],
+    brightWhite: vars['--terminal-ansi-bright-white'],
   };
 }
 
@@ -162,6 +203,20 @@ export function themeToCssVars(theme: StackDockResolvedTheme): Record<string, st
   const buttonHoverBorder = pick(c, ['focusBorder', 'contrastActiveBorder'], withAlpha(primary, 0.72));
   const ghostBg = withAlpha(text, light ? 0.045 : 0.055);
   const ghostBorder = withAlpha(text, light ? 0.22 : 0.2);
+  const titleBarBg = pick(c, ['titleBar.activeBackground', 'activityBar.background', 'editorGroupHeader.tabsBackground'], panel);
+  const titleBarFg = ensureContrast(pick(c, ['titleBar.activeForeground', 'foreground', 'editor.foreground'], text), titleBarBg, readableTextOn(titleBarBg));
+  const titleBarInactiveBg = pick(c, ['titleBar.inactiveBackground'], titleBarBg);
+  const titleBarInactiveFg = pick(c, ['titleBar.inactiveForeground'], muted);
+  const activityBarBg = pick(c, ['activityBar.background'], panel);
+  const statusBarBg = pick(c, ['statusBar.background'], activityBarBg);
+  const statusBarFg = ensureContrast(pick(c, ['statusBar.foreground', 'foreground'], text), statusBarBg, readableTextOn(statusBarBg));
+  const statusBarBorder = pick(c, ['statusBar.border'], border);
+  const tabBg = pick(c, ['tab.inactiveBackground', 'editorGroupHeader.tabsBackground'], panel);
+  const tabFg = pick(c, ['tab.inactiveForeground'], muted);
+  const tabActiveBg = pick(c, ['tab.activeBackground', 'editor.background'], bg);
+  const tabActiveFg = ensureContrast(pick(c, ['tab.activeForeground', 'editor.foreground'], text), tabActiveBg, readableTextOn(tabActiveBg));
+  const tabBorder = pick(c, ['tab.border', 'editorGroupHeader.tabsBorder'], border);
+  const tabActiveBorder = pick(c, ['tab.activeBorderTop', 'tab.activeBorder', 'focusBorder'], primary);
 
   return {
     '--bg': bg,
@@ -190,8 +245,22 @@ export function themeToCssVars(theme: StackDockResolvedTheme): Record<string, st
     '--active-border': buttonHoverBorder,
     '--shadow': shadow,
     '--overlay': light ? 'rgba(31,35,40,.28)' : 'rgba(0,0,0,.65)',
-    '--topbar-bg': withAlpha(panel, light ? 0.92 : 0.94),
-    '--sidebar-bg': `linear-gradient(180deg, ${panel}, ${bg})`,
+    '--topbar-bg': panel,
+    '--sidebar-bg': panel,
+    '--titlebar-bg': titleBarBg,
+    '--titlebar-fg': titleBarFg,
+    '--titlebar-inactive-bg': titleBarInactiveBg,
+    '--titlebar-inactive-fg': titleBarInactiveFg,
+    '--activitybar-bg': activityBarBg,
+    '--statusbar-bg': statusBarBg,
+    '--statusbar-fg': statusBarFg,
+    '--statusbar-border': statusBarBorder,
+    '--tab-bg': tabBg,
+    '--tab-fg': tabFg,
+    '--tab-active-bg': tabActiveBg,
+    '--tab-active-fg': tabActiveFg,
+    '--tab-border': tabBorder,
+    '--tab-active-border': tabActiveBorder,
     '--workspace-bg-gradient': `radial-gradient(circle at top, ${withAlpha(primary, light ? 0.14 : 0.18)} 0, ${bg} 280px)`,
     '--hero-glow': `radial-gradient(900px 420px at 50% -140px, ${withAlpha(primary, light ? 0.16 : 0.18)}, transparent 70%)`,
     '--brand-gradient': `linear-gradient(140deg, ${primary}, ${pick(c, ['charts.purple'], primary)})`,
@@ -244,6 +313,22 @@ export function themeToCssVars(theme: StackDockResolvedTheme): Record<string, st
     '--terminal-cursor': terminalCursor,
     '--terminal-selection': terminalSelection,
     '--terminal-border': border,
+    '--terminal-ansi-black': pick(c, ['terminal.ansiBlack'], light ? '#000000' : '#000000'),
+    '--terminal-ansi-red': pick(c, ['terminal.ansiRed'], '#cd3131'),
+    '--terminal-ansi-green': pick(c, ['terminal.ansiGreen'], '#0dbc79'),
+    '--terminal-ansi-yellow': pick(c, ['terminal.ansiYellow'], '#e5e510'),
+    '--terminal-ansi-blue': pick(c, ['terminal.ansiBlue'], '#2472c8'),
+    '--terminal-ansi-magenta': pick(c, ['terminal.ansiMagenta'], '#bc3fbc'),
+    '--terminal-ansi-cyan': pick(c, ['terminal.ansiCyan'], '#11a8cd'),
+    '--terminal-ansi-white': pick(c, ['terminal.ansiWhite'], '#e5e5e5'),
+    '--terminal-ansi-bright-black': pick(c, ['terminal.ansiBrightBlack'], '#666666'),
+    '--terminal-ansi-bright-red': pick(c, ['terminal.ansiBrightRed'], '#f14c4c'),
+    '--terminal-ansi-bright-green': pick(c, ['terminal.ansiBrightGreen'], '#23d18b'),
+    '--terminal-ansi-bright-yellow': pick(c, ['terminal.ansiBrightYellow'], '#f5f543'),
+    '--terminal-ansi-bright-blue': pick(c, ['terminal.ansiBrightBlue'], '#3b8eea'),
+    '--terminal-ansi-bright-magenta': pick(c, ['terminal.ansiBrightMagenta'], '#d670d6'),
+    '--terminal-ansi-bright-cyan': pick(c, ['terminal.ansiBrightCyan'], '#29b8db'),
+    '--terminal-ansi-bright-white': pick(c, ['terminal.ansiBrightWhite'], '#e5e5e5'),
 
     '--git-modified': gitModified,
     '--git-untracked': gitAdded,

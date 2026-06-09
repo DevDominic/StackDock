@@ -19,6 +19,9 @@ export interface EditorDiffModel {
   path: string;
   original: string;
   staged?: boolean;
+  /** Untracked/new files have no original revision, so the diff is forced to a
+   *  full-width unified view rather than a half-blank split. */
+  untracked?: boolean;
 }
 
 interface Props {
@@ -37,12 +40,19 @@ interface Props {
   visible?: boolean;
 }
 
+const CODE_FONT_FAMILY = '"Monaspace Neon", "Cascadia Code", Consolas, monospace';
+const CODE_FONT_FEATURES = '"calt" on, "liga" on, "dlig" on';
+const CODE_FONT_VARIATIONS = '"wght" 300, "wdth" 100';
+
 function editorOptions(settings?: StackDockSettings): monaco.editor.IStandaloneEditorConstructionOptions {
   return {
     automaticLayout: true,
     minimap: { enabled: false },
     fontSize: settings?.editor.fontSize ?? 13,
-    fontFamily: settings?.editor.fontFamily,
+    fontFamily: settings?.editor.fontFamily || CODE_FONT_FAMILY,
+    fontWeight: '300',
+    fontLigatures: settings?.code.ligatures === false ? false : CODE_FONT_FEATURES,
+    fontVariations: CODE_FONT_VARIATIONS,
     tabSize: settings?.editor.tabSize ?? 2,
     wordWrap: settings?.editor.wordWrap ?? 'off',
     theme: settings?.themeId ?? DEFAULT_THEME_ID,
@@ -111,6 +121,12 @@ function changedLineDecorations(original: string, modified: string) {
 export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, onSaveFile, onCloseFile, settings, diff, diffMode = 'side-by-side', showTabs = true, visible = true }: Props) {
   const active = openFiles.find((file) => file.path === activePath) ?? null;
   const activeDiff = active && diff?.path === active.path ? diff : null;
+  // An untracked/new file has no original revision to diff against. Any diff
+  // mode would render a blank "Original" pane (wasting half the width) and let
+  // Monaco's diff gutter draw revert arrows over non-existent lines, which
+  // throws "Illegal value for lineNumber". So bypass the diff editor entirely
+  // and show the new file as a plain, full-width preview in the normal editor.
+  const showAsDiff = !!activeDiff && !activeDiff.untracked;
   const [saving, setSaving] = useState(false);
   const editorHostRef = useRef<HTMLDivElement | null>(null);
   const diffHostRef = useRef<HTMLDivElement | null>(null);
@@ -157,7 +173,7 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
     diffEditorRef.current?.updateOptions({ ...nextOptions, renderSideBySide: diffMode === 'side-by-side' });
     compareOriginalRef.current?.updateOptions({ ...nextOptions, readOnly: true, lineNumbersMinChars: 3 });
     compareModifiedRef.current?.updateOptions({ ...nextOptions, lineNumbersMinChars: 3 });
-  }, [settings?.editor.fontSize, settings?.editor.fontFamily, settings?.editor.tabSize, settings?.editor.wordWrap, settings?.themeId, settings?.importedThemes, diffMode]);
+  }, [settings?.editor.fontSize, settings?.editor.fontFamily, settings?.editor.tabSize, settings?.editor.wordWrap, settings?.code.ligatures, settings?.themeId, settings?.importedThemes, diffMode]);
 
   useEffect(() => {
     activePathRef.current = active?.path ?? null;
@@ -179,7 +195,7 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
       if (path) onChangeFileRef.current(path, modifiedModel.getValue());
     });
 
-    if (activeDiff) {
+    if (showAsDiff && activeDiff) {
       editor.setModel(null);
       const originalModel = getOriginalModel(active, activeDiff);
       if (diffMode === 'compare-only') {
@@ -220,7 +236,7 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
       editor.setModel(modifiedModel);
       if (visible) requestAnimationFrame(() => requestAnimationFrame(() => layoutEditor(editor, editorHostRef.current)));
     }
-  }, [active?.path, active?.content, activeDiff?.path, activeDiff?.original, activeDiff?.staged, diffMode, visible]);
+  }, [active?.path, active?.content, activeDiff?.path, activeDiff?.original, activeDiff?.staged, showAsDiff, diffMode, visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -231,7 +247,7 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
       layoutEditor(compareModifiedRef.current, compareModifiedHostRef.current);
     }));
     return () => cancelAnimationFrame(frame);
-  }, [visible, active?.path, activeDiff?.path, diffMode]);
+  }, [visible, active?.path, activeDiff?.path, showAsDiff, diffMode]);
 
   useEffect(() => {
     if (typeof ResizeObserver === 'undefined') return;
@@ -265,7 +281,7 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
   }, [active, onSaveFile]);
 
   return (
-    <section className={`panel editor-panel${activeDiff ? ' diff-active' : ''}`}>
+    <section className={`panel editor-panel${showAsDiff ? ' diff-active' : ''}`}>
       {showTabs ? (
         <div className="editor-tabbar">
           <div className="tab-strip">
@@ -294,9 +310,9 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
         </div>
       ) : null}
       <div className="editor-wrap">
-        <div ref={editorHostRef} className="monaco-host" style={{ display: activeDiff ? 'none' : 'block' }} />
-        <div ref={diffHostRef} className="monaco-host monaco-diff-host" style={{ display: activeDiff && diffMode !== 'compare-only' ? 'block' : 'none' }} />
-        <div className="compare-only-grid" style={{ display: activeDiff && diffMode === 'compare-only' ? 'grid' : 'none' }}>
+        <div ref={editorHostRef} className="monaco-host" style={{ display: showAsDiff ? 'none' : 'block' }} />
+        <div ref={diffHostRef} className="monaco-host monaco-diff-host" style={{ display: showAsDiff && diffMode !== 'compare-only' ? 'block' : 'none' }} />
+        <div className="compare-only-grid" style={{ display: showAsDiff && diffMode === 'compare-only' ? 'grid' : 'none' }}>
           <div className="compare-pane"><div className="compare-pane-title muted">Original</div><div ref={compareOriginalHostRef} className="monaco-host compare-host" /></div>
           <div className="compare-pane"><div className="compare-pane-title muted">Modified</div><div ref={compareModifiedHostRef} className="monaco-host compare-host" /></div>
         </div>

@@ -20,6 +20,107 @@ interface Props {
 
 const GLOBAL_KEY = '__global__';
 
+const UI_FONT_PRESETS = [
+  {
+    label: 'Inter',
+    family: '"Inter Variable", "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
+    note: 'Clean modern UI font. FontAlternatives: replaces 102 premium fonts.',
+  },
+  {
+    label: 'Montserrat',
+    family: '"Montserrat", "Inter Variable", "Inter", system-ui, sans-serif',
+    note: 'Geometric and polished. FontAlternatives: replaces 23 premium fonts.',
+  },
+  {
+    label: 'Barlow',
+    family: '"Barlow", "Inter Variable", "Inter", system-ui, sans-serif',
+    note: 'Friendly, slightly condensed. FontAlternatives: replaces 22 premium fonts.',
+  },
+  {
+    label: 'Geist',
+    family: '"Geist Variable", "Geist", "Inter Variable", "Inter", system-ui, sans-serif',
+    note: 'Crisp modern product UI. FontAlternatives: replaces 12 premium fonts.',
+  },
+  {
+    label: 'Google Sans Flex',
+    family: '"Google Sans Flex", "Inter Variable", "Inter", system-ui, sans-serif',
+    note: 'Soft Google-style interface font. No replacement count listed.',
+  },
+  {
+    label: 'Segoe UI',
+    family: '"Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
+    note: 'Native Windows app feel. Listed as premium on FontAlternatives.',
+  },
+  {
+    label: 'System UI',
+    family: 'system-ui, sans-serif',
+    note: 'Uses platform default UI font. Not listed as a specific font.',
+  },
+] as const;
+
+const UI_FONT_PREVIEW = 'StackDock Settings — Clean panels, tabs, buttons, and labels';
+
+function findUiFontPreset(fontFamily: string) {
+  return UI_FONT_PRESETS.find((preset) => preset.family === fontFamily);
+}
+
+function cleanUiFontFamily(fontFamily: string) {
+  return fontFamily.trim() || UI_FONT_PRESETS[0].family;
+}
+
+const CODE_FONT_PRESETS = [
+  {
+    label: 'JetBrains Mono',
+    family: '"JetBrains Mono Variable", "JetBrains Mono", "Cascadia Code", Consolas, monospace',
+    note: 'Crisp coding font. FontAlternatives: replaces 17 premium fonts.',
+  },
+  {
+    label: 'Fira Code',
+    family: '"Fira Code Variable", "Fira Code", "Cascadia Code", Consolas, monospace',
+    note: 'Ligature-focused. FontAlternatives: replaces 13 premium fonts.',
+  },
+  {
+    label: 'Source Code Pro',
+    family: '"Source Code Pro", "Cascadia Code", Consolas, monospace',
+    note: 'Adobe coding font. FontAlternatives: replaces 8 premium fonts.',
+  },
+  {
+    label: 'Geist Mono',
+    family: '"Geist Mono Variable", "Geist Mono", "Cascadia Code", Consolas, monospace',
+    note: 'Minimal modern monospace. FontAlternatives: replaces 5 premium fonts.',
+  },
+  {
+    label: 'Fira Mono',
+    family: '"Fira Mono", "Cascadia Code", Consolas, monospace',
+    note: 'Simple Mozilla monospace. FontAlternatives: replaces 4 premium fonts.',
+  },
+  {
+    label: 'Monaspace Neon',
+    family: '"Monaspace Neon", "Cascadia Code", Consolas, monospace',
+    note: 'Monaspace texture healing + coding ligatures. Neon variant not listed as free font.',
+  },
+  {
+    label: 'Cascadia Code',
+    family: '"Cascadia Code", Consolas, monospace',
+    note: 'Windows-native coding font. Listed as premium on FontAlternatives.',
+  },
+  {
+    label: 'Consolas',
+    family: 'Consolas, monospace',
+    note: 'Classic Windows monospace. Listed as premium on FontAlternatives.',
+  },
+] as const;
+
+const CODE_FONT_PREVIEW = 'function dock<T>(value: T) => value ?? "StackDock";  // => !== === <= >=';
+
+function findCodeFontPreset(fontFamily: string) {
+  return CODE_FONT_PRESETS.find((preset) => preset.family === fontFamily);
+}
+
+function cleanCodeFontFamily(fontFamily: string) {
+  return fontFamily.trim() || CODE_FONT_PRESETS[0].family;
+}
+
 function cleanSetup(setup: WorkspaceSetup): WorkspaceSetup {
   const out: WorkspaceSetup = {};
   if (setup.defaultTerminalProfile?.trim()) out.defaultTerminalProfile = setup.defaultTerminalProfile.trim();
@@ -29,13 +130,33 @@ function cleanSetup(setup: WorkspaceSetup): WorkspaceSetup {
   return out;
 }
 
+function setWindowOverlayDimmed(dimmed: boolean) {
+  const styles = getComputedStyle(document.documentElement);
+  if (dimmed) {
+    void api.app.setTitleBarOverlay({ color: '#050507', symbolColor: '#6f7280', height: 43 });
+    return;
+  }
+  void api.app.setTitleBarOverlay({
+    color: styles.getPropertyValue('--titlebar-bg').trim() || '#08090d',
+    symbolColor: styles.getPropertyValue('--titlebar-fg').trim() || '#e7e7e7',
+    height: 43,
+  });
+}
+
 export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave, onAutomationSaved, onRunCommand, onClose }: Props) {
   const [tab, setTab] = useState<SettingsTab>(initialTab ?? 'general');
   const [draft, setDraft] = useState(settings);
   const [saving, setSaving] = useState(false);
   const [themeError, setThemeError] = useState<string | null>(null);
+  const [uiFontCustomOpen, setUiFontCustomOpen] = useState(false);
+  const [codeFontCustomOpen, setCodeFontCustomOpen] = useState(false);
   const valid = draft.terminalProfiles.every((profile) => profile.name.trim() && profile.shell.trim());
   const themeOptions = useMemo(() => getThemes(draft.importedThemes), [draft.importedThemes]);
+
+  useEffect(() => {
+    setWindowOverlayDimmed(true);
+    return () => setWindowOverlayDimmed(false);
+  }, []);
 
   // Workspace tab (automation.json) state — held as a typed AutomationConfig and
   // edited through forms, then serialized back on save.
@@ -156,8 +277,39 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
   }
 
   function closeWithoutSave() {
+    document.documentElement.style.setProperty('--ui-font', settings.ui.fontFamily);
+    document.documentElement.style.setProperty('--ui-font-size', `${settings.ui.fontSize}px`);
     applyTheme(settings.themeId, settings.importedThemes);
     onClose();
+  }
+
+  const uiFontFamily = cleanUiFontFamily(draft.ui.fontFamily);
+  const uiFontPreset = findUiFontPreset(uiFontFamily);
+
+  function setUiFontFamily(fontFamily: string) {
+    const next = cleanUiFontFamily(fontFamily);
+    document.documentElement.style.setProperty('--ui-font', next);
+    setDraft({ ...draft, ui: { ...draft.ui, fontFamily: next } });
+  }
+
+  function setUiFontSize(fontSize: number) {
+    const next = Math.max(10, Number(fontSize) || 13);
+    document.documentElement.style.setProperty('--ui-font-size', `${next}px`);
+    setDraft({ ...draft, ui: { ...draft.ui, fontSize: next } });
+  }
+
+  const codeFontFamily = draft.editor.fontFamily === draft.terminal.fontFamily
+    ? cleanCodeFontFamily(draft.editor.fontFamily)
+    : cleanCodeFontFamily(draft.editor.fontFamily || draft.terminal.fontFamily);
+  const codeFontPreset = findCodeFontPreset(codeFontFamily);
+
+  function setCodeFontFamily(fontFamily: string) {
+    const next = cleanCodeFontFamily(fontFamily);
+    setDraft({
+      ...draft,
+      editor: { ...draft.editor, fontFamily: next },
+      terminal: { ...draft.terminal, fontFamily: next },
+    });
   }
 
   return (
@@ -166,7 +318,7 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
         <div className="panel-title row"><span>Settings</span><button className="ghost" onClick={closeWithoutSave}>×</button></div>
         <div className="topbar-nav settings-tabs">
           <button className={tab === 'general' ? 'active-toggle' : ''} onClick={() => setTab('general')}>General</button>
-          <button className={tab === 'appearance' ? 'active-toggle' : ''} onClick={() => setTab('appearance')}>Looks &amp; feel</button>
+          <button className={tab === 'appearance' ? 'active-toggle' : ''} onClick={() => setTab('appearance')}>Appearance</button>
           <button className={tab === 'terminal' ? 'active-toggle' : ''} onClick={() => setTab('terminal')}>Terminal profiles</button>
           <button className={tab === 'workspace' ? 'active-toggle' : ''} onClick={() => setTab('workspace')}>Workspace</button>
         </div>
@@ -195,12 +347,44 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
             </div>
             {themeError ? <div className="banner error settings-warning">{themeError}</div> : null}
             <p className="muted config-hint">Imports VS Code theme JSON/JSONC and uses it for the full StackDock UI, Monaco editor, and terminal. Full VS Code extension installation and exact TextMate grammar fidelity are not included.</p>
+            <label>UI font
+              <select value={uiFontCustomOpen || !uiFontPreset ? 'custom' : uiFontPreset.family} onChange={(event) => {
+                if (event.target.value === 'custom') {
+                  setUiFontCustomOpen(true);
+                  return;
+                }
+                setUiFontCustomOpen(false);
+                setUiFontFamily(event.target.value);
+              }}>
+                {UI_FONT_PRESETS.map((preset) => <option key={preset.family} value={preset.family}>{preset.label}</option>)}
+                <option value="custom">Custom</option>
+              </select>
+              <div className="ui-font-preview" style={{ fontFamily: uiFontFamily, fontSize: draft.ui.fontSize }}>{UI_FONT_PREVIEW}</div>
+              <span className="muted code-font-note">{uiFontCustomOpen ? 'Custom UI font for app chrome, panels, labels, and buttons.' : uiFontPreset?.note ?? 'Custom UI font for app chrome, panels, labels, and buttons.'}</span>
+            </label>
+            {uiFontCustomOpen || !uiFontPreset ? <label>Custom UI font family<input value={uiFontFamily} onChange={(event) => setUiFontFamily(event.target.value)} placeholder="e.g. Inter, Segoe UI, system-ui" /></label> : null}
+            <label>UI font size<input type="number" min={10} max={18} value={draft.ui.fontSize} onChange={(event) => setUiFontSize(Number(event.target.value))} /></label>
+            <label>Code font
+              <select value={codeFontCustomOpen || !codeFontPreset ? 'custom' : codeFontPreset.family} onChange={(event) => {
+                if (event.target.value === 'custom') {
+                  setCodeFontCustomOpen(true);
+                  return;
+                }
+                setCodeFontCustomOpen(false);
+                setCodeFontFamily(event.target.value);
+              }}>
+                {CODE_FONT_PRESETS.map((preset) => <option key={preset.family} value={preset.family}>{preset.label}</option>)}
+                <option value="custom">Custom</option>
+              </select>
+              <div className="code-font-preview" style={{ fontFamily: codeFontFamily, fontFeatureSettings: draft.code.ligatures ? undefined : 'normal' }}>{CODE_FONT_PREVIEW}</div>
+              <span className="muted code-font-note">{codeFontCustomOpen ? 'Custom font family for editor and terminal only.' : codeFontPreset?.note ?? 'Custom font family for editor and terminal only.'}</span>
+            </label>
+            {codeFontCustomOpen || !codeFontPreset ? <label>Custom code font family<input value={codeFontFamily} onChange={(event) => setCodeFontFamily(event.target.value)} placeholder="e.g. JetBrains Mono, Consolas, monospace" /></label> : null}
+            <label><input type="checkbox" checked={draft.code.ligatures} onChange={(event) => setDraft({ ...draft, code: { ...draft.code, ligatures: event.target.checked } })} /> Code ligatures</label>
             <label>Editor font size<input type="number" min={6} value={draft.editor.fontSize} onChange={(event) => setDraft({ ...draft, editor: { ...draft.editor, fontSize: Number(event.target.value) } })} /></label>
-            <label>Editor font family<input value={draft.editor.fontFamily} onChange={(event) => setDraft({ ...draft, editor: { ...draft.editor, fontFamily: event.target.value } })} placeholder="e.g. Consolas, monospace" /></label>
             <label>Editor tab size<input type="number" min={1} value={draft.editor.tabSize} onChange={(event) => setDraft({ ...draft, editor: { ...draft.editor, tabSize: Math.max(1, Number(event.target.value) || 1) } })} /></label>
             <label>Editor word wrap<select value={draft.editor.wordWrap} onChange={(event) => setDraft({ ...draft, editor: { ...draft.editor, wordWrap: event.target.value as StackDockSettings['editor']['wordWrap'] } })}><option value="on">On</option><option value="off">Off</option></select></label>
             <label>Terminal font size<input type="number" min={6} value={draft.terminal.fontSize} onChange={(event) => setDraft({ ...draft, terminal: { ...draft.terminal, fontSize: Number(event.target.value) } })} /></label>
-            <label>Terminal font family<input value={draft.terminal.fontFamily} onChange={(event) => setDraft({ ...draft, terminal: { ...draft.terminal, fontFamily: event.target.value } })} placeholder="e.g. Consolas, monospace" /></label>
             <label><input type="checkbox" checked={draft.terminal.cursorBlink} onChange={(event) => setDraft({ ...draft, terminal: { ...draft.terminal, cursorBlink: event.target.checked } })} /> Terminal cursor blink</label>
           </div>
         ) : null}

@@ -1,8 +1,8 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { app } from 'electron';
-import type { Workspace, WorkspaceLayout } from '../src/shared/types';
-import { ensureDataDirs, getLayoutsDir, getWorkspacesPath } from './storage';
+import type { AppRestoreState, Workspace, WorkspaceLayout } from '../src/shared/types';
+import { ensureDataDirs, getLayoutsDir, getRestoreStatePath, getWorkspacesPath } from './storage';
 
 function slugify(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'workspace';
@@ -71,6 +71,22 @@ export async function loadLayout(workspaceId: string): Promise<WorkspaceLayout |
 export async function saveLayout(layout: WorkspaceLayout) {
   await ensureDataDirs();
   await writeJson(path.join(getLayoutsDir(), `${layout.workspaceId}.json`), layout);
+}
+
+export async function loadRestoreState(): Promise<AppRestoreState> {
+  await ensureDataDirs();
+  return readJson<AppRestoreState>(getRestoreStatePath(), {});
+}
+
+export async function saveRestoreState(state: AppRestoreState): Promise<AppRestoreState> {
+  await ensureDataDirs();
+  const next: AppRestoreState = {
+    lastWorkspaceId: state.lastWorkspaceId,
+    lastTerminalRestoreId: state.lastTerminalRestoreId,
+    lastTerminalRuntimeId: state.lastTerminalRuntimeId,
+  };
+  await writeJson(getRestoreStatePath(), next);
+  return next;
 }
 
 export async function getDefaultWorkspacePath() {

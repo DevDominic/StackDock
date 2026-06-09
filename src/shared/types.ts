@@ -35,6 +35,8 @@ export interface StackDockSettings {
   autoSaveDelayMs: number;
   /** When true, clicking a terminal link opens the system browser instead of an in-app web tab. */
   openLinksExternally: boolean;
+  ui: { fontFamily: string; fontSize: number };
+  code: { ligatures: boolean };
   editor: { fontSize: number; fontFamily: string; tabSize: number; wordWrap: 'on' | 'off'; /** @deprecated Use StackDockSettings.themeId. */ themeId?: string; /** @deprecated Use StackDockSettings.importedThemes. */ importedThemes?: StackDockTheme[] };
   terminal: { fontSize: number; fontFamily: string; cursorBlink: boolean };
   terminalProfiles: TerminalProfile[];
@@ -85,8 +87,16 @@ export interface Workspace {
   commands?: WorkspaceCommand[];
 }
 
+export interface AppRestoreState {
+  lastWorkspaceId?: string;
+  lastTerminalRestoreId?: string;
+  lastTerminalRuntimeId?: string;
+}
+
 export interface WorkspaceLayout {
   workspaceId: string;
+  activeTerminalRestoreId?: string;
+  activeTerminalRuntimeId?: string;
   panels: {
     fileTreeWidth: number;
     gitPanelWidth: number;
@@ -94,6 +104,7 @@ export interface WorkspaceLayout {
     fileTreeVisible: boolean;
     gitPanelVisible: boolean;
     terminalVisible: boolean;
+    sessionsVisible?: boolean;
     panelSizes?: {
       sessions?: number;
       explorer?: number;
@@ -129,13 +140,26 @@ export interface WorkspaceTerminalSession extends TerminalSession {
 
 export interface TerminalSession {
   id: string;
+  restoreId?: string;
   name: string;
   profileId: string;
   cwd: string;
   startupCommand?: string;
+  originalStartupCommand?: string;
+  piSessionId?: string;
+  piResumeCommand?: string;
   splitGroupId?: string;
   splitDirection?: 'row' | 'column';
   createdAt: string;
+}
+
+export interface TerminalSnapshot {
+  id: string;
+  restoreId?: string;
+  output: string;
+  updatedAt?: string;
+  piSessionId?: string;
+  piResumeCommand?: string;
 }
 
 export interface GitFileStatus {
@@ -169,15 +193,52 @@ export interface DirectoryEntry {
   hidden: boolean;
 }
 
+export type TerminalAttachmentSource = 'drop' | 'paste-file' | 'paste-image';
+
+export interface TerminalAttachment {
+  id: string;
+  source: TerminalAttachmentSource;
+  path: string;
+  referencePath: string;
+  name: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  isDirectory: boolean;
+  isImage: boolean;
+  isLarge: boolean;
+  originalPath?: string;
+}
+
+export interface TerminalAttachmentOptions {
+  /** Files larger than this are represented by their parent directory. */
+  largeFileThresholdBytes?: number;
+}
+
 export interface ReadFileResult {
   path: string;
   content: string;
+}
+
+export type WindowControlsStyle = 'native' | 'custom';
+
+export interface WindowTitleBarOverlayOptions {
+  color: string;
+  symbolColor: string;
+  height: number;
 }
 
 export interface StackDockApi {
   app: {
     pickWorkspaceFolder(): Promise<string | null>;
     importJsonFile(): Promise<{ path: string; content: string } | null>;
+    minimizeWindow(): Promise<void>;
+    toggleMaximizeWindow(): Promise<boolean>;
+    closeWindow(): Promise<void>;
+    isWindowMaximized(): Promise<boolean>;
+    windowControlsStyle(): Promise<WindowControlsStyle>;
+    setTitleBarOverlay(options: WindowTitleBarOverlayOptions): Promise<void>;
+    loadRestoreState(): Promise<AppRestoreState>;
+    saveRestoreState(state: AppRestoreState): Promise<AppRestoreState>;
   };
   workspaces: {
     list(): Promise<Workspace[]>;
@@ -220,12 +281,23 @@ export interface StackDockApi {
     loadRaw(): Promise<string>;
     saveRaw(content: string): Promise<AutomationConfig>;
   };
+  attachments: {
+    getPathForFile(file: unknown): string;
+    hasClipboardImage(): boolean;
+    hasClipboardText(): boolean;
+    inspectPath(path: string, source: TerminalAttachmentSource, options?: TerminalAttachmentOptions): Promise<TerminalAttachment>;
+    savePastedImage(dataUrl: string, name?: string, options?: TerminalAttachmentOptions): Promise<TerminalAttachment>;
+    saveClipboardImage(name?: string, options?: TerminalAttachmentOptions): Promise<TerminalAttachment | null>;
+  };
   terminal: {
     profiles(): Promise<TerminalProfile[]>;
-    create(profileId: string, cwd: string, name?: string, startupCommand?: string): Promise<TerminalSession>;
+    create(profileId: string, cwd: string, name?: string, startupCommand?: string, restoreId?: string): Promise<TerminalSession>;
     write(id: string, data: string): Promise<void>;
     resize(id: string, cols: number, rows: number): Promise<void>;
+    setVisible(ids: string[]): Promise<void>;
     kill(id: string): Promise<void>;
+    snapshot(idOrRestoreId: string): Promise<TerminalSnapshot | null>;
+    forgetSnapshot(idOrRestoreId: string): Promise<void>;
   };
   onTerminalData(callback: (payload: { id: string; data: string }) => void): () => void;
   onTerminalExit(callback: (payload: { id: string; exitCode: number | null }) => void): () => void;

@@ -1,7 +1,10 @@
-import { useEffect, useRef } from 'react';
-import { Terminal, type ILink } from 'xterm';
-import type { StackDockSettings, TerminalSession } from '../../shared/types';
+import { useEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { Terminal, type ILink, type ITerminalAddon } from 'xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { LigaturesAddon } from '@xterm/addon-ligatures';
+import type { StackDockSettings, TerminalAttachment, TerminalAttachmentSource, TerminalSession } from '../../shared/types';
 import { api } from '../../lib/api';
+import { serializeTerminalAttachments, summarizeTerminalAttachments } from '../../lib/terminalAttachments';
 
 import 'xterm/css/xterm.css';
 
@@ -10,11 +13,15 @@ interface Props {
   activeId: string | null;
   onOpenLink?(url: string): void;
   settings?: StackDockSettings | null;
+  isVisible?: boolean;
+  onAttachmentError?(message: string): void;
 }
 
 // URLs printed by dev servers, loggers, etc. Trailing punctuation is trimmed on
 // click so "see http://localhost:5173." doesn't capture the period.
 const URL_PATTERN = /https?:\/\/[^\s"'`<>)\]}]+/g;
+const CODE_FONT_FAMILY = '"Monaspace Neon", "Cascadia Code", Consolas, monospace';
+const CODE_FONT_FEATURES = '"calt" on, "liga" on, "dlig" on';
 
 function cssVar(name: string, fallback: string) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
@@ -26,20 +33,43 @@ function terminalThemeFromCss() {
     foreground: cssVar('--terminal-fg', '#ffffff'),
     cursor: cssVar('--terminal-cursor', '#ffffff'),
     selectionBackground: cssVar('--terminal-selection', 'rgba(255,255,255,.2)'),
+    black: cssVar('--terminal-ansi-black', '#000000'),
+    red: cssVar('--terminal-ansi-red', '#cd3131'),
+    green: cssVar('--terminal-ansi-green', '#0dbc79'),
+    yellow: cssVar('--terminal-ansi-yellow', '#e5e510'),
+    blue: cssVar('--terminal-ansi-blue', '#2472c8'),
+    magenta: cssVar('--terminal-ansi-magenta', '#bc3fbc'),
+    cyan: cssVar('--terminal-ansi-cyan', '#11a8cd'),
+    white: cssVar('--terminal-ansi-white', '#e5e5e5'),
+    brightBlack: cssVar('--terminal-ansi-bright-black', '#666666'),
+    brightRed: cssVar('--terminal-ansi-bright-red', '#f14c4c'),
+    brightGreen: cssVar('--terminal-ansi-bright-green', '#23d18b'),
+    brightYellow: cssVar('--terminal-ansi-bright-yellow', '#f5f543'),
+    brightBlue: cssVar('--terminal-ansi-bright-blue', '#3b8eea'),
+    brightMagenta: cssVar('--terminal-ansi-bright-magenta', '#d670d6'),
+    brightCyan: cssVar('--terminal-ansi-bright-cyan', '#29b8db'),
+    brightWhite: cssVar('--terminal-ansi-bright-white', '#e5e5e5'),
   };
 }
 
-export function TerminalPanel({ sessions, activeId, onOpenLink, settings }: Props) {
+export function TerminalPanel({ sessions, activeId, onOpenLink, settings, isVisible = true, onAttachmentError }: Props) {
   const active = sessions.find((session) => session.id === activeId) ?? sessions[0] ?? null;
   const visibleSessions = active?.splitGroupId ? sessions.filter((session) => session.splitGroupId === active.splitGroupId) : active ? [active] : [];
   const splitDirection = active?.splitDirection ?? 'row';
+  const visibleTerminalIds = isVisible ? visibleSessions.map((session) => session.id) : [];
+  const visibleTerminalKey = visibleTerminalIds.join('\0');
+
+  useEffect(() => {
+    void api.terminal.setVisible(visibleTerminalIds);
+    return () => { void api.terminal.setVisible([]); };
+  }, [visibleTerminalKey]);
 
   return (
     <section className="terminal-workspace">
       <div className="terminal-main">
         {sessions.length ? (
           <div className={visibleSessions.length > 1 ? `terminal-views split-${splitDirection}` : 'terminal-views'}>
-            {visibleSessions.map((session) => <TerminalView key={session.id} session={session} focused={session.id === active?.id} onOpenLink={onOpenLink} settings={settings} />)}
+            {visibleSessions.map((session) => <TerminalView key={session.id} session={session} focused={session.id === active?.id} onOpenLink={onOpenLink} settings={settings} onAttachmentError={onAttachmentError} />)}
           </div>
         ) : (
           <div className="empty-pad muted">Open terminal from Sessions.</div>
@@ -49,11 +79,16 @@ export function TerminalPanel({ sessions, activeId, onOpenLink, settings }: Prop
   );
 }
 
-function TerminalView({ session, focused, onOpenLink, settings }: { session: TerminalSession; focused: boolean; onOpenLink?(url: string): void; settings?: StackDockSettings | null }) {
+function TerminalView({ session, focused, onOpenLink, settings, onAttachmentError }: { session: TerminalSession; focused: boolean; onOpenLink?(url: string): void; settings?: StackDockSettings | null; onAttachmentError?(message: string): void }) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [attachmentStatus, setAttachmentStatus] = useState<string | null>(null);
   const onOpenLinkRef = useRef(onOpenLink);
+  const onAttachmentErrorRef = useRef(onAttachmentError);
   onOpenLinkRef.current = onOpenLink;
+  onAttachmentErrorRef.current = onAttachmentError;
 
   const resizeTerminal = () => {
     const mount = mountRef.current;
@@ -61,12 +96,9 @@ function TerminalView({ session, focused, onOpenLink, settings }: { session: Ter
     if (!mount || !terminal) return;
     const rect = mount.getBoundingClientRect();
     if (rect.width < 20 || rect.height < 20) return;
-    const cols = Math.max(2, Math.floor((rect.width - 16) / 8));
-    const rows = Math.max(1, Math.floor((rect.height - 16) / 17));
-    if (cols === terminal.cols && rows === terminal.rows) return;
     try {
-      terminal.resize(cols, rows);
-      void api.terminal.resize(session.id, cols, rows);
+      fitAddonRef.current?.fit();
+      void api.terminal.resize(session.id, terminal.cols, terminal.rows);
     } catch {
       // xterm can briefly lack render dimensions while a parent tab is hidden.
       // Next resize/focus retries safely.
@@ -78,24 +110,78 @@ function TerminalView({ session, focused, onOpenLink, settings }: { session: Ter
     let opened = false;
     let observer: ResizeObserver | null = null;
 
+    const ligaturesEnabled = settings?.code.ligatures !== false;
     const terminal = new Terminal({
       fontSize: settings?.terminal.fontSize ?? 14,
-      fontFamily: settings?.terminal.fontFamily,
+      fontFamily: settings?.terminal.fontFamily || CODE_FONT_FAMILY,
+      fontWeight: '300',
+      fontWeightBold: '300',
+      allowProposedApi: true,
       cursorBlink: settings?.terminal.cursorBlink ?? true,
       theme: terminalThemeFromCss(),
     });
+    // Let app-level shortcuts win over the shell: returning false stops xterm
+    // from sending the key to the PTY (no stray ^P), while the DOM event still
+    // bubbles to the window handler that opens the session switcher.
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (event.type === 'keydown' && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'p') {
+        return false;
+      }
+      return true;
+    });
+    const fitAddon = new FitAddon();
+    terminal.loadAddon(fitAddon as unknown as ITerminalAddon);
+    fitAddonRef.current = fitAddon;
+    const ligaturesAddon = ligaturesEnabled ? new LigaturesAddon({ fontFeatureSettings: CODE_FONT_FEATURES }) : null;
     terminalRef.current = terminal;
 
+    let restoredSnapshot = false;
+    let terminalWriteFrame: number | null = null;
+    let terminalWriteInProgress = false;
+    let terminalWriteQueue: string[] = [];
+    const queuedLiveOutput: string[] = [];
+    const flushTerminalWriteQueue = () => {
+      terminalWriteFrame = null;
+      if (disposed || terminalWriteInProgress || !terminalWriteQueue.length) return;
+      const data = terminalWriteQueue.join('');
+      terminalWriteQueue = [];
+      terminalWriteInProgress = true;
+      terminal.write(data, () => {
+        terminalWriteInProgress = false;
+        if (!disposed && terminalWriteQueue.length && terminalWriteFrame == null) {
+          terminalWriteFrame = window.requestAnimationFrame(flushTerminalWriteQueue);
+        }
+      });
+    };
+    const enqueueTerminalWrite = (data: string) => {
+      if (!data) return;
+      terminalWriteQueue.push(data);
+      if (!terminalWriteInProgress && terminalWriteFrame == null) {
+        terminalWriteFrame = window.requestAnimationFrame(flushTerminalWriteQueue);
+      }
+    };
+    const flushLiveOutput = () => {
+      restoredSnapshot = true;
+      while (queuedLiveOutput.length) enqueueTerminalWrite(queuedLiveOutput.shift()!);
+    };
+    void api.terminal.snapshot(session.restoreId ?? session.id).then((snapshot) => {
+      if (disposed) return;
+      if (snapshot?.output) enqueueTerminalWrite(`${snapshot.output}\r\n\x1b[2m──── restored scrollback; live output follows ────\x1b[0m\r\n`);
+      if (snapshot?.piResumeCommand) enqueueTerminalWrite(`\x1b[2m[resuming Pi session with: ${snapshot.piResumeCommand}]\x1b[0m\r\n`);
+      flushLiveOutput();
+    }).catch(() => { if (!disposed) flushLiveOutput(); });
+
     const disposeData = api.onTerminalData(({ id, data }) => {
-      if (id === session.id) terminal.write(data);
+      if (id !== session.id) return;
+      if (!restoredSnapshot) queuedLiveOutput.push(data);
+      else enqueueTerminalWrite(data);
     });
     const disposeExit = api.onTerminalExit(({ id, exitCode }) => {
-      if (id === session.id) terminal.writeln(`\r\n[process exited ${exitCode ?? 0}]`);
+      if (id === session.id) enqueueTerminalWrite(`\r\n[process exited ${exitCode ?? 0}]`);
     });
     const dataDisposable = terminal.onData((data) => {
       void api.terminal.write(session.id, data);
     });
-
     const linkProvider = terminal.registerLinkProvider({
       provideLinks(bufferLineNumber, callback) {
         const line = terminal.buffer.active.getLine(bufferLineNumber - 1);
@@ -126,6 +212,7 @@ function TerminalView({ session, focused, onOpenLink, settings }: { session: Ter
       if (disposed || !mountRef.current) return;
       terminal.open(mountRef.current);
       opened = true;
+      if (ligaturesAddon) terminal.loadAddon(ligaturesAddon as unknown as ITerminalAddon);
       observer = new ResizeObserver(() => window.requestAnimationFrame(() => resizeTerminal()));
       observer.observe(mountRef.current);
       resizeTerminal();
@@ -135,21 +222,32 @@ function TerminalView({ session, focused, onOpenLink, settings }: { session: Ter
       disposed = true;
       window.cancelAnimationFrame(openFrame);
       observer?.disconnect();
+      if (terminalWriteFrame != null) window.cancelAnimationFrame(terminalWriteFrame);
+      terminalWriteQueue = [];
       disposeData();
       disposeExit();
       dataDisposable.dispose();
       linkProvider.dispose();
+      ligaturesAddon?.dispose();
+      fitAddon.dispose();
+      if (fitAddonRef.current === fitAddon) fitAddonRef.current = null;
       if (opened) terminal.dispose();
       if (terminalRef.current === terminal) terminalRef.current = null;
     };
-  }, [session.id]);
+  }, [session.id, settings?.code.ligatures]);
+
+  useEffect(() => {
+    onAttachmentErrorRef.current = onAttachmentError;
+  }, [onAttachmentError]);
 
   useEffect(() => {
     const terminal = terminalRef.current;
     if (!terminal) return;
     terminal.options.theme = terminalThemeFromCss();
     terminal.options.fontSize = settings?.terminal.fontSize ?? 14;
-    terminal.options.fontFamily = settings?.terminal.fontFamily ?? 'Consolas, monospace';
+    terminal.options.fontFamily = settings?.terminal.fontFamily || CODE_FONT_FAMILY;
+    terminal.options.fontWeight = '300';
+    terminal.options.fontWeightBold = '300';
     terminal.options.cursorBlink = settings?.terminal.cursorBlink ?? true;
     window.requestAnimationFrame(() => resizeTerminal());
   }, [settings?.themeId, settings?.importedThemes, settings?.terminal.fontSize, settings?.terminal.fontFamily, settings?.terminal.cursorBlink]);
@@ -162,9 +260,125 @@ function TerminalView({ session, focused, onOpenLink, settings }: { session: Ter
     });
   }, [focused, session.id]);
 
+  function showAttachmentStatus(message: string) {
+    setAttachmentStatus(message);
+    window.setTimeout(() => setAttachmentStatus((current) => current === message ? null : current), 2600);
+  }
+
+  function reportAttachmentError(error: unknown, fallback = 'Could not attach file') {
+    const message = error instanceof Error ? error.message : String(error || fallback);
+    setAttachmentStatus(message);
+    onAttachmentErrorRef.current?.(message);
+  }
+
+  async function fileToDataUrl(file: File) {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Could not read pasted image'));
+      reader.onerror = () => reject(reader.error ?? new Error('Could not read pasted image'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function attachmentFromFile(file: File, source: TerminalAttachmentSource): Promise<TerminalAttachment | null> {
+    const filePath = api.attachments.getPathForFile(file);
+    if (filePath) return api.attachments.inspectPath(filePath, source);
+    if (file.type.toLowerCase().startsWith('image/')) return api.attachments.savePastedImage(await fileToDataUrl(file), file.name || 'pasted-image');
+    return null;
+  }
+
+  async function insertAttachmentObjects(attachments: TerminalAttachment[]) {
+    if (!attachments.length) throw new Error('No attachable files found');
+    const text = serializeTerminalAttachments(attachments, { formatter: 'auto' });
+    await api.terminal.write(session.id, text);
+    terminalRef.current?.focus();
+    showAttachmentStatus(summarizeTerminalAttachments(attachments));
+  }
+
+  async function insertAttachments(files: File[], source: TerminalAttachmentSource) {
+    if (!files.length) return;
+    try {
+      const attachments = (await Promise.all(files.map((file) => attachmentFromFile(file, source)))).filter(Boolean) as TerminalAttachment[];
+      await insertAttachmentObjects(attachments);
+    } catch (error) {
+      reportAttachmentError(error);
+    }
+  }
+
+  async function insertClipboardImage() {
+    try {
+      const attachment = await api.attachments.saveClipboardImage('pasted-image');
+      if (!attachment) return;
+      await insertAttachmentObjects([attachment]);
+    } catch (error) {
+      reportAttachmentError(error, 'Could not paste image');
+    }
+  }
+
+  function filesFromDataTransfer(dataTransfer: DataTransfer | null) {
+    if (!dataTransfer) return [];
+    const itemFiles = Array.from(dataTransfer.items ?? [])
+      .filter((item) => item.kind === 'file')
+      .map((item) => item.getAsFile())
+      .filter(Boolean) as File[];
+    return itemFiles.length ? itemFiles : Array.from(dataTransfer.files ?? []);
+  }
+
+  function handleDragOver(event: ReactDragEvent<HTMLDivElement>) {
+    const hasFiles = filesFromDataTransfer(event.dataTransfer).length > 0 || Array.from(event.dataTransfer.types).includes('Files');
+    if (!hasFiles) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    setDragOver(true);
+  }
+
+  function handleDragLeave(event: ReactDragEvent<HTMLDivElement>) {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setDragOver(false);
+  }
+
+  function handleDrop(event: ReactDragEvent<HTMLDivElement>) {
+    const files = filesFromDataTransfer(event.dataTransfer);
+    if (!files.length) return;
+    event.preventDefault();
+    setDragOver(false);
+    void insertAttachments(files, 'drop');
+  }
+
+  function handlePaste(event: ReactClipboardEvent<HTMLDivElement>) {
+    const text = event.clipboardData.getData('text/plain');
+    if (text) {
+      event.preventDefault();
+      terminalRef.current?.paste(text);
+      terminalRef.current?.focus();
+      return;
+    }
+    const files = filesFromDataTransfer(event.clipboardData);
+    if (!files.length) return;
+    event.preventDefault();
+    void insertAttachments(files, 'paste-file');
+  }
+
+  function handleKeyDownCapture(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'v') return;
+    if (api.attachments.hasClipboardText() || !api.attachments.hasClipboardImage()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void insertClipboardImage();
+  }
+
   return (
-    <div className={focused ? 'terminal-shell focused' : 'terminal-shell'}>
+    <div
+      className={`${focused ? 'terminal-shell focused' : 'terminal-shell'}${dragOver ? ' attachment-drag-over' : ''}`}
+      onDragEnter={handleDragOver}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      onPaste={handlePaste}
+      onKeyDownCapture={handleKeyDownCapture}
+    >
       <div ref={mountRef} className="terminal-mount" />
+      {attachmentStatus ? <div className="terminal-attachment-status">{attachmentStatus}</div> : null}
     </div>
   );
 }
