@@ -19,6 +19,7 @@ export const gitExtension: NativeExtension = {
       onDiscard={ctx.gitActions.discard}
       onDiscardSelected={ctx.gitActions.discardSelected}
       onCommit={ctx.gitActions.commit}
+      onSwitchBranch={ctx.gitActions.switchBranch}
       onRefresh={ctx.actions.refreshGit}
     />
   ),

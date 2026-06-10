@@ -5,7 +5,7 @@ import os from 'os';
 import path from 'path';
 import { addWorkspace, createWorkspace, listWorkspaces, loadLayout, loadRestoreState, removeWorkspace, saveLayout, saveRestoreState, updateWorkspace } from './workspaceStore';
 import { createFile, createFolder, deletePath, readDirectory, readFile, readFileDataUrl, renamePath, revealInExplorer, writeFile } from './fileService';
-import { addAll, commit, discardFile, getGitDiff, getGitFileContents, getGitStatus, stageFile, unstageFile } from './gitService';
+import { addAll, commit, discardFile, fetch, getGitDiff, getGitFileContents, getGitStatus, listBranches, pull, push, stageFile, switchBranch, unstageFile } from './gitService';
 import { createTerminal, forgetTerminalSnapshot, getTerminalProfiles, getTerminalSnapshot, killTerminal, loadOpenTerminalState, resizeTerminal, saveOpenTerminalState, setTerminalWindow, setVisibleTerminals, writeTerminal } from './terminalManager';
 import { ensureDataDirs } from './storage';
 import { logError } from './log';
@@ -205,6 +205,7 @@ function registerIpc() {
   });
 
   ipcMain.handle('git:status', async (_event, targetPath: unknown) => getGitStatus(assertAbsolutePath(targetPath, 'targetPath')));
+  ipcMain.handle('git:branches', async (_event, targetPath: unknown) => listBranches(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('git:diff', async (_event, targetPath: unknown, filePath?: unknown, staged?: boolean) => getGitDiff(assertAbsolutePath(targetPath, 'targetPath'), filePath == null ? undefined : assertNonEmptyString(filePath, 'filePath'), staged));
   ipcMain.handle('git:fileContents', async (_event, targetPath: unknown, filePath: unknown, staged?: boolean) => getGitFileContents(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(filePath, 'filePath'), staged));
   ipcMain.handle('git:stage', async (_event, targetPath: unknown, filePath: unknown) => stageFile(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(filePath, 'filePath')));
@@ -212,6 +213,10 @@ function registerIpc() {
   ipcMain.handle('git:discard', async (_event, targetPath: unknown, filePath: unknown) => discardFile(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(filePath, 'filePath')));
   ipcMain.handle('git:commit', async (_event, targetPath: unknown, message: unknown) => commit(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(message, 'message')));
   ipcMain.handle('git:addAll', async (_event, targetPath: unknown) => addAll(assertAbsolutePath(targetPath, 'targetPath')));
+  ipcMain.handle('git:switchBranch', async (_event, targetPath: unknown, branch: unknown) => switchBranch(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(branch, 'branch')));
+  ipcMain.handle('git:push', async (_event, targetPath: unknown) => push(assertAbsolutePath(targetPath, 'targetPath')));
+  ipcMain.handle('git:pull', async (_event, targetPath: unknown) => pull(assertAbsolutePath(targetPath, 'targetPath')));
+  ipcMain.handle('git:fetch', async (_event, targetPath: unknown) => fetch(assertAbsolutePath(targetPath, 'targetPath')));
 
   ipcMain.handle('settings:load', async () => loadSettings());
   ipcMain.handle('settings:save', async (_event, settings) => saveSettings(settings));

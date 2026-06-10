@@ -19,6 +19,7 @@ interface Props {
   onDiscard(path: string): void;
   onDiscardSelected(paths: string[]): void;
   onCommit(message: string): void;
+  onSwitchBranch(branch: string): void;
   onRefresh(): void;
 }
 
@@ -44,9 +45,11 @@ function splitPath(path: string) {
     : { dir: '', name: normalized };
 }
 
-export function GitPanel({ status, error, selectedFile, selectedStagedPaths, selectedChangePaths, onSelectFile, onStage, onStageSelected, onStageAll, onUnstage, onUnstageSelected, onDiscard, onDiscardSelected, onCommit, onRefresh }: Props) {
+export function GitPanel({ status, error, selectedFile, selectedStagedPaths, selectedChangePaths, onSelectFile, onStage, onStageSelected, onStageAll, onUnstage, onUnstageSelected, onDiscard, onDiscardSelected, onCommit, onSwitchBranch, onRefresh }: Props) {
   const staged = status?.files.filter((file) => file.staged && !file.untracked) ?? [];
   const unstaged = status?.files.filter((file) => file.unstaged || file.untracked) ?? [];
+  const branches = status?.branches ?? [];
+  const branchOptions = status?.branch && !branches.includes(status.branch) ? [status.branch, ...branches] : branches;
   const activeSelection: GitSelectionGroup | null = selectedStagedPaths.length ? 'staged' : selectedChangePaths.length ? 'changes' : null;
 
   return (
@@ -62,7 +65,13 @@ export function GitPanel({ status, error, selectedFile, selectedStagedPaths, sel
       {!status?.isRepo ? <div className="muted pad">Not a git repo.</div> : null}
       {status?.isRepo ? (
         <>
-          <div className="git-summary"><span>{status.branch ?? 'detached'}</span><span>{status.files.length} {status.files.length === 1 ? 'change' : 'changes'}</span></div>
+          <div className="git-summary">
+            <select className="git-branch-select" aria-label="Git branch" value={status.branch ?? ''} disabled={!branchOptions.length} onChange={(event) => event.target.value && onSwitchBranch(event.target.value)}>
+              {!status.branch ? <option value="">detached</option> : null}
+              {branchOptions.map((branch) => <option key={branch} value={branch}>{branch}</option>)}
+            </select>
+            <span>{status.files.length} {status.files.length === 1 ? 'change' : 'changes'}</span>
+          </div>
           {staged.length ? <GitGroup title="Staged" group="staged" files={staged} selectedFile={selectedFile} selectedPaths={selectedStagedPaths} onSelectFile={(file, event, files) => onSelectFile(file, true, event, files)} onUndo={onUnstage} /> : null}
           <GitGroup title="Changes" group="changes" files={unstaged} selectedFile={selectedFile} selectedPaths={selectedChangePaths} onSelectFile={(file, event, files) => onSelectFile(file, false, event, files)} onStage={onStage} onUndo={onDiscard} />
           <div className={`git-actions git-batch-actions${activeSelection ? ' is-active' : ''}`}>

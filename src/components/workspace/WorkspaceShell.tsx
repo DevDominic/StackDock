@@ -150,6 +150,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>('general');
+  const [pendingBranchSwitch, setPendingBranchSwitch] = useState<string | null>(null);
   const [tabMenu, setTabMenu] = useState<{ file: OpenFileTab; groupId: string; x: number; y: number } | null>(null);
   const [terminalTabMenu, setTerminalTabMenu] = useState<{ x: number; y: number } | null>(null);
   const [tabOverflow, setTabOverflow] = useState({ left: false, right: false });
@@ -820,6 +821,79 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     try { setGitError(null); await api.git.commit(workspace.path, message); await refreshGit(); showToast('Commit created', 'success'); } catch (error) { showGitError(error); showToast(getErrorMessage(error, 'Commit failed'), 'error'); }
   }
 
+  function promptCommitMessage() {
+    const message = window.prompt('Commit message');
+    const trimmed = message?.trim() ?? '';
+    return trimmed || null;
+  }
+
+  async function commitWithPrompt() {
+    const message = promptCommitMessage();
+    if (!message) return;
+    await commit(message);
+  }
+
+  async function stageAllAndCommit() {
+    const message = promptCommitMessage();
+    if (!message) return;
+    try {
+      setGitError(null);
+      await api.git.addAll(workspace.path);
+      await api.git.commit(workspace.path, message);
+      await refreshGit();
+      showToast('Commit created', 'success');
+    } catch (error) {
+      showGitError(error);
+      showToast(getErrorMessage(error, 'Commit failed'), 'error');
+    }
+  }
+
+  async function performGitBranchSwitch(branch: string) {
+    try {
+      setGitError(null);
+      await api.git.switchBranch(workspace.path, branch);
+      setSelectedGitFile(null);
+      setSelectedStagedGitPaths([]);
+      setSelectedChangeGitPaths([]);
+      setLastSelectedGitPath(null);
+      setEditorDiff(null);
+      await refreshGit();
+      setRefreshToken((token) => token + 1);
+      showToast(`Switched to ${branch}`, 'success');
+    } catch (error) {
+      showGitError(error);
+      showToast(getErrorMessage(error, 'Could not switch branch'), 'error');
+    }
+  }
+
+  async function switchGitBranch(branch: string) {
+    if (!branch || branch === git?.branch) return;
+    if (git?.files.length) {
+      setPendingBranchSwitch(branch);
+      return;
+    }
+    await performGitBranchSwitch(branch);
+  }
+
+  function confirmPendingBranchSwitch() {
+    const branch = pendingBranchSwitch;
+    setPendingBranchSwitch(null);
+    if (branch) void performGitBranchSwitch(branch);
+  }
+
+  async function runGitRemoteAction(kind: 'fetch' | 'pull' | 'push') {
+    try {
+      setGitError(null);
+      await api.git[kind](workspace.path);
+      await refreshGit();
+      if (kind === 'pull') setRefreshToken((token) => token + 1);
+      showToast(`${kind[0].toUpperCase()}${kind.slice(1)} complete`, 'success');
+    } catch (error) {
+      showGitError(error);
+      showToast(getErrorMessage(error, `Git ${kind} failed`), 'error');
+    }
+  }
+
   function selectSidebar(tab: 'explorer' | 'git') {
     if (tab === 'git' && !isRepo) return;
     if (tab === 'explorer') updatePanels({ fileTreeVisible: !mergedLayout.panels.fileTreeVisible });
@@ -865,6 +939,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       discard,
       discardSelected: discardPaths,
       commit,
+      switchBranch: switchGitBranch,
     },
     sessionActions: {
       create: async (target, profileId) => { const setup = automation?.workspaces[target.id]; const profile = profiles.find((item) => item.id === profileId); const startupCommand = resolveTerminalStartupCommand({ profileStartupCommand: profile?.startupCommand, workspaceStartupCommand: setup?.newSessionCommand }); await sessionStore.createSession({ workspaceId: target.id, workspaceName: target.name, workspacePath: target.path, profileId, cwd: target.path, name: 'Terminal', startupCommand }); if (target.id !== workspace.id) await onOpenWorkspace(target.id); },
@@ -894,6 +969,8 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const sessionsVisible = sessionsExtensionEnabled && mergedLayout.panels.sessionsVisible !== false;
   const panelSizes = mergedLayout.panels.panelSizes ?? { sessions: 14, explorer: 18, main: 68, editor: 72, git: 28, upper: 62, terminal: 38 };
   const safePanelSizes = getSafePanelSizes(panelSizes, sidebarVisible, sessionsVisible);
+  const stagedGitCount = git?.files.filter((file) => file.staged && !file.untracked).length ?? 0;
+  const unstagedGitCount = git?.files.filter((file) => file.unstaged || file.untracked).length ?? 0;
   const launcherActions: CommandAction[] = [
     // User-defined commands first so they're front-and-center in the palette.
     ...(workspaceSetup?.commands ?? []).map((command) => ({ id: `ws:${command.id}`, label: command.label, description: command.command, run: () => runPaletteCommand(command) })),
@@ -901,9 +978,18 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     { id: 'new-terminal', label: 'New Terminal', run: () => createTerminal(undefined, 'Terminal', '') },
     { id: 'toggle-tree', label: 'Toggle Sidebar', run: () => updatePanels({ fileTreeVisible: !explorerVisible, gitPanelVisible: false }) },
     { id: 'show-explorer', label: 'Show Explorer', run: () => selectSidebar('explorer') },
-    ...(isRepo ? [{ id: 'show-git', label: 'Show Source Control', run: () => selectSidebar('git') }] : []),
+    ...(isRepo ? [
+      { id: 'show-git', label: 'Show Source Control', run: () => selectSidebar('git') },
+      ...(unstagedGitCount ? [{ id: 'git-stage-all', label: 'Git: Stage All', description: 'Stage all changed files', run: stageAll }] : []),
+      ...(stagedGitCount ? [{ id: 'git-commit-staged', label: 'Git: Commit Staged...', description: `${stagedGitCount} staged ${stagedGitCount === 1 ? 'file' : 'files'}`, run: commitWithPrompt }] : []),
+      ...(git?.files.length ? [{ id: 'git-stage-all-commit', label: 'Git: Stage All and Commit...', description: 'Stage all changes, then commit', run: stageAllAndCommit }] : []),
+      { id: 'git-fetch', label: 'Git: Fetch', description: 'Fetch from remote', run: () => runGitRemoteAction('fetch') },
+      { id: 'git-pull', label: 'Git: Pull', description: 'Pull current branch with --ff-only', run: () => runGitRemoteAction('pull') },
+      { id: 'git-push', label: 'Git: Push', description: 'Push current branch', run: () => runGitRemoteAction('push') },
+      ...((git?.branches ?? []).filter((branch) => branch !== git?.branch).map((branch) => ({ id: `git-switch:${branch}`, label: `Git: Switch Branch: ${branch}`, description: `Checkout ${branch}`, run: () => switchGitBranch(branch) }))),
+      { id: 'refresh-git', label: 'Git: Refresh', run: refreshGit },
+    ] : []),
     { id: 'show-terminal', label: 'Show Terminal', run: showTerminal },
-    { id: 'refresh-git', label: 'Refresh Git', run: refreshGit },
     { id: 'edit-config', label: 'Edit Workspace Config (JSON)', run: () => { setSettingsInitialTab('workspace'); setSettingsOpen(true); } },
     { id: 'open-folder', label: 'Open Workspace Folder', run: () => api.fs.revealInExplorer(workspace.path) },
   ];
@@ -1110,6 +1196,24 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         onClose={() => setSessionSwitcherOpen(false)}
       />
       {settingsOpen && settings ? <SettingsModal settings={settings} currentWorkspaceId={workspace.id} initialTab={settingsInitialTab} onSave={async (next) => { const saved = await api.settings.save(next); setSettings(saved); applyTheme(saved.themeId, saved.importedThemes); onSettingsApplied?.(saved); setProfiles(await api.terminal.profiles()); }} onAutomationSaved={(config) => setAutomation(config)} onRunCommand={(command) => void runPaletteCommand(command)} onClose={() => setSettingsOpen(false)} /> : null}
+      {pendingBranchSwitch ? (
+        <div className="modal-backdrop confirm-backdrop" onMouseDown={() => setPendingBranchSwitch(null)}>
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="branch-switch-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="confirm-dialog-head">
+              <span className="confirm-dialog-icon" aria-hidden>⎇</span>
+              <div>
+                <h3 id="branch-switch-title">Switch branch?</h3>
+                <p>Uncommitted changes are present in this workspace.</p>
+              </div>
+            </div>
+            <p className="confirm-dialog-body">Git may block switching to <strong>{pendingBranchSwitch}</strong> if any changes conflict. Your changes will remain in the working tree when Git can switch safely.</p>
+            <div className="modal-actions confirm-dialog-actions">
+              <button className="ghost" onClick={() => setPendingBranchSwitch(null)}>Cancel</button>
+              <button className="primary" autoFocus onClick={confirmPendingBranchSwitch}>Switch Branch</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

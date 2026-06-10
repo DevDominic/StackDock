@@ -207,6 +207,7 @@ export interface GitFileStatus {
 export interface GitStatus {
   isRepo: boolean;
   branch?: string;
+  branches?: string[];
   ahead?: number;
   behind?: number;
   files: GitFileStatus[];
@@ -305,6 +306,7 @@ export interface StackDockApi {
   };
   git: {
     status(path: string): Promise<GitStatus>;
+    branches(path: string): Promise<string[]>;
     diff(path: string, filePath?: string, staged?: boolean): Promise<string>;
     fileContents(path: string, filePath: string, staged?: boolean): Promise<GitFileContents>;
     stage(path: string, filePath: string): Promise<void>;
@@ -312,6 +314,10 @@ export interface StackDockApi {
     discard(path: string, filePath: string): Promise<void>;
     commit(path: string, message: string): Promise<void>;
     addAll(path: string): Promise<void>;
+    switchBranch(path: string, branch: string): Promise<void>;
+    push(path: string): Promise<void>;
+    pull(path: string): Promise<void>;
+    fetch(path: string): Promise<void>;
   };
   settings: {
     load(): Promise<StackDockSettings>;

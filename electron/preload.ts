@@ -56,6 +56,7 @@ const api: StackDockApi = {
   },
   git: {
     status: (targetPath) => ipcRenderer.invoke('git:status', targetPath),
+    branches: (targetPath) => ipcRenderer.invoke('git:branches', targetPath),
     diff: (targetPath, filePath, staged) => ipcRenderer.invoke('git:diff', targetPath, filePath, staged),
     fileContents: (targetPath, filePath, staged) => ipcRenderer.invoke('git:fileContents', targetPath, filePath, staged),
     stage: (targetPath, filePath) => ipcRenderer.invoke('git:stage', targetPath, filePath),
@@ -63,6 +64,10 @@ const api: StackDockApi = {
     discard: (targetPath, filePath) => ipcRenderer.invoke('git:discard', targetPath, filePath),
     commit: (targetPath, message) => ipcRenderer.invoke('git:commit', targetPath, message),
     addAll: (targetPath) => ipcRenderer.invoke('git:addAll', targetPath),
+    switchBranch: (targetPath, branch) => ipcRenderer.invoke('git:switchBranch', targetPath, branch),
+    push: (targetPath) => ipcRenderer.invoke('git:push', targetPath),
+    pull: (targetPath) => ipcRenderer.invoke('git:pull', targetPath),
+    fetch: (targetPath) => ipcRenderer.invoke('git:fetch', targetPath),
   },
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),

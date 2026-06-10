@@ -7,11 +7,30 @@ import { parseStatusLine } from './gitParser';
 
 const execFileAsync = promisify(execFile);
 
-async function runGit(cwd: string, args: string[]) {
-  const { stdout } = await execFileAsync('git', ['-C', cwd, ...args], { maxBuffer: 1024 * 1024 * 10 });
+async function runGit(cwd: string, args: string[], options?: { timeoutMs?: number }) {
+  const { stdout } = await execFileAsync('git', ['-C', cwd, ...args], {
+    maxBuffer: 1024 * 1024 * 10,
+    timeout: options?.timeoutMs ?? 30000,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+  });
   return stdout.toString();
 }
 
+function assertSafeGitRef(ref: string) {
+  const value = ref.trim();
+  if (!value) throw new Error('Branch required');
+  if (value.startsWith('-')) throw new Error('Branch cannot start with -');
+  return value;
+}
+
+export async function listBranches(cwd: string): Promise<string[]> {
+  try {
+    const output = await runGit(cwd, ['branch', '--format=%(refname:short)']);
+    return [...new Set(output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean))];
+  } catch {
+    return [];
+  }
+}
 
 export async function getGitStatus(cwd: string): Promise<GitStatus> {
   try {
@@ -29,6 +48,7 @@ export async function getGitStatus(cwd: string): Promise<GitStatus> {
       if (behind) status.behind = Number(behind);
     }
     status.files = lines.map(parseStatusLine).filter(Boolean) as GitFileStatus[];
+    status.branches = await listBranches(cwd);
     return status;
   } catch {
     return { isRepo: false, files: [] };
@@ -103,4 +123,23 @@ export async function commit(cwd: string, message: string) {
 
 export async function addAll(cwd: string) {
   await runGit(cwd, ['add', '.']);
+}
+
+export async function switchBranch(cwd: string, branch: string) {
+  const safeBranch = assertSafeGitRef(branch);
+  const branches = await listBranches(cwd);
+  if (!branches.includes(safeBranch)) throw new Error('Unknown branch');
+  await runGit(cwd, ['switch', safeBranch]);
+}
+
+export async function push(cwd: string) {
+  await runGit(cwd, ['push'], { timeoutMs: 120000 });
+}
+
+export async function pull(cwd: string) {
+  await runGit(cwd, ['pull', '--ff-only'], { timeoutMs: 120000 });
+}
+
+export async function fetch(cwd: string) {
+  await runGit(cwd, ['fetch'], { timeoutMs: 120000 });
 }

@@ -38,6 +38,7 @@ export interface WorkspaceExtensionContext {
     discard(path: string): void | Promise<void>;
     discardSelected(paths: string[]): void | Promise<void>;
     commit(message: string): void | Promise<void>;
+    switchBranch(branch: string): void | Promise<void>;
   };
   sessionActions: {
     create(target: Workspace, profileId: string): Promise<void>;
