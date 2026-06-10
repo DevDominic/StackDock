@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+
+const FILE_TREE_REFRESH_DEBOUNCE_MS = 500;
 import type { DirectoryEntry, GitFileStatus } from '../../shared/types';
 import { api } from '../../lib/api';
 import { FileIcon } from './fileIcons';
@@ -105,21 +107,38 @@ export function FileTree({ rootPath, gitFiles, onOpenFile, onOpenTerminalHere, r
   const [menu, setMenu] = useState<ContextTarget | null>(null);
   const [treeVersion, setTreeVersion] = useState(0);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const refreshTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const previousRootPathRef = useRef(rootPath);
   const loadChildren = useMemo(() => async (path: string) => api.fs.readDirectory(path), []);
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    api.fs.readDirectory(rootPath).then((items) => { if (active) setRootChildren(items); }).finally(() => { if (active) setLoading(false); });
+    const rootChanged = previousRootPathRef.current !== rootPath;
+    previousRootPathRef.current = rootPath;
+    const showLoading = rootChanged || rootChildren.length === 0;
+    if (rootChanged) setRootChildren([]);
+    if (showLoading) setLoading(true);
+    api.fs.readDirectory(rootPath)
+      .then((items) => { if (active) setRootChildren(items); })
+      .finally(() => { if (active && showLoading) setLoading(false); });
     return () => { active = false; };
   }, [rootPath, refreshToken, treeVersion]);
 
   useEffect(() => {
     void api.fs.watchWorkspace(rootPath);
     return api.onFileSystemChanged((payload) => {
-      if (normalizePath(payload.rootPath).toLowerCase() === normalizePath(rootPath).toLowerCase()) setTreeVersion((version) => version + 1);
+      if (normalizePath(payload.rootPath).toLowerCase() !== normalizePath(rootPath).toLowerCase()) return;
+      if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = window.setTimeout(() => {
+        refreshTimerRef.current = null;
+        setTreeVersion((version) => version + 1);
+      }, FILE_TREE_REFRESH_DEBOUNCE_MS);
     });
   }, [rootPath]);
+
+  useEffect(() => () => {
+    if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (!menu) return;

@@ -5,6 +5,9 @@ node_modules
 .DS_Store
 *.log
 .claude
+.lean-ctx
+nul
+*PLAN*.md
 
 # Claude Code local settings (machine-specific permissions)
 .claude/settings.local.json

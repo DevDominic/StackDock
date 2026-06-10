@@ -34,11 +34,10 @@ function mimeTypeFor(filePath: string) {
   return mimeByExtension[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream';
 }
 
-export async function readDirectory(dirPath: string, options?: { showHidden?: boolean }): Promise<DirectoryEntry[]> {
+export async function readDirectory(dirPath: string): Promise<DirectoryEntry[]> {
   const entries = await fs.readdir(dirPath, { withFileTypes: true });
   return entries
     .filter((entry) => !noisyFolders.has(entry.name))
-    .filter((entry) => options?.showHidden || !entry.name.startsWith('.'))
     .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name))
     .map((entry) => ({
       name: entry.name,
