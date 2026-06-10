@@ -42,13 +42,14 @@ interface SessionEditors {
   openLinks: WebTab[];
   activeKind: MainTabKind;
   activeWeb: string | null;
+  webSplit: 'right' | 'left' | 'up' | 'down' | null;
 }
 
 function createEditorGroup(openFiles: OpenFileTab[] = [], activeFile: string | null = openFiles[0]?.path ?? null): EditorGroup {
   return { id: crypto.randomUUID(), openFiles, activeFile };
 }
 
-const EMPTY_EDITORS: SessionEditors = { editorGroups: [createEditorGroup([], null)], activeEditorGroup: '', splitOrientation: 'horizontal', openLinks: [], activeKind: 'terminal', activeWeb: null };
+const EMPTY_EDITORS: SessionEditors = { editorGroups: [createEditorGroup([], null)], activeEditorGroup: '', splitOrientation: 'horizontal', openLinks: [], activeKind: 'terminal', activeWeb: null, webSplit: null };
 
 function normalizeEditors(entry: SessionEditors | undefined): SessionEditors {
   if (!entry) {
@@ -57,7 +58,7 @@ function normalizeEditors(entry: SessionEditors | undefined): SessionEditors {
   }
   const editorGroups = entry.editorGroups.length ? entry.editorGroups : [createEditorGroup([], null)];
   const activeEditorGroup = editorGroups.some((group) => group.id === entry.activeEditorGroup) ? entry.activeEditorGroup : editorGroups[0].id;
-  return { ...entry, editorGroups, activeEditorGroup };
+  return { ...entry, editorGroups, activeEditorGroup, webSplit: entry.webSplit ?? null };
 }
 
 function linkLabel(url: string) {
@@ -78,6 +79,13 @@ function baseName(targetPath: string) {
   return targetPath.split(/[\\/]/).filter(Boolean).pop() ?? targetPath;
 }
 
+function fileUrlFromPath(targetPath: string) {
+  const normalized = targetPath.replace(/\\/g, '/');
+  const withRoot = normalized.startsWith('/') ? normalized : `/${normalized}`;
+  const encoded = withRoot.split('/').map((part, index) => (index === 1 && /^[A-Za-z]:$/.test(part) ? part : encodeURIComponent(part))).join('/');
+  return `file://${encoded}`;
+}
+
 const mediaExtensions: Record<string, MediaKind> = {
   apng: 'image', avif: 'image', bmp: 'image', gif: 'image', ico: 'image', jpeg: 'image', jpg: 'image', png: 'image', svg: 'image', webp: 'image',
   aac: 'audio', flac: 'audio', m4a: 'audio', mp3: 'audio', oga: 'audio', ogg: 'audio', wav: 'audio',
@@ -87,6 +95,10 @@ const mediaExtensions: Record<string, MediaKind> = {
 function mediaKindForPath(targetPath: string): MediaKind | null {
   const ext = baseName(targetPath).split('.').pop()?.toLowerCase() ?? '';
   return mediaExtensions[ext] ?? null;
+}
+
+function isHtmlFile(targetPath: string) {
+  return /\.html?$/i.test(targetPath);
 }
 
 function stripAnsi(value: string) {
@@ -123,6 +135,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const allSessions = sessionStore.sessions;
   const sessions = allSessions.filter((session) => session.workspaceId === workspace.id);
   const activeTerminalId = sessions.some((session) => session.id === sessionStore.activeSessionId) ? sessionStore.activeSessionId : sessions[0]?.id ?? null;
+  const [htmlPreviewBySession, setHtmlPreviewBySession] = useState<Record<string, string | null>>({});
   // Open editor/web tabs are tracked per terminal session: each session keeps
   // its own tab set, so switching sessions swaps the visible tabs and a brand
   // new session starts as just the terminal. The terminal is always tab #1; all
@@ -139,6 +152,10 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   let mainView: MainTabKind = activeEditors.activeKind;
   if (mainView === 'editor' && !openFiles.length) mainView = 'terminal';
   if (mainView === 'web' && !openLinks.length) mainView = 'terminal';
+  const webSplit = activeEditors.webSplit && openLinks.length ? activeEditors.webSplit : null;
+  const primaryView = webSplit && mainView === 'web' ? 'terminal' : mainView;
+  const activeHtmlPreviewPath = activeTerminalId ? htmlPreviewBySession[activeTerminalId] ?? null : null;
+  const activeHtmlPreview = !!activeFilePath && activeHtmlPreviewPath === activeFilePath;
   const [selectedGitFile, setSelectedGitFile] = useState<GitFileStatus | null>(null);
   const [selectedGitStaged, setSelectedGitStaged] = useState(false);
   const [selectedStagedGitPaths, setSelectedStagedGitPaths] = useState<string[]>([]);
@@ -276,7 +293,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         const activeGroup = editorGroups[Math.min(loadedLayout.editors.activeGroupIndex ?? 0, editorGroups.length - 1)] ?? editorGroups[0];
         // Open on the terminal with the tabs available, rather than jumping
         // straight into the editor when the workspace loads.
-        setEditorsBySession((map) => ({ ...map, [firstSessionId!]: { editorGroups, activeEditorGroup: activeGroup.id, splitOrientation: loadedLayout.editors.splitOrientation ?? 'horizontal', openLinks: [], activeKind: 'terminal', activeWeb: null } }));
+        setEditorsBySession((map) => ({ ...map, [firstSessionId!]: { editorGroups, activeEditorGroup: activeGroup.id, splitOrientation: loadedLayout.editors.splitOrientation ?? 'horizontal', openLinks: [], activeKind: 'terminal', activeWeb: null, webSplit: null } }));
       }
       // Run any per-workspace commands flagged to auto-start when the workspace opens.
       if (setup?.commands?.length && autoStartedRef.current !== workspace.id) {
@@ -333,10 +350,14 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     if (latest) void api.workspaces.saveLayout(latest).catch(() => undefined);
   }, []);
 
-  // Drop per-session tab state once a session is closed so it doesn't leak.
+  // Drop per-session tab/preview state once a session is closed so it doesn't leak.
   useEffect(() => {
+    const ids = new Set(allSessions.map((session) => session.id));
     setEditorsBySession((map) => {
-      const ids = new Set(allSessions.map((session) => session.id));
+      const entries = Object.entries(map).filter(([id]) => ids.has(id));
+      return entries.length === Object.keys(map).length ? map : Object.fromEntries(entries);
+    });
+    setHtmlPreviewBySession((map) => {
       const entries = Object.entries(map).filter(([id]) => ids.has(id));
       return entries.length === Object.keys(map).length ? map : Object.fromEntries(entries);
     });
@@ -351,6 +372,10 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     window.addEventListener('keydown', onKey);
     return () => { window.removeEventListener('mousedown', close); window.removeEventListener('resize', close); window.removeEventListener('keydown', onKey); };
   }, [tabMenu, terminalTabMenu]);
+
+  const openCapturedLinkRef = useRef(openCapturedLink);
+  openCapturedLinkRef.current = openCapturedLink;
+  useEffect(() => api.onOpenUrlRequest(({ url, sessionId }) => openCapturedLinkRef.current(url, sessionId)), []);
 
   // Track whether the tab strip overflows so the scroll chevrons (which also
   // signal hidden tabs) only show when there's something off-screen.
@@ -455,7 +480,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       editorGroups: prev.editorGroups.map((group) => (group.id === targetGroup.id ? { ...group, activeFile: path } : group)),
     };
   });
-  const selectWeb = (id: string) => patchActive((prev) => ({ ...prev, activeKind: 'web', activeWeb: id }));
+  const selectWeb = (id: string) => patchActive((prev) => prev.webSplit ? { ...prev, activeWeb: id } : { ...prev, activeKind: 'web', activeWeb: id });
 
   function toggleMainView() {
     patchActive((prev) => {
@@ -554,7 +579,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   function closeAllContentTabs() {
     patchActive((prev) => {
       const group = createEditorGroup([], null);
-      return { ...prev, editorGroups: [group], activeEditorGroup: group.id, openLinks: [], activeKind: 'terminal', activeWeb: null };
+      return { ...prev, editorGroups: [group], activeEditorGroup: group.id, openLinks: [], activeKind: 'terminal', activeWeb: null, webSplit: null };
     });
   }
 
@@ -601,7 +626,25 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     });
   }
 
-  // ---- Web (terminal link) tabs ----
+  // ---- Web (terminal link / HTML preview) tabs ----
+  async function previewFile(path: string) {
+    const sessionId = activeTerminalId;
+    if (!sessionId) return;
+    await openFile(path);
+    await saveFile(path, { silent: true });
+    setHtmlPreviewBySession((map) => ({ ...map, [sessionId]: path }));
+  }
+
+  async function toggleHtmlPreview(path: string) {
+    if (!activeTerminalId) return;
+    if (activeHtmlPreview) {
+      setHtmlPreviewBySession((map) => ({ ...map, [activeTerminalId]: null }));
+      return;
+    }
+    await saveFile(path, { silent: true });
+    setHtmlPreviewBySession((map) => ({ ...map, [activeTerminalId]: path }));
+  }
+
   function openLink(url: string) {
     // Respect the user's preference to hand links off to the system browser.
     if (settings?.openLinksExternally) {
@@ -617,6 +660,32 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     });
   }
 
+  // Browser opens captured from terminal tools (via the loopback bridge). Unlike
+  // openLink this deliberately ignores openLinksExternally: injecting the env vars
+  // was the explicit opt-in, and the capture setting is the escape hatch.
+  function openCapturedLink(url: string, sessionId?: string) {
+    const target = sessionId && allSessions.some((session) => session.id === sessionId)
+      ? allSessions.find((session) => session.id === sessionId)!
+      : null;
+    const targetSessionId = target?.id ?? activeTerminalId;
+    if (!targetSessionId) return;
+    const mode = settings?.capturedLinkOpenMode ?? 'tab';
+    const split = mode === 'tab' ? null : (mode.replace('split-', '') as 'right' | 'left' | 'up' | 'down');
+    patchSession(targetSessionId, (prev) => {
+      const existing = prev.openLinks.find((link) => link.url === url);
+      const base = split
+        ? { ...prev, webSplit: split }
+        : { ...prev, activeKind: 'web' as const };
+      if (existing) return { ...base, activeWeb: existing.id };
+      const tab: WebTab = { id: crypto.randomUUID(), url, name: linkLabel(url) };
+      return { ...base, openLinks: [...prev.openLinks, tab], activeWeb: tab.id };
+    });
+    if (target) {
+      sessionStore.setActiveSession(target.id);
+      if (target.workspaceId !== workspace.id) void onOpenWorkspace(target.workspaceId);
+    }
+  }
+
   function closeLink(id: string) {
     patchActive((prev) => {
       const index = prev.openLinks.findIndex((link) => link.id === id);
@@ -628,7 +697,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         activeWeb = openLinks[index]?.id ?? openLinks[index - 1]?.id ?? null;
         if (!activeWeb) activeKind = prev.editorGroups.some((group) => group.openFiles.length) ? 'editor' : 'terminal';
       }
-      return { ...prev, openLinks, activeWeb, activeKind };
+      return { ...prev, openLinks, activeWeb, activeKind, webSplit: openLinks.length ? prev.webSplit : null };
     });
   }
 
@@ -913,6 +982,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     refreshToken,
     actions: {
       openFile,
+      previewFile,
       openTerminalHere,
       openGit: () => selectSidebar('git'),
       refreshGit,
@@ -1016,6 +1086,18 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     return () => window.removeEventListener('keydown', onKey);
   }, [activeFilePath, activeWebId, mainView, activeTerminalId, defaultProfile?.id, explorerVisible, gitVisible, openFiles.length, openLinks.length, workspaceSetup, profiles]);
 
+  const webPane = webSplit ? (
+    <>
+      {webSplit === 'right' || webSplit === 'down' ? <PanelResizeHandle className={`resize-handle ${webSplit === 'down' ? 'horizontal' : 'vertical'}`} /> : null}
+      <Panel key="web-split" id="main-web-split" order={webSplit === 'left' || webSplit === 'up' ? 1 : 2} defaultSize={45} minSize={15}>
+        <div className="main-tab-pane web-split-pane" style={{ display: 'flex' }}>
+          <WebTabPanel tabs={openLinks} activeId={activeWebId} onTitle={setWebTitle} />
+        </div>
+      </Panel>
+      {webSplit === 'left' || webSplit === 'up' ? <PanelResizeHandle className={`resize-handle ${webSplit === 'up' ? 'horizontal' : 'vertical'}`} /> : null}
+    </>
+  ) : null;
+
   return (
     <div className="workspace-shell workspace-terminal-mode">
       <header className="topbar compact-topbar workspace-titlebar">
@@ -1116,7 +1198,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
                   {openLinks.map((link) => (
                     <div
                       key={link.id}
-                      className={`tab web-tab-chip${mainView === 'web' && link.id === activeWebId ? ' active' : ''}`}
+                      className={`tab web-tab-chip${(mainView === 'web' || webSplit) && link.id === activeWebId ? ' active' : ''}`}
                       title={link.url}
                       onClick={() => selectWeb(link.id)}
                       onMouseDown={(event) => { if (event.button === 1) { event.preventDefault(); closeLink(link.id); } }}
@@ -1135,7 +1217,9 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
                 {mainView === 'editor' && activeFilePath ? (
                   <div className="editor-tab-actions">
                     <button className="ghost" onClick={() => saveFile(activeFilePath)}>Save</button>
+                    {isHtmlFile(activeFilePath) ? <button className="ghost" onClick={() => void toggleHtmlPreview(activeFilePath)}>{activeHtmlPreview ? 'View' : 'Preview'}</button> : null}
                     <button className="ghost" onClick={() => api.fs.revealInExplorer(activeFilePath)}>Reveal</button>
+                    <button className="ghost" onClick={() => void api.shell.openPath(activeFilePath).catch((error) => showToast(getErrorMessage(error, 'Could not open file'), 'error'))}>Open External</button>
                   </div>
                 ) : null}
               </div>
@@ -1146,42 +1230,54 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
               </div>
             ) : null}
             <div className="main-tab-content">
-              <div className="main-tab-pane" style={{ display: mainView === 'terminal' ? 'flex' : 'none' }}>
-                <TerminalPanel sessions={sessions} activeId={activeTerminalId} onOpenLink={openLink} settings={settings} isVisible={mainView === 'terminal'} onAttachmentError={(message) => showToast(message, 'error')} />
-              </div>
-              <div className="main-tab-pane" style={{ display: mainView === 'editor' ? 'flex' : 'none' }}>
-                {openFiles.length ? (
-                  <Suspense fallback={<div className="empty-pad muted">Loading editor…</div>}>
-                    <PanelGroup direction={activeEditors.splitOrientation === 'horizontal' ? 'horizontal' : 'vertical'} className="editor-split-group">
-                      {activeEditors.editorGroups.flatMap((group, index) => [
-                        <Panel key={group.id} id={`editor-${group.id}`} minSize={20} className={group.id === activeEditors.activeEditorGroup ? 'editor-group-pane active' : 'editor-group-pane'}>
-                          <div className="editor-group-shell" onMouseDown={() => patchActive((prev) => ({ ...prev, activeEditorGroup: group.id }))}>
-                            <EditorPanel openFiles={group.openFiles} activePath={group.activeFile} onOpenFile={(path) => selectFile(path, group.id)} onChangeFile={changeFile} onSaveFile={saveFile} onCloseFile={(path) => closeFile(path, group.id)} settings={settings ?? undefined} diff={editorDiff} diffMode={diffMode} showTabs={false} visible={mainView === 'editor'} />
-                          </div>
-                        </Panel>,
-                        index < activeEditors.editorGroups.length - 1 ? <PanelResizeHandle key={`${group.id}:resize`} className={activeEditors.splitOrientation === 'horizontal' ? 'resize-handle vertical' : 'resize-handle horizontal'} /> : null,
-                      ])}
-                    </PanelGroup>
-                  </Suspense>
-                ) : (
-                  <div className="empty-pad muted">Open file to edit.</div>
-                )}
-                {tabMenu ? (
-                  <div className="context-menu tab-context-menu" style={{ top: tabMenu.y, left: tabMenu.x }} onMouseDown={(event) => event.stopPropagation()}>
-                    <button className="context-menu-item" onClick={() => { splitFile(tabMenu.file.path, tabMenu.groupId, 'left'); setTabMenu(null); }}>Split Left</button>
-                    <button className="context-menu-item" onClick={() => { splitFile(tabMenu.file.path, tabMenu.groupId, 'right'); setTabMenu(null); }}>Split Right</button>
-                    <button className="context-menu-item" onClick={() => { splitFile(tabMenu.file.path, tabMenu.groupId, 'up'); setTabMenu(null); }}>Split Up</button>
-                    <button className="context-menu-item" onClick={() => { splitFile(tabMenu.file.path, tabMenu.groupId, 'down'); setTabMenu(null); }}>Split Down</button>
-                    <button className="context-menu-item" onClick={() => { closeFile(tabMenu.file.path, tabMenu.groupId); setTabMenu(null); }}>Close</button>
-                    <button className="context-menu-item" onClick={() => { closeOthers(tabMenu.file.path, tabMenu.groupId); setTabMenu(null); }}>Close Others</button>
-                    <button className="context-menu-item" onClick={() => { closeToSide(tabMenu.file.path, tabMenu.groupId, 'right'); setTabMenu(null); }}>Close to Right</button>
-                    <button className="context-menu-item" onClick={() => { closeToSide(tabMenu.file.path, tabMenu.groupId, 'left'); setTabMenu(null); }}>Close to Left</button>
+              <PanelGroup direction={webSplit === 'up' || webSplit === 'down' ? 'vertical' : 'horizontal'} className="web-split-group">
+                {webSplit === 'left' || webSplit === 'up' ? webPane : null}
+                <Panel key="primary" id="main-primary" order={webSplit === 'left' || webSplit === 'up' ? 2 : 1} minSize={20}>
+                  <div className="main-tab-pane" style={{ display: primaryView === 'terminal' ? 'flex' : 'none' }}>
+                    <TerminalPanel sessions={sessions} activeId={activeTerminalId} onOpenLink={openLink} settings={settings} isVisible={primaryView === 'terminal'} onAttachmentError={(message) => showToast(message, 'error')} />
                   </div>
-                ) : null}
-              </div>
-              <div className="main-tab-pane" style={{ display: mainView === 'web' ? 'flex' : 'none' }}>
-                <WebTabPanel tabs={openLinks} activeId={activeWebId} onTitle={setWebTitle} />
-              </div>
+                  <div className="main-tab-pane" style={{ display: primaryView === 'editor' ? 'flex' : 'none' }}>
+                    {openFiles.length ? (
+                      <Suspense fallback={<div className="empty-pad muted">Loading editor…</div>}>
+                        <PanelGroup direction={activeEditors.splitOrientation === 'horizontal' ? 'horizontal' : 'vertical'} className="editor-split-group">
+                          {activeEditors.editorGroups.flatMap((group, index) => [
+                            <Panel key={group.id} id={`editor-${group.id}`} minSize={20} className={group.id === activeEditors.activeEditorGroup ? 'editor-group-pane active' : 'editor-group-pane'}>
+                              <div className="editor-group-shell" onMouseDown={() => patchActive((prev) => ({ ...prev, activeEditorGroup: group.id }))}>
+                                {group.activeFile && htmlPreviewBySession[activeTerminalId ?? ''] === group.activeFile ? (
+                                  <WebTabPanel tabs={[{ id: `preview:${group.activeFile}`, url: fileUrlFromPath(group.activeFile), name: baseName(group.activeFile) }]} activeId={`preview:${group.activeFile}`} onTitle={() => undefined} showToolbar={false} />
+                                ) : (
+                                  <EditorPanel openFiles={group.openFiles} activePath={group.activeFile} onOpenFile={(path) => selectFile(path, group.id)} onChangeFile={changeFile} onSaveFile={saveFile} onCloseFile={(path) => closeFile(path, group.id)} settings={settings ?? undefined} diff={editorDiff} diffMode={diffMode} showTabs={false} visible={primaryView === 'editor'} />
+                                )}
+                              </div>
+                            </Panel>,
+                            index < activeEditors.editorGroups.length - 1 ? <PanelResizeHandle key={`${group.id}:resize`} className={activeEditors.splitOrientation === 'horizontal' ? 'resize-handle vertical' : 'resize-handle horizontal'} /> : null,
+                          ])}
+                        </PanelGroup>
+                      </Suspense>
+                    ) : (
+                      <div className="empty-pad muted">Open file to edit.</div>
+                    )}
+                    {tabMenu ? (
+                      <div className="context-menu tab-context-menu" style={{ top: tabMenu.y, left: tabMenu.x }} onMouseDown={(event) => event.stopPropagation()}>
+                        <button className="context-menu-item" onClick={() => { splitFile(tabMenu.file.path, tabMenu.groupId, 'left'); setTabMenu(null); }}>Split Left</button>
+                        <button className="context-menu-item" onClick={() => { splitFile(tabMenu.file.path, tabMenu.groupId, 'right'); setTabMenu(null); }}>Split Right</button>
+                        <button className="context-menu-item" onClick={() => { splitFile(tabMenu.file.path, tabMenu.groupId, 'up'); setTabMenu(null); }}>Split Up</button>
+                        <button className="context-menu-item" onClick={() => { splitFile(tabMenu.file.path, tabMenu.groupId, 'down'); setTabMenu(null); }}>Split Down</button>
+                        <button className="context-menu-item" onClick={() => { closeFile(tabMenu.file.path, tabMenu.groupId); setTabMenu(null); }}>Close</button>
+                        <button className="context-menu-item" onClick={() => { closeOthers(tabMenu.file.path, tabMenu.groupId); setTabMenu(null); }}>Close Others</button>
+                        <button className="context-menu-item" onClick={() => { closeToSide(tabMenu.file.path, tabMenu.groupId, 'right'); setTabMenu(null); }}>Close to Right</button>
+                        <button className="context-menu-item" onClick={() => { closeToSide(tabMenu.file.path, tabMenu.groupId, 'left'); setTabMenu(null); }}>Close to Left</button>
+                      </div>
+                    ) : null}
+                  </div>
+                  {!webSplit ? (
+                    <div className="main-tab-pane" style={{ display: mainView === 'web' ? 'flex' : 'none' }}>
+                      <WebTabPanel tabs={openLinks} activeId={activeWebId} onTitle={setWebTitle} />
+                    </div>
+                  ) : null}
+                </Panel>
+                {webSplit === 'right' || webSplit === 'down' ? webPane : null}
+              </PanelGroup>
             </div>
           </div>
         </Panel>

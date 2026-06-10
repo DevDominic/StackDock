@@ -7,6 +7,7 @@ import { resolveTerminalStartupCommand } from '../src/shared/terminalProfiles';
 import type { TerminalPersistedState, TerminalPersistedTab, TerminalProfile, TerminalSession, TerminalSessionContext, TerminalSnapshot } from '../src/shared/types';
 import { getDefaultSettings, loadSettings } from './configStore';
 import { ensureDataDirs, getTerminalSnapshotsDir, getTerminalStatePath } from './storage';
+import { getBridgeEnv } from './browserBridge';
 
 interface RecordEntry {
   session: TerminalSession;
@@ -216,12 +217,15 @@ export async function createTerminal(profileId: string, cwd: string, name?: stri
     createdAt: new Date().toISOString(),
   };
 
+  const settings = await loadSettings().catch(() => getDefaultSettings());
+  const bridgeEnv = settings.captureTerminalBrowserOpens ? getBridgeEnv(session.id) : {};
+
   const terminal = pty.spawn(profile.shell, profile.args, {
     name: 'xterm-256color',
     cols: 120,
     rows: 30,
     cwd: resolvedCwd,
-    env: { ...(process.env as Record<string, string>), STACKDOCK: '1', STACKDOCK_TERMINAL: '1' },
+    env: { ...(process.env as Record<string, string>), STACKDOCK: '1', STACKDOCK_TERMINAL: '1', ...bridgeEnv },
     // Avoid node-pty's Windows kill-path helper (`conpty_console_list_agent`),
     // which can print noisy "AttachConsole failed" errors when Electron exits.
     ...(process.platform === 'win32' ? { useConptyDll: true } : {}),

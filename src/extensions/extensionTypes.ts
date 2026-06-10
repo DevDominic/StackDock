@@ -12,6 +12,7 @@ export interface WorkspaceExtensionContext {
   refreshToken: number;
   actions: {
     openFile(path: string): void | Promise<void>;
+    previewFile(path: string): void | Promise<void>;
     openTerminalHere(path: string): void | Promise<void>;
     openGit(): void;
     refreshGit(): void | Promise<void>;

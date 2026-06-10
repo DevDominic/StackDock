@@ -7,6 +7,7 @@ import { addWorkspace, createWorkspace, listWorkspaces, loadLayout, loadRestoreS
 import { createFile, createFolder, deletePath, readDirectory, readFile, readFileDataUrl, renamePath, revealInExplorer, writeFile } from './fileService';
 import { addAll, commit, discardFile, fetch, getGitDiff, getGitFileContents, getGitStatus, listBranches, pull, push, stageFile, switchBranch, unstageFile } from './gitService';
 import { createTerminal, forgetTerminalSnapshot, getTerminalProfiles, getTerminalSnapshot, killTerminal, loadOpenTerminalState, resizeTerminal, saveOpenTerminalState, setTerminalWindow, setVisibleTerminals, writeTerminal } from './terminalManager';
+import { setBridgeWindow, startBrowserBridge } from './browserBridge';
 import { ensureDataDirs } from './storage';
 import { logError } from './log';
 import { loadSettings, saveSettings } from './configStore';
@@ -61,6 +62,7 @@ async function createWindow() {
   mainWindow.setMenuBarVisibility(false);
 
   setTerminalWindow(mainWindow);
+  setBridgeWindow(mainWindow);
 
   if (!app.isPackaged) {
     await mainWindow.loadURL('http://localhost:5173');
@@ -98,6 +100,7 @@ async function createWindow() {
     closingAfterTerminalSave = false;
     mainWindow = null;
     setTerminalWindow(null);
+    setBridgeWindow(null);
   });
 }
 
@@ -204,6 +207,12 @@ function registerIpc() {
     await shell.openExternal(target);
   });
 
+  ipcMain.handle('shell:openPath', async (_event, targetPath: unknown) => {
+    const target = assertAbsolutePath(targetPath, 'targetPath');
+    const result = await shell.openPath(target);
+    if (result) throw new Error(result); // shell.openPath resolves with an error string on failure
+  });
+
   ipcMain.handle('git:status', async (_event, targetPath: unknown) => getGitStatus(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('git:branches', async (_event, targetPath: unknown) => listBranches(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('git:diff', async (_event, targetPath: unknown, filePath?: unknown, staged?: boolean) => getGitDiff(assertAbsolutePath(targetPath, 'targetPath'), filePath == null ? undefined : assertNonEmptyString(filePath, 'filePath'), staged));
@@ -279,6 +288,11 @@ app.whenReady().then(async () => {
   // ships its own in-app topbar, so the native menu bar is just noise.
   Menu.setApplicationMenu(null);
   await ensureDataDirs();
+  try {
+    await startBrowserBridge();
+  } catch (error) {
+    void logError('startBrowserBridge', error); // bridge failure must never block startup
+  }
   registerIpc();
   await createWindow();
 

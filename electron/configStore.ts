@@ -38,6 +38,8 @@ export function getDefaultSettings(): StackDockSettings {
     autoSave: true,
     autoSaveDelayMs: 1000,
     openLinksExternally: false,
+    captureTerminalBrowserOpens: true,
+    capturedLinkOpenMode: 'tab' as const,
     ui: { fontFamily: UI_FONT_FAMILY, fontSize: 13 },
     code: { ligatures: true },
     editor: { fontSize: 13, fontFamily: CODE_FONT_FAMILY, tabSize: 2, wordWrap: 'off' },

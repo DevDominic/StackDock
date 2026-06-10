@@ -9,6 +9,7 @@ interface Props {
   rootPath: string;
   gitFiles: GitFileStatus[];
   onOpenFile(path: string): void;
+  onPreviewFile(path: string): void;
   onOpenTerminalHere(path: string): void;
   refreshToken: number;
 }
@@ -30,6 +31,7 @@ interface NodeProps {
 function joinPath(base: string, name: string) { return `${base.replace(/[\\/]+$/, '')}/${name.replace(/^[\\/]+/, '')}`; }
 function parentPath(path: string) { return path.replace(/[\\/][^\\/]+$/, ''); }
 function normalizePath(p: string) { return p.replace(/\\/g, '/').replace(/\/+$/, ''); }
+function isHtmlFile(path: string) { return /\.html?$/i.test(path); }
 
 function decorateGit(file: GitFileStatus): GitDecoration {
   if (file.untracked) return { letter: 'U', cls: 'git-untracked' };
@@ -100,7 +102,7 @@ function FileNode({ entry, depth, version, gitLookup, onOpenFile, onContextMenu,
   );
 }
 
-export function FileTree({ rootPath, gitFiles, onOpenFile, onOpenTerminalHere, refreshToken }: Props) {
+export function FileTree({ rootPath, gitFiles, onOpenFile, onPreviewFile, onOpenTerminalHere, refreshToken }: Props) {
   const gitLookup = useMemo(() => buildGitLookup(rootPath, gitFiles), [rootPath, gitFiles]);
   const [rootChildren, setRootChildren] = useState<DirectoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -199,6 +201,8 @@ export function FileTree({ rootPath, gitFiles, onOpenFile, onOpenTerminalHere, r
           {menu.entry?.isDirectory || !menu.entry ? <button className="context-menu-item" onClick={() => createFolderIn(menu.entry?.path ?? rootPath)}>New folder</button> : null}
           {menu.entry ? <button className="context-menu-item" onClick={() => rename(menu.entry!)}>Rename</button> : null}
           {menu.entry ? <button className="context-menu-item" onClick={() => { void api.fs.revealInExplorer(menu.entry!.path); setMenu(null); }}>Reveal in Explorer</button> : null}
+          {menu.entry && menu.entry.isFile && isHtmlFile(menu.entry.path) ? <button className="context-menu-item" onClick={() => { onPreviewFile(menu.entry!.path); setMenu(null); }}>Preview</button> : null}
+          {menu.entry && !menu.entry.isDirectory ? <button className="context-menu-item" onClick={() => { void api.shell.openPath(menu.entry!.path); setMenu(null); }}>Open External</button> : null}
           {menu.entry ? <button className="context-menu-item danger" onClick={() => remove(menu.entry!)}>Delete</button> : null}
         </div>
       ) : null}

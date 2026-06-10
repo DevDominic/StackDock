@@ -53,6 +53,7 @@ const api: StackDockApi = {
   },
   shell: {
     openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+    openPath: (targetPath) => ipcRenderer.invoke('shell:openPath', targetPath),
   },
   git: {
     status: (targetPath) => ipcRenderer.invoke('git:status', targetPath),
@@ -126,6 +127,11 @@ const api: StackDockApi = {
     const listener = (_event: Electron.IpcRendererEvent, payload: { rootPath: string }) => callback(payload);
     ipcRenderer.on('fs:changed', listener);
     return () => ipcRenderer.off('fs:changed', listener);
+  },
+  onOpenUrlRequest(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { url: string; sessionId?: string }) => callback(payload);
+    ipcRenderer.on('web:openUrlRequest', listener);
+    return () => ipcRenderer.off('web:openUrlRequest', listener);
   },
 };
 

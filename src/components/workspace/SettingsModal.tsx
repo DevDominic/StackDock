@@ -478,6 +478,18 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
             <label><input type="checkbox" checked={draft.emptySessionsVisible} onChange={(event) => setDraft({ ...draft, emptySessionsVisible: event.target.checked })} /> Show empty sessions</label>
             <label><input type="checkbox" checked={draft.showSessionCwdForAll} onChange={(event) => setDraft({ ...draft, showSessionCwdForAll: event.target.checked })} /> Always show session directories</label>
             <label><input type="checkbox" checked={draft.openLinksExternally} onChange={(event) => setDraft({ ...draft, openLinksExternally: event.target.checked })} /> Open terminal links in system browser</label>
+            <label><input type="checkbox" checked={draft.captureTerminalBrowserOpens} onChange={(event) => setDraft({ ...draft, captureTerminalBrowserOpens: event.target.checked })} /> Capture browser opens from terminal tools (applies to new terminals)</label>
+            {draft.captureTerminalBrowserOpens ? (
+              <label>Captured pages open as{' '}
+                <select value={draft.capturedLinkOpenMode} onChange={(event) => setDraft({ ...draft, capturedLinkOpenMode: event.target.value as StackDockSettings['capturedLinkOpenMode'] })}>
+                  <option value="tab">New tab</option>
+                  <option value="split-right">Tab + split right</option>
+                  <option value="split-left">Tab + split left</option>
+                  <option value="split-up">Tab + split up</option>
+                  <option value="split-down">Tab + split down</option>
+                </select>
+              </label>
+            ) : null}
             <label><input type="checkbox" checked={draft.autoSave} onChange={(event) => setDraft({ ...draft, autoSave: event.target.checked })} /> Auto save</label>
             <label>Auto save delay (ms)<input type="number" min={200} step={100} disabled={!draft.autoSave} value={draft.autoSaveDelayMs} onChange={(event) => setDraft({ ...draft, autoSaveDelayMs: Math.max(200, Number(event.target.value) || 0) })} /></label>
             <label>Git refresh interval (seconds)<input type="number" min={1} step={1} value={draft.gitRefreshIntervalSeconds} onChange={(event) => setDraft({ ...draft, gitRefreshIntervalSeconds: Math.max(1, Number(event.target.value) || 0) })} /></label>

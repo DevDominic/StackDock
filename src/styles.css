@@ -587,6 +587,8 @@ html[data-window-controls="native"] .topbar-right { padding-right: 138px; }
 /* Editor/git/layout */
 .workspace-main-area { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .editor-split-group { flex: 1; min-width: 0; min-height: 0; }
+.web-split-group { flex: 1; min-height: 0; }
+.web-split-pane { height: 100%; }
 .editor-group-pane { min-width: 0; min-height: 0; background: var(--bg-panel); }
 .editor-group-pane.active { outline: 1px solid var(--primary-border-soft); outline-offset: -1px; }
 .editor-group-shell { display: flex; flex-direction: column; height: 100%; min-width: 0; min-height: 0; }
@@ -597,7 +599,9 @@ html[data-window-controls="native"] .topbar-right { padding-right: 138px; }
 /* ---- Unified main tab bar (Terminal tab + open file tabs share one space) ---- */
 .main-tabbed { height: 100%; }
 .main-tab-content { flex: 1; min-height: 0; min-width: 0; display: flex; }
-.main-tab-pane { flex: 1; min-height: 0; min-width: 0; flex-direction: column; }
+.main-tab-content > .web-split-group { width: 100%; height: 100%; }
+.web-split-group > [data-panel] { min-width: 0; min-height: 0; display: flex; }
+.main-tab-pane { flex: 1; min-height: 0; min-width: 0; width: 100%; height: 100%; flex-direction: column; }
 .main-tab-pane > .editor-panel, .main-tab-pane > .terminal-workspace { flex: 1; min-height: 0; }
 /* The terminal tab is permanent and has no close affordance. */
 .main-terminal-tab { padding-right: 12px; }
@@ -694,7 +698,7 @@ html[data-window-controls="native"] .topbar-right { padding-right: 138px; }
 .tab .tab-icon { font-size: 11px; line-height: 1; flex-shrink: 0; }
 .web-tab-chip .tab-close { visibility: visible; }
 .web-tab-chip .tab-close .x { display: inline; }
-.web-tab { flex: 1; min-height: 0; min-width: 0; flex-direction: column; }
+.web-tab { flex: 1; min-height: 0; min-width: 0; width: 100%; height: 100%; flex-direction: column; }
 .web-toolbar { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 8px; border-bottom: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
 .web-toolbar .web-nav { min-height: 26px; min-width: 28px; padding: 2px 6px; font-size: 13px; line-height: 1; }
 .web-toolbar .web-nav:disabled { opacity: .4; }

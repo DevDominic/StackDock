@@ -7,8 +7,11 @@ node_modules
 .claude
 .lean-ctx
 nul
-*PLAN*.md
-
+# Plans — files containing plan/plans in name, or inside plan/plans folders
+*[Pp][Ll][Aa][Nn]*.md
+*[Pp][Ll][Aa][Nn][Ss]*.md
+plans/
+plan/
 # Claude Code local settings (machine-specific permissions)
 .claude/settings.local.json
 

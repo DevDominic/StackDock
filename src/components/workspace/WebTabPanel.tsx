@@ -11,6 +11,7 @@ interface Props {
   tabs: WebTab[];
   activeId: string | null;
   onTitle(id: string, title: string): void;
+  showToolbar?: boolean;
 }
 
 // Electron's <webview> is already typed as a JSX intrinsic by @types/react.
@@ -18,17 +19,17 @@ interface Props {
 // All open web tabs stay mounted and are toggled via CSS so each keeps its own
 // navigation history and scroll position across tab switches (same approach the
 // terminal and editor use).
-export function WebTabPanel({ tabs, activeId, onTitle }: Props) {
+export function WebTabPanel({ tabs, activeId, onTitle, showToolbar = true }: Props) {
   return (
     <>
       {tabs.map((tab) => (
-        <WebView key={tab.id} tab={tab} visible={tab.id === activeId} onTitle={onTitle} />
+        <WebView key={tab.id} tab={tab} visible={tab.id === activeId} onTitle={onTitle} showToolbar={showToolbar} />
       ))}
     </>
   );
 }
 
-function WebView({ tab, visible, onTitle }: { tab: WebTab; visible: boolean; onTitle(id: string, title: string): void }) {
+function WebView({ tab, visible, onTitle, showToolbar }: { tab: WebTab; visible: boolean; onTitle(id: string, title: string): void; showToolbar: boolean }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ref = useRef<any>(null);
   const [currentUrl, setCurrentUrl] = useState(tab.url);
@@ -64,13 +65,14 @@ function WebView({ tab, visible, onTitle }: { tab: WebTab; visible: boolean; onT
 
   return (
     <div className="web-tab" style={{ display: visible ? 'flex' : 'none' }}>
-      <div className="web-toolbar">
-        <button className="ghost web-nav" disabled={!canBack} title="Back" onClick={() => ref.current?.goBack()}>←</button>
-        <button className="ghost web-nav" disabled={!canForward} title="Forward" onClick={() => ref.current?.goForward()}>→</button>
-        <button className="ghost web-nav" title="Reload" onClick={() => ref.current?.reload()}>⟳</button>
-        <span className="web-url" title={currentUrl}>{currentUrl}</span>
-        <button className="ghost" title="Open in system browser" onClick={() => void api.shell.openExternal(currentUrl).catch(() => undefined)}>Open externally</button>
-      </div>
+      {showToolbar ? (
+        <div className="web-toolbar">
+          <button className="ghost web-nav" disabled={!canBack} title="Back" onClick={() => ref.current?.goBack()}>←</button>
+          <button className="ghost web-nav" disabled={!canForward} title="Forward" onClick={() => ref.current?.goForward()}>→</button>
+          <button className="ghost web-nav" title="Reload" onClick={() => ref.current?.reload()}>⟳</button>
+          <button className="ghost" title="Open in system browser" onClick={() => void api.shell.openExternal(currentUrl).catch(() => undefined)}>Open externally</button>
+        </div>
+      ) : null}
       <webview ref={ref} src={tab.url} className="web-frame" />
     </div>
   );

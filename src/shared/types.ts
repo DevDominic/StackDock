@@ -44,6 +44,10 @@ export interface StackDockSettings {
   autoSaveDelayMs: number;
   /** When true, clicking a terminal link opens the system browser instead of an in-app web tab. */
   openLinksExternally: boolean;
+  /** Inject BROWSER/PLANNOTATOR_BROWSER into new terminals so CLI tools open pages as in-app web tabs. */
+  captureTerminalBrowserOpens: boolean;
+  /** How captured pages open: plain tab, or tab + split of the main area. */
+  capturedLinkOpenMode: 'tab' | 'split-right' | 'split-left' | 'split-up' | 'split-down';
   ui: { fontFamily: string; fontSize: number };
   code: { ligatures: boolean };
   editor: { fontSize: number; fontFamily: string; tabSize: number; wordWrap: 'on' | 'off'; /** @deprecated Use StackDockSettings.themeId. */ themeId?: string; /** @deprecated Use StackDockSettings.importedThemes. */ importedThemes?: StackDockTheme[] };
@@ -303,6 +307,7 @@ export interface StackDockApi {
   };
   shell: {
     openExternal(url: string): Promise<void>;
+    openPath(targetPath: string): Promise<void>;
   };
   git: {
     status(path: string): Promise<GitStatus>;
@@ -357,6 +362,7 @@ export interface StackDockApi {
   onTerminalExit(callback: (payload: { id: string; exitCode: number | null }) => void): () => void;
   onWorkspaceChanged(callback: () => void): () => void;
   onFileSystemChanged(callback: (payload: { rootPath: string }) => void): () => void;
+  onOpenUrlRequest(callback: (payload: { url: string; sessionId?: string }) => void): () => void;
 }
 
 declare global {
