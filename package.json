@@ -15,6 +15,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p electron/tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@xterm/addon-webgl": "^0.19.0",
+    "@xterm/xterm": "^6.0.0",
     "node-pty": "^1.1.0"
   },
   "build": {
@@ -64,25 +66,24 @@
     "@fontsource/montserrat": "^5.2.8",
     "@fontsource/source-code-pro": "^5.2.7",
     "@mdi/js": "^7.4.47",
-    "@xterm/addon-fit": "^0.10.0",
-    "@xterm/addon-ligatures": "^0.10.0",
-    "monaco-editor": "^0.52.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-resizable-panels": "^2.1.8",
-    "xterm": "^5.3.0",
-    "zustand": "^5.0.6",
     "@types/node": "^22.15.29",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.5.2",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-ligatures": "^0.10.0",
     "concurrently": "^9.2.0",
     "electron": "^36.5.0",
     "electron-builder": "^26.0.12",
+    "monaco-editor": "^0.52.0",
     "nodemon": "^3.1.14",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-resizable-panels": "^2.1.8",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vitest": "^3.2.4",
-    "wait-on": "^8.0.3"
+    "wait-on": "^8.0.3",
+    "zustand": "^5.0.6"
   }
 }

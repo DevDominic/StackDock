@@ -2,6 +2,8 @@ import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
 import * as pty from 'node-pty';
+import { sanitizeSnapshotReplay, trimSnapshotOutput } from '../src/shared/terminalSnapshot';
+import { resolveTerminalStartupCommand } from '../src/shared/terminalProfiles';
 import type { TerminalPersistedState, TerminalPersistedTab, TerminalProfile, TerminalSession, TerminalSessionContext, TerminalSnapshot } from '../src/shared/types';
 import { getDefaultSettings, loadSettings } from './configStore';
 import { ensureDataDirs, getTerminalSnapshotsDir, getTerminalStatePath } from './storage';
@@ -33,12 +35,6 @@ function snapshotPath(restoreId: string) {
   return path.join(getTerminalSnapshotsDir(), `${restoreId.replace(/[^A-Za-z0-9_-]/g, '_')}.json`);
 }
 
-function trimSnapshot(value: string) {
-  if (Buffer.byteLength(value, 'utf8') <= MAX_SNAPSHOT_BYTES) return value;
-  let next = value;
-  while (Buffer.byteLength(next, 'utf8') > MAX_SNAPSHOT_BYTES) next = next.slice(Math.max(1, next.length - MAX_SNAPSHOT_BYTES));
-  return next;
-}
 
 function scheduleSnapshotWrite(snapshot: TerminalSnapshot) {
   if (!snapshot.restoreId) return;
@@ -134,7 +130,7 @@ function updateSnapshot(session: TerminalSession, data: string) {
   const restoreId = session.restoreId ?? session.id;
   const current = snapshots.get(restoreId)?.output ?? '';
   const previous = snapshots.get(restoreId);
-  const snapshot: TerminalSnapshot = { id: session.id, restoreId, output: trimSnapshot(current + data), updatedAt: new Date().toISOString(), piSessionId: previous?.piSessionId ?? session.piSessionId, piResumeCommand: previous?.piResumeCommand ?? session.piResumeCommand };
+  const snapshot: TerminalSnapshot = { id: session.id, restoreId, output: trimSnapshotOutput(current + data, MAX_SNAPSHOT_BYTES), updatedAt: new Date().toISOString(), piSessionId: previous?.piSessionId ?? session.piSessionId, piResumeCommand: previous?.piResumeCommand ?? session.piResumeCommand };
   const match = data.match(PI_RESUME_PATTERN) ?? snapshot.output.slice(-4096).match(PI_RESUME_PATTERN);
   if (match?.[1] && match[2]) {
     session.piSessionId = match[2];
@@ -206,7 +202,8 @@ export async function createTerminal(profileId: string, cwd: string, name?: stri
   const profile = await resolveShell(profileId);
   const resolvedCwd = resolveCwd(cwd);
   const stableRestoreId = restoreId || `restore_${crypto.randomUUID()}`;
-  const normalizedStartupCommand = normalizePiStartupCommand(startupCommand, stableRestoreId);
+  const effectiveStartupCommand = resolveTerminalStartupCommand({ explicitStartupCommand: startupCommand, profileStartupCommand: profile.startupCommand });
+  const normalizedStartupCommand = normalizePiStartupCommand(effectiveStartupCommand, stableRestoreId);
   const session: TerminalSession = {
     id: `term_${crypto.randomUUID()}`,
     restoreId: stableRestoreId,
@@ -215,6 +212,7 @@ export async function createTerminal(profileId: string, cwd: string, name?: stri
     cwd: resolvedCwd,
     startupCommand: normalizedStartupCommand,
     piResumeCommand: normalizedStartupCommand && PI_COMMAND_PATTERN.test(normalizedStartupCommand) && piCommandHasStableTarget(normalizedStartupCommand) ? normalizedStartupCommand : undefined,
+    restoredFromSnapshot: Boolean(restoreId),
     createdAt: new Date().toISOString(),
   };
 
@@ -277,9 +275,13 @@ export async function getTerminalSnapshot(idOrRestoreId: string): Promise<Termin
   const entry = terminals.get(idOrRestoreId) ?? [...terminals.values()].find((candidate) => candidate.session.restoreId === restoreId);
   if (entry?.pendingData.length) flushTerminalOutput(entry);
   const existing = snapshots.get(idOrRestoreId) ?? snapshots.get(restoreId);
-  if (existing) return existing;
+  if (existing) {
+    existing.output = sanitizeSnapshotReplay(existing.output ?? '');
+    return existing;
+  }
   try {
     const parsed = JSON.parse(await fsp.readFile(snapshotPath(restoreId), 'utf8')) as TerminalSnapshot;
+    parsed.output = sanitizeSnapshotReplay(parsed.output ?? '');
     snapshots.set(restoreId, parsed);
     if (parsed.id) snapshots.set(parsed.id, parsed);
     return parsed;

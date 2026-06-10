@@ -18,6 +18,16 @@ export interface StackDockTheme {
 /** @deprecated Use StackDockTheme. */
 export type ImportedEditorTheme = StackDockTheme;
 
+export type ExtensionContributionLocation = 'activity' | 'sessions' | 'statusBar' | 'bottomBar';
+export type ExtensionSource = 'bundled' | 'local';
+export interface ExtensionViewContribution { id: string; extensionId: string; title: string; icon?: string; location: Exclude<ExtensionContributionLocation, 'statusBar'>; order?: number; native?: boolean; entry?: string; when?: 'always' | 'gitRepo'; }
+export interface ExtensionStatusBarContribution { id: string; extensionId: string; side: 'left' | 'right'; order?: number; label?: string; tooltip?: string; entry?: string; native?: boolean; when?: 'always' | 'gitRepo'; }
+export interface ExtensionManifest { id: string; name: string; version: string; description?: string; defaultEnabled?: boolean; source?: ExtensionSource; packagePath?: string; capabilities?: string[]; contributes?: { views?: ExtensionViewContribution[]; statusBar?: ExtensionStatusBarContribution[] }; }
+export interface ExtensionLoadError { extensionId?: string; packagePath?: string; message: string; }
+export interface ExtensionListResult { extensions: ExtensionManifest[]; errors: ExtensionLoadError[]; }
+export interface ExtensionSettings { localPackagePaths: string[]; disabled: string[]; enabled: string[]; }
+export interface WorkspaceExtensionState { enabled?: string[]; disabled?: string[]; activeActivityViewId?: string; activeBottomViewId?: string; panelSizesByViewId?: Record<string, number>; }
+
 export interface StackDockSettings {
   /** Unified app + Monaco theme id. */
   themeId: string;
@@ -27,7 +37,6 @@ export interface StackDockSettings {
   theme?: 'dark' | 'system';
   defaultTerminalProfileId?: string;
   confirmBeforeDiscard: boolean;
-  showHiddenFiles: boolean;
   emptySessionsVisible: boolean;
   showSessionCwdForAll: boolean;
   gitRefreshIntervalSeconds: number;
@@ -40,6 +49,7 @@ export interface StackDockSettings {
   editor: { fontSize: number; fontFamily: string; tabSize: number; wordWrap: 'on' | 'off'; /** @deprecated Use StackDockSettings.themeId. */ themeId?: string; /** @deprecated Use StackDockSettings.importedThemes. */ importedThemes?: StackDockTheme[] };
   terminal: { fontSize: number; fontFamily: string; cursorBlink: boolean };
   terminalProfiles: TerminalProfile[];
+  extensions: ExtensionSettings;
 }
 
 /** @deprecated Superseded by PaletteCommand (stored in automation.json). Kept so old workspaces.json still type-checks; no longer written or surfaced. */
@@ -123,6 +133,7 @@ export interface WorkspaceLayout {
     splitOrientation?: 'horizontal' | 'vertical';
   };
   terminals: TerminalSession[];
+  extensions?: WorkspaceExtensionState;
 }
 
 export interface TerminalProfile {
@@ -130,6 +141,7 @@ export interface TerminalProfile {
   name: string;
   shell: string;
   args: string[];
+  startupCommand?: string;
 }
 
 export interface WorkspaceTerminalSession extends TerminalSession {
@@ -168,6 +180,7 @@ export interface TerminalSession {
   originalStartupCommand?: string;
   piSessionId?: string;
   piResumeCommand?: string;
+  restoredFromSnapshot?: boolean;
   splitGroupId?: string;
   splitDirection?: 'row' | 'column';
   createdAt: string;
@@ -276,7 +289,7 @@ export interface StackDockApi {
     saveLayout(layout: WorkspaceLayout): Promise<void>;
   };
   fs: {
-    readDirectory(path: string, options?: { showHidden?: boolean }): Promise<DirectoryEntry[]>;
+    readDirectory(path: string): Promise<DirectoryEntry[]>;
     readFile(path: string): Promise<ReadFileResult>;
     readFileDataUrl(path: string): Promise<ReadFileDataUrlResult>;
     watchWorkspace(path: string): Promise<void>;
@@ -308,6 +321,12 @@ export interface StackDockApi {
     load(): Promise<AutomationConfig>;
     loadRaw(): Promise<string>;
     saveRaw(content: string): Promise<AutomationConfig>;
+  };
+  extensions: {
+    list(): Promise<ExtensionListResult>;
+    reload(): Promise<ExtensionListResult>;
+    addLocalPackage(path: string): Promise<ExtensionListResult>;
+    removeLocalPackage(path: string): Promise<ExtensionListResult>;
   };
   attachments: {
     getPathForFile(file: unknown): string;

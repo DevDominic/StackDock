@@ -13,7 +13,7 @@ export default defineConfig({
         manualChunks: {
           react: ['react', 'react-dom'],
           monaco: ['monaco-editor'],
-          terminal: ['xterm', '@xterm/addon-fit'],
+          terminal: ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-webgl'],
         },
       },
     },

@@ -1,5 +1,5 @@
 import fs from 'fs/promises';
-import type { StackDockSettings } from '../src/shared/types';
+import type { StackDockSettings, TerminalProfile } from '../src/shared/types';
 import { ensureDataDirs, getConfigPath } from './storage';
 
 const UI_FONT_FAMILY = '"Inter Variable", "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif';
@@ -12,6 +12,18 @@ function migrateCodeFont(fontFamily?: string) {
   return value;
 }
 
+function normalizeTerminalProfiles(profiles: TerminalProfile[] | undefined, fallback: TerminalProfile[]) {
+  if (!profiles?.length) return fallback;
+  return profiles.map((profile) => {
+    const startupCommand = profile.startupCommand?.trim();
+    return {
+      ...profile,
+      args: Array.isArray(profile.args) ? profile.args : [],
+      startupCommand: startupCommand || undefined,
+    };
+  });
+}
+
 export function getDefaultSettings(): StackDockSettings {
   const programFiles = process.env['ProgramFiles'] ?? 'C:\\Program Files';
   return {
@@ -20,7 +32,6 @@ export function getDefaultSettings(): StackDockSettings {
     importedThemes: [],
     defaultTerminalProfileId: 'powershell',
     confirmBeforeDiscard: true,
-    showHiddenFiles: false,
     emptySessionsVisible: false,
     showSessionCwdForAll: false,
     gitRefreshIntervalSeconds: 0,
@@ -31,9 +42,11 @@ export function getDefaultSettings(): StackDockSettings {
     code: { ligatures: true },
     editor: { fontSize: 13, fontFamily: CODE_FONT_FAMILY, tabSize: 2, wordWrap: 'off' },
     terminal: { fontSize: 14, fontFamily: CODE_FONT_FAMILY, cursorBlink: true },
+    extensions: { localPackagePaths: [], disabled: [], enabled: [] },
     terminalProfiles: [
       { id: 'powershell', name: 'PowerShell', shell: 'powershell.exe', args: ['-NoLogo', '-NoExit'] },
       { id: 'cmd', name: 'Command Prompt', shell: 'cmd.exe', args: [] },
+      { id: 'pi', name: 'Pi', shell: 'cmd.exe', args: [], startupCommand: 'pi' },
       { id: 'git-bash', name: 'Git Bash', shell: `${programFiles}\\Git\\bin\\bash.exe`, args: ['--login', '-i'] },
       { id: 'wsl', name: 'WSL', shell: 'wsl.exe', args: [] },
     ],
@@ -79,7 +92,12 @@ export async function loadSettings(): Promise<StackDockSettings> {
         importedThemes: undefined,
       },
       terminal: { ...defaults.terminal, ...rawTerminal, fontFamily: migrateCodeFont(rawTerminal.fontFamily) },
-      terminalProfiles: raw.terminalProfiles?.length ? raw.terminalProfiles : defaults.terminalProfiles,
+      terminalProfiles: normalizeTerminalProfiles(raw.terminalProfiles, defaults.terminalProfiles),
+      extensions: {
+        localPackagePaths: Array.isArray(raw.extensions?.localPackagePaths) ? raw.extensions.localPackagePaths.filter((item): item is string => typeof item === 'string') : defaults.extensions.localPackagePaths,
+        disabled: Array.isArray(raw.extensions?.disabled) ? raw.extensions.disabled.filter((item): item is string => typeof item === 'string') : defaults.extensions.disabled,
+        enabled: Array.isArray(raw.extensions?.enabled) ? raw.extensions.enabled.filter((item): item is string => typeof item === 'string') : defaults.extensions.enabled,
+      },
     };
   } catch {
     return defaults;
@@ -89,6 +107,6 @@ export async function loadSettings(): Promise<StackDockSettings> {
 export async function saveSettings(settings: StackDockSettings): Promise<StackDockSettings> {
   if (settings.terminalProfiles.some((profile) => !profile.name.trim() || !profile.shell.trim())) throw new Error('Terminal profiles need name and shell');
   await ensureDataDirs();
-  await fs.writeFile(getConfigPath(), JSON.stringify(settings, null, 2), 'utf8');
+  await fs.writeFile(getConfigPath(), JSON.stringify({ ...settings, terminalProfiles: normalizeTerminalProfiles(settings.terminalProfiles, []) }, null, 2), 'utf8');
   return loadSettings();
 }

@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { Terminal, type ILink, type ITerminalAddon } from 'xterm';
+import { Terminal, type ILink, type ITerminalAddon } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { LigaturesAddon } from '@xterm/addon-ligatures';
+import { WebglAddon } from '@xterm/addon-webgl';
+import { sanitizeSnapshotReplay } from '../../shared/terminalSnapshot';
 import type { StackDockSettings, TerminalAttachment, TerminalAttachmentSource, TerminalSession } from '../../shared/types';
 import { api } from '../../lib/api';
 import { serializeTerminalAttachments, summarizeTerminalAttachments } from '../../lib/terminalAttachments';
 
-import 'xterm/css/xterm.css';
+import '@xterm/xterm/css/xterm.css';
 
 interface Props {
   sessions: TerminalSession[];
@@ -133,9 +135,26 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     terminal.loadAddon(fitAddon as unknown as ITerminalAddon);
     fitAddonRef.current = fitAddon;
     const ligaturesAddon = ligaturesEnabled ? new LigaturesAddon({ fontFeatureSettings: CODE_FONT_FEATURES }) : null;
+    let webglAddon: WebglAddon | null = null;
+    const loadWebglRenderer = () => {
+      try {
+        const addon = new WebglAddon();
+        // GPU context loss (driver reset, too many contexts, etc.): dispose the
+        // addon and xterm falls back to the DOM renderer on its own.
+        addon.onContextLoss(() => {
+          addon.dispose();
+          if (webglAddon === addon) webglAddon = null;
+        });
+        terminal.loadAddon(addon as unknown as ITerminalAddon);
+        webglAddon = addon;
+      } catch {
+        // WebGL unavailable (headless GPU, blocklisted driver); DOM renderer remains.
+      }
+    };
     terminalRef.current = terminal;
 
     let restoredSnapshot = false;
+    let replayingSnapshot = false;
     let terminalWriteFrame: number | null = null;
     let terminalWriteInProgress = false;
     let terminalWriteQueue: string[] = [];
@@ -166,9 +185,29 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     };
     void api.terminal.snapshot(session.restoreId ?? session.id).then((snapshot) => {
       if (disposed) return;
-      if (snapshot?.output) enqueueTerminalWrite(`${snapshot.output}\r\n\x1b[2m──── restored scrollback; live output follows ────\x1b[0m\r\n`);
-      if (snapshot?.piResumeCommand) enqueueTerminalWrite(`\x1b[2m[resuming Pi session with: ${snapshot.piResumeCommand}]\x1b[0m\r\n`);
-      flushLiveOutput();
+      const snapshotOutput = snapshot?.output ? sanitizeSnapshotReplay(snapshot.output) : '';
+      const finishReplay = () => {
+        replayingSnapshot = false;
+        if (disposed) return;
+        if (session.restoredFromSnapshot && snapshot?.piResumeCommand) enqueueTerminalWrite(`\x1b[2m[resuming Pi session with: ${snapshot.piResumeCommand}]\x1b[0m\r\n`);
+        flushLiveOutput();
+      };
+      if (snapshotOutput) {
+        // Replay bypasses the rAF queue so the write callback marks exactly when
+        // parsing finished; onData stays muted until then so xterm's answers to
+        // any replayed queries never reach the live pty as input.
+        replayingSnapshot = true;
+        // For a fresh pty the shell repaints with absolute cursor moves rooted
+        // at the viewport top (ConPTY emits CUP 1;1), which would overwrite the
+        // replayed lines in place. Push the replay fully into scrollback with a
+        // viewport's worth of newlines and home the cursor so live output
+        // paints onto a blank screen instead.
+        terminal.write(session.restoredFromSnapshot
+          ? `${snapshotOutput}\r\n\x1b[2m──── restored scrollback; live output follows ────\x1b[0m${'\r\n'.repeat(terminal.rows)}\x1b[H`
+          : snapshotOutput, finishReplay);
+      } else {
+        finishReplay();
+      }
     }).catch(() => { if (!disposed) flushLiveOutput(); });
 
     const disposeData = api.onTerminalData(({ id, data }) => {
@@ -180,6 +219,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       if (id === session.id) enqueueTerminalWrite(`\r\n[process exited ${exitCode ?? 0}]`);
     });
     const dataDisposable = terminal.onData((data) => {
+      if (replayingSnapshot) return;
       void api.terminal.write(session.id, data);
     });
     const linkProvider = terminal.registerLinkProvider({
@@ -212,6 +252,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       if (disposed || !mountRef.current) return;
       terminal.open(mountRef.current);
       opened = true;
+      loadWebglRenderer();
       if (ligaturesAddon) terminal.loadAddon(ligaturesAddon as unknown as ITerminalAddon);
       observer = new ResizeObserver(() => window.requestAnimationFrame(() => resizeTerminal()));
       observer.observe(mountRef.current);
@@ -228,6 +269,8 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       disposeExit();
       dataDisposable.dispose();
       linkProvider.dispose();
+      webglAddon?.dispose();
+      webglAddon = null;
       ligaturesAddon?.dispose();
       fitAddon.dispose();
       if (fitAddonRef.current === fitAddon) fitAddonRef.current = null;
@@ -360,11 +403,33 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
   }
 
   function handleKeyDownCapture(event: ReactKeyboardEvent<HTMLDivElement>) {
-    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'v') return;
-    if (api.attachments.hasClipboardText() || !api.attachments.hasClipboardImage()) return;
-    event.preventDefault();
-    event.stopPropagation();
-    void insertClipboardImage();
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+    const key = event.key.toLowerCase();
+    const terminal = terminalRef.current;
+
+    if (!event.shiftKey && key === 'c' && terminal?.hasSelection()) {
+      event.preventDefault();
+      event.stopPropagation();
+      void navigator.clipboard.writeText(terminal.getSelection()).catch(() => undefined);
+      terminal.clearSelection();
+      return;
+    }
+
+    if (!event.shiftKey && key === 'v') {
+      if (api.attachments.hasClipboardText()) {
+        event.preventDefault();
+        event.stopPropagation();
+        void navigator.clipboard.readText().then((text) => {
+          if (text) terminal?.paste(text);
+          terminal?.focus();
+        }).catch(() => undefined);
+        return;
+      }
+      if (!api.attachments.hasClipboardImage()) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void insertClipboardImage();
+    }
   }
 
   return (
