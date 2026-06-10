@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseStatusLine } from '../electron/gitParser';
+import { parseStatusLine } from '../extensions/builtin/git/main/gitParser';
 
 describe('parseStatusLine', () => {
   it('parses unstaged modified', () => expect(parseStatusLine(' M README.md')).toMatchObject({ path: 'README.md', staged: false, unstaged: true, untracked: false }));

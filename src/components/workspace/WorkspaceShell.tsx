@@ -982,7 +982,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }
 
   function selectSidebar(tab: 'explorer' | 'git') {
-    if (tab === 'git' && !isRepo) return;
+    if (tab === 'git' && (!isRepo || !gitExtensionEnabled)) return;
     if (tab === 'explorer') updatePanels({ fileTreeVisible: !mergedLayout.panels.fileTreeVisible });
     else updatePanels({ gitPanelVisible: !mergedLayout.panels.gitPanelVisible });
   }
@@ -1027,7 +1027,12 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       discard,
       discardSelected: discardPaths,
       commit,
+      commitWithPrompt,
+      stageAllAndCommit,
       switchBranch: switchGitBranch,
+      fetch: () => runGitRemoteAction('fetch'),
+      pull: () => runGitRemoteAction('pull'),
+      push: () => runGitRemoteAction('push'),
     },
     sessionActions: {
       create: async (target, profileId) => { const setup = automation?.workspaces[target.id]; const profile = profiles.find((item) => item.id === profileId); const startupCommand = resolveTerminalStartupCommand({ profileStartupCommand: profile?.startupCommand, workspaceStartupCommand: setup?.newSessionCommand }); await sessionStore.createSession({ workspaceId: target.id, workspaceName: target.name, workspacePath: target.path, profileId, cwd: target.path, name: 'Terminal', startupCommand }); if (target.id !== workspace.id) await onOpenWorkspace(target.id); },
@@ -1057,8 +1062,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const sessionsVisible = sessionsExtensionEnabled && mergedLayout.panels.sessionsVisible !== false;
   const panelSizes = mergedLayout.panels.panelSizes ?? { sessions: 14, explorer: 18, main: 68, editor: 72, git: 28, upper: 62, terminal: 38 };
   const safePanelSizes = getSafePanelSizes(panelSizes, sidebarVisible, sessionsVisible);
-  const stagedGitCount = git?.files.filter((file) => file.staged && !file.untracked).length ?? 0;
-  const unstagedGitCount = git?.files.filter((file) => file.unstaged || file.untracked).length ?? 0;
+  const extensionCommands = enabledExtensions.flatMap((manifest) => extensionRegistry.nativeExtensions.get(manifest.id)?.getCommands?.(extensionCtx) ?? []);
   const launcherActions: CommandAction[] = [
     // User-defined commands first so they're front-and-center in the palette.
     ...(workspaceSetup?.commands ?? []).map((command) => ({ id: `ws:${command.id}`, label: command.label, description: command.command, run: () => runPaletteCommand(command) })),
@@ -1066,17 +1070,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     { id: 'new-terminal', label: 'New Terminal', run: () => createTerminal(undefined, 'Terminal', '') },
     { id: 'toggle-tree', label: 'Toggle Sidebar', run: () => updatePanels({ fileTreeVisible: !explorerVisible, gitPanelVisible: false }) },
     { id: 'show-explorer', label: 'Show Explorer', run: () => selectSidebar('explorer') },
-    ...(isRepo ? [
-      { id: 'show-git', label: 'Show Source Control', run: () => selectSidebar('git') },
-      ...(unstagedGitCount ? [{ id: 'git-stage-all', label: 'Git: Stage All', description: 'Stage all changed files', run: stageAll }] : []),
-      ...(stagedGitCount ? [{ id: 'git-commit-staged', label: 'Git: Commit Staged...', description: `${stagedGitCount} staged ${stagedGitCount === 1 ? 'file' : 'files'}`, run: commitWithPrompt }] : []),
-      ...(git?.files.length ? [{ id: 'git-stage-all-commit', label: 'Git: Stage All and Commit...', description: 'Stage all changes, then commit', run: stageAllAndCommit }] : []),
-      { id: 'git-fetch', label: 'Git: Fetch', description: 'Fetch from remote', run: () => runGitRemoteAction('fetch') },
-      { id: 'git-pull', label: 'Git: Pull', description: 'Pull current branch with --ff-only', run: () => runGitRemoteAction('pull') },
-      { id: 'git-push', label: 'Git: Push', description: 'Push current branch', run: () => runGitRemoteAction('push') },
-      ...((git?.branches ?? []).filter((branch) => branch !== git?.branch).map((branch) => ({ id: `git-switch:${branch}`, label: `Git: Switch Branch: ${branch}`, description: `Checkout ${branch}`, run: () => switchGitBranch(branch) }))),
-      { id: 'refresh-git', label: 'Git: Refresh', run: refreshGit },
-    ] : []),
+    ...extensionCommands,
     { id: 'show-terminal', label: 'Show Terminal', run: showTerminal },
     { id: 'edit-config', label: 'Edit Workspace Config (JSON)', run: () => { setSettingsInitialTab('workspace'); setSettingsOpen(true); } },
     { id: 'open-folder', label: 'Open Workspace Folder', run: () => api.fs.revealInExplorer(workspace.path) },
@@ -1093,7 +1087,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       if ((event.ctrlKey || event.metaKey) && event.key === '`') { event.preventDefault(); toggleMainView(); }
       if ((event.ctrlKey || event.metaKey) && key === 'b') { event.preventDefault(); updatePanels({ fileTreeVisible: !explorerVisible, gitPanelVisible: false }); }
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 'e') { event.preventDefault(); selectSidebar('explorer'); }
-      if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 'g') { event.preventDefault(); selectSidebar('git'); }
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 'g' && gitExtensionEnabled) { event.preventDefault(); selectSidebar('git'); }
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 't') { event.preventDefault(); void createTerminal(undefined, 'Terminal', ''); }
       if ((event.ctrlKey || event.metaKey) && key === 'w') {
         if (mainView === 'web' && activeWebId) { event.preventDefault(); closeLink(activeWebId); }
@@ -1102,7 +1096,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [activeFilePath, activeWebId, mainView, activeTerminalId, defaultProfile?.id, explorerVisible, gitVisible, openFiles.length, openLinks.length, workspaceSetup, profiles]);
+  }, [activeFilePath, activeWebId, mainView, activeTerminalId, defaultProfile?.id, explorerVisible, gitExtensionEnabled, gitVisible, openFiles.length, openLinks.length, workspaceSetup, profiles]);
 
   const webPane = webSplit ? (
     <>

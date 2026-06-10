@@ -2,7 +2,7 @@ import { execFile } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
 import { promisify } from 'util';
-import type { GitFileContents, GitFileStatus, GitStatus } from '../src/shared/types';
+import type { GitFileContents, GitFileStatus, GitStatus } from '../../../../src/shared/types';
 import { parseStatusLine } from './gitParser';
 
 const execFileAsync = promisify(execFile);

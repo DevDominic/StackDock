@@ -1,6 +1,6 @@
 import type { MouseEvent } from 'react';
-import type { GitFileStatus, GitStatus } from '../../shared/types';
-import { FileIcon } from './fileIcons';
+import type { GitFileStatus, GitStatus } from '../../../../src/shared/types';
+import { FileIcon } from '../../../../src/components/workspace/fileIcons';
 
 type GitSelectionGroup = 'staged' | 'changes';
 

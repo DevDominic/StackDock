@@ -5,7 +5,7 @@ import os from 'os';
 import path from 'path';
 import { addWorkspace, createWorkspace, listWorkspaces, loadLayout, loadRestoreState, removeWorkspace, saveLayout, saveRestoreState, updateWorkspace } from './workspaceStore';
 import { createFile, createFolder, deletePath, readDirectory, readFile, readFileDataUrl, renamePath, revealInExplorer, writeFile } from './fileService';
-import { addAll, commit, discardFile, fetch, getGitDiff, getGitFileContents, getGitStatus, listBranches, pull, push, stageFile, switchBranch, unstageFile } from './gitService';
+import { addAll, commit, discardFile, fetch, getGitDiff, getGitFileContents, getGitStatus, listBranches, pull, push, stageFile, switchBranch, unstageFile } from '../extensions/builtin/git/main/gitService';
 import { createTerminal, forgetTerminalSnapshot, getTerminalProfiles, getTerminalSnapshot, killTerminal, loadOpenTerminalState, resizeTerminal, saveOpenTerminalState, setTerminalWindow, setVisibleTerminals, writeTerminal } from './terminalManager';
 import { setBridgeWindow, startBrowserBridge } from './browserBridge';
 import { ensureDataDirs } from './storage';

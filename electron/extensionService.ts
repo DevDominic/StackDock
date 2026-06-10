@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import type { ExtensionListResult, ExtensionLoadError, ExtensionManifest, StackDockSettings } from '../src/shared/types';
+import { gitExtensionManifest } from '../extensions/builtin/git/manifest';
 
 const MANIFEST_FILE = 'stackdock.extension.json';
 const packageRoots = new Map<string, string>();
@@ -8,7 +9,7 @@ const packageRoots = new Map<string, string>();
 export function getBundledExtensionManifests(): ExtensionManifest[] {
   return [
     { id: 'stackdock.explorer', name: 'Explorer', version: '1.0.0', defaultEnabled: true, source: 'bundled', contributes: { views: [{ id: 'stackdock.explorer.view', extensionId: 'stackdock.explorer', title: 'Explorer', icon: 'folder', location: 'activity', order: 10, native: true }] } },
-    { id: 'stackdock.git', name: 'Source Control', version: '1.0.0', defaultEnabled: true, source: 'bundled', contributes: { views: [{ id: 'stackdock.git.view', extensionId: 'stackdock.git', title: 'Source Control', icon: 'git', location: 'activity', order: 20, native: true, when: 'gitRepo' }], statusBar: [{ id: 'stackdock.git.status', extensionId: 'stackdock.git', side: 'left', order: 10, native: true, when: 'gitRepo' }] } },
+    gitExtensionManifest,
     { id: 'stackdock.sessions', name: 'Sessions', version: '1.0.0', defaultEnabled: true, source: 'bundled', contributes: { views: [{ id: 'stackdock.sessions.view', extensionId: 'stackdock.sessions', title: 'Sessions', icon: 'sessions', location: 'sessions', order: 5, native: true }] } },
     { id: 'stackdock.workspaceStatus', name: 'Workspace Status', version: '1.0.0', defaultEnabled: true, source: 'bundled', contributes: { statusBar: [{ id: 'stackdock.workspace.status', extensionId: 'stackdock.workspaceStatus', side: 'right', order: 10, native: true }] } },
   ];

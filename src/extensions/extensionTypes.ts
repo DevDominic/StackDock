@@ -1,6 +1,13 @@
 import type { MouseEvent, ReactNode } from 'react';
 import type { ExtensionManifest, ExtensionStatusBarContribution, ExtensionViewContribution, GitFileStatus, GitStatus, StackDockSettings, TerminalProfile, Workspace, WorkspaceTerminalSession } from '../shared/types';
 
+export interface ExtensionCommand {
+  id: string;
+  label: string;
+  description?: string;
+  run(): void | Promise<void>;
+}
+
 export interface WorkspaceExtensionContext {
   workspace: Workspace;
   settings: StackDockSettings | null;
@@ -39,7 +46,12 @@ export interface WorkspaceExtensionContext {
     discard(path: string): void | Promise<void>;
     discardSelected(paths: string[]): void | Promise<void>;
     commit(message: string): void | Promise<void>;
+    commitWithPrompt(): void | Promise<void>;
+    stageAllAndCommit(): void | Promise<void>;
     switchBranch(branch: string): void | Promise<void>;
+    fetch(): void | Promise<void>;
+    pull(): void | Promise<void>;
+    push(): void | Promise<void>;
   };
   sessionActions: {
     create(target: Workspace, profileId: string): Promise<void>;
@@ -57,4 +69,5 @@ export interface NativeExtension {
   manifest: ExtensionManifest;
   renderView?(contribution: ExtensionViewContribution, ctx: WorkspaceExtensionContext): ReactNode;
   renderStatusBar?(contribution: ExtensionStatusBarContribution, ctx: WorkspaceExtensionContext): ReactNode;
+  getCommands?(ctx: WorkspaceExtensionContext): ExtensionCommand[];
 }
