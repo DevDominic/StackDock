@@ -416,8 +416,8 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   // Poll git so the branch/dirty count stays fresh and, crucially, so the Git
   // button appears moments after the user runs `git init` in the terminal.
   useEffect(() => {
-    const configured = settings?.gitRefreshIntervalSeconds ?? 0;
-    const everyMs = Math.max(2, configured > 0 ? configured : 5) * 1000;
+    const configured = settings?.gitRefreshIntervalSeconds ?? 1;
+    const everyMs = Math.max(1, configured) * 1000;
     const tick = () => { if (document.visibilityState === 'visible') void refreshGit(); };
     const interval = window.setInterval(tick, everyMs);
     window.addEventListener('focus', tick);
@@ -551,7 +551,18 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     } catch (error) { showToast(getErrorMessage(error, 'Could not save file'), 'error'); }
   }
 
-  function closeFile(path: string, groupId?: string) {
+  async function promptSaveBeforeClose(files: OpenFileTab[]) {
+    for (const file of files.filter((item) => item.dirty)) {
+      const shouldSave = window.confirm(`Save changes to ${file.name} before closing?`);
+      if (!shouldSave) return false;
+      await saveFile(file.path, { silent: true });
+    }
+    return true;
+  }
+
+  async function closeFile(path: string, groupId?: string) {
+    const file = activeEditors.editorGroups.flatMap((group) => group.openFiles).find((item) => item.path === path);
+    if (file && !(await promptSaveBeforeClose([file]))) return;
     patchActive((prev) => {
       let anyOpenFiles = 0;
       const editorGroups = prev.editorGroups.map((group) => {
@@ -576,14 +587,17 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
 
   // "Close Others" from the permanent Terminal tab: drop every file and web tab
   // for the active session and fall back to the terminal view.
-  function closeAllContentTabs() {
+  async function closeAllContentTabs() {
+    if (!(await promptSaveBeforeClose(activeEditors.editorGroups.flatMap((group) => group.openFiles)))) return;
     patchActive((prev) => {
       const group = createEditorGroup([], null);
       return { ...prev, editorGroups: [group], activeEditorGroup: group.id, openLinks: [], activeKind: 'terminal', activeWeb: null, webSplit: null };
     });
   }
 
-  function closeOthers(path: string, groupId: string) {
+  async function closeOthers(path: string, groupId: string) {
+    const closing = activeEditors.editorGroups.find((group) => group.id === groupId)?.openFiles.filter((file) => file.path !== path) ?? [];
+    if (!(await promptSaveBeforeClose(closing))) return;
     patchActive((prev) => ({
       ...prev,
       editorGroups: prev.editorGroups.map((group) => group.id === groupId ? { ...group, openFiles: group.openFiles.filter((file) => file.path === path), activeFile: path } : group),
@@ -591,7 +605,11 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     }));
   }
 
-  function closeToSide(path: string, groupId: string, side: 'left' | 'right') {
+  async function closeToSide(path: string, groupId: string, side: 'left' | 'right') {
+    const group = activeEditors.editorGroups.find((item) => item.id === groupId);
+    const index = group?.openFiles.findIndex((file) => file.path === path) ?? -1;
+    const closing = group && index >= 0 ? group.openFiles.filter((_file, fileIndex) => side === 'left' ? fileIndex < index : fileIndex > index) : [];
+    if (!(await promptSaveBeforeClose(closing))) return;
     patchActive((prev) => ({
       ...prev,
       editorGroups: prev.editorGroups.map((group) => {
@@ -1189,7 +1207,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
                       onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setTabMenu({ file, groupId: activeEditorGroup.id, x: event.clientX, y: event.clientY }); }}
                       onMouseDown={(event) => { if (event.button === 1) { event.preventDefault(); closeFile(file.path, activeEditorGroup.id); } }}
                     >
-                      <span className="tab-name">{file.name}</span>
+                      <span className="tab-name">{file.name}{file.dirty ? '*' : ''}</span>
                       <span className="tab-close" onClick={(event) => { event.stopPropagation(); closeFile(file.path, activeEditorGroup.id); }}>
                         <span className="dot">●</span><span className="x">×</span>
                       </span>
@@ -1216,10 +1234,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
                 ) : null}
                 {mainView === 'editor' && activeFilePath ? (
                   <div className="editor-tab-actions">
-                    <button className="ghost" onClick={() => saveFile(activeFilePath)}>Save</button>
-                    {isHtmlFile(activeFilePath) ? <button className="ghost" onClick={() => void toggleHtmlPreview(activeFilePath)}>{activeHtmlPreview ? 'View' : 'Preview'}</button> : null}
                     <button className="ghost" onClick={() => api.fs.revealInExplorer(activeFilePath)}>Reveal</button>
-                    <button className="ghost" onClick={() => void api.shell.openPath(activeFilePath).catch((error) => showToast(getErrorMessage(error, 'Could not open file'), 'error'))}>Open External</button>
                   </div>
                 ) : null}
               </div>

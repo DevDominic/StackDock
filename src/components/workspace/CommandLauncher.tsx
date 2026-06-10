@@ -31,6 +31,7 @@ export function CommandLauncher({ open, actions, onClose }: Props) {
               <span>{action.label}</span>{action.description ? <small>{action.description}</small> : null}
             </button>
           ))}
+          {!filtered.length ? <div className="launcher-empty muted">No commands found.</div> : null}
         </div>
       </div>
     </div>

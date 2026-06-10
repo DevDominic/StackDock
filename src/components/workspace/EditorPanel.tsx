@@ -312,7 +312,7 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
                 onClick={() => onOpenFile(file.path)}
                 onMouseDown={(event) => { if (event.button === 1) { event.preventDefault(); onCloseFile(file.path); } }}
               >
-                <span className="tab-name">{file.name}</span>
+                <span className="tab-name">{file.name}{file.dirty ? '*' : ''}</span>
                 <span className="tab-close" onClick={(event) => { event.stopPropagation(); onCloseFile(file.path); }}>
                   <span className="dot">●</span><span className="x">×</span>
                 </span>
@@ -322,7 +322,6 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
           {active ? (
             <div className="editor-tab-actions">
               {saving ? <span className="muted tab-saving">Saving…</span> : null}
-              <button className="ghost" onClick={async () => { setSaving(true); await onSaveFile(active.path); setSaving(false); }}>Save</button>
               <button className="ghost" onClick={() => api.fs.revealInExplorer(active.path)}>Reveal</button>
             </div>
           ) : null}

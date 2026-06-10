@@ -34,7 +34,7 @@ export function getDefaultSettings(): StackDockSettings {
     confirmBeforeDiscard: true,
     emptySessionsVisible: false,
     showSessionCwdForAll: false,
-    gitRefreshIntervalSeconds: 0,
+    gitRefreshIntervalSeconds: 1,
     autoSave: true,
     autoSaveDelayMs: 1000,
     openLinksExternally: false,
@@ -94,6 +94,7 @@ export async function loadSettings(): Promise<StackDockSettings> {
         importedThemes: undefined,
       },
       terminal: { ...defaults.terminal, ...rawTerminal, fontFamily: migrateCodeFont(rawTerminal.fontFamily) },
+      gitRefreshIntervalSeconds: Math.max(1, Number(raw.gitRefreshIntervalSeconds) || defaults.gitRefreshIntervalSeconds),
       terminalProfiles: normalizeTerminalProfiles(raw.terminalProfiles, defaults.terminalProfiles),
       extensions: {
         localPackagePaths: Array.isArray(raw.extensions?.localPackagePaths) ? raw.extensions.localPackagePaths.filter((item): item is string => typeof item === 'string') : defaults.extensions.localPackagePaths,
