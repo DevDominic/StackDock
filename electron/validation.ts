@@ -1,5 +1,5 @@
 import path from 'path';
-import type { AppRestoreState, TerminalAttachmentOptions, TerminalAttachmentSource, TerminalSessionContext, Workspace, WorkspaceLayout } from '../src/shared/types';
+import type { AppRestoreState, ExtensionSettings, TerminalAttachmentOptions, TerminalAttachmentSource, TerminalSessionContext, Workspace, WorkspaceLayout } from '../src/shared/types';
 
 export function assertString(value: unknown, name: string): string {
   if (typeof value !== 'string') throw new Error(`${name} must be string`);
@@ -20,6 +20,22 @@ export function assertSafeFileName(value: unknown, name: string): string {
   const str = assertNonEmptyString(value, name);
   if (str.includes('/') || str.includes('\\')) throw new Error(`${name} cannot contain path separators`);
   return str;
+}
+export function assertExtensionId(value: unknown, name: string): string {
+  const str = assertNonEmptyString(value, name);
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(str)) throw new Error(`${name} invalid`);
+  return str;
+}
+function stringArray(value: unknown, name: string): string[] {
+  if (value == null) return [];
+  if (!Array.isArray(value)) throw new Error(`${name} must be array`);
+  return value.map((item, index) => assertExtensionId(item, `${name}[${index}]`));
+}
+export function assertExtensionSettingsLike(value: unknown): ExtensionSettings {
+  if (value == null || typeof value !== 'object') throw new Error('extension settings invalid');
+  const settings = value as ExtensionSettings;
+  if (!Array.isArray(settings.localPackagePaths)) throw new Error('extension localPackagePaths must be array');
+  return { localPackagePaths: settings.localPackagePaths.map((item, index) => assertAbsolutePath(item, `localPackagePaths[${index}]`)), enabled: stringArray(settings.enabled, 'enabled'), disabled: stringArray(settings.disabled, 'disabled') };
 }
 export function assertBoolean(value: unknown, name: string): boolean {
   if (typeof value !== 'boolean') throw new Error(`${name} must be boolean`);
@@ -50,6 +66,10 @@ export function assertLayoutLike(value: unknown): WorkspaceLayout {
   const layout = value as WorkspaceLayout;
   assertNonEmptyString(layout?.workspaceId, 'layout.workspaceId');
   if (!layout.panels || !layout.editors || !Array.isArray(layout.terminals)) throw new Error('layout shape invalid');
+  if (layout.extensions) {
+    if (layout.extensions.enabled) stringArray(layout.extensions.enabled, 'layout.extensions.enabled');
+    if (layout.extensions.disabled) stringArray(layout.extensions.disabled, 'layout.extensions.disabled');
+  }
   return layout;
 }
 export function assertTerminalSessionContext(value: unknown): TerminalSessionContext | undefined {

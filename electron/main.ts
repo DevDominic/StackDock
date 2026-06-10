@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } from 'electron';
 import fs from 'fs/promises';
 import { watch, type FSWatcher } from 'fs';
 import os from 'os';
@@ -10,6 +10,7 @@ import { createTerminal, forgetTerminalSnapshot, getTerminalProfiles, getTermina
 import { ensureDataDirs } from './storage';
 import { logError } from './log';
 import { loadSettings, saveSettings } from './configStore';
+import { loadExtensions, resolveExtensionAsset } from './extensionService';
 import { loadAutomation, loadAutomationRaw, saveAutomationRaw } from './automationStore';
 import { inspectAttachmentPath, savePastedImageAttachment } from './attachmentService';
 import { assertAbsolutePath, assertLayoutLike, assertNonEmptyString, assertNumber, assertRestoreStateLike, assertSafeFileName, assertString, assertTerminalAttachmentOptions, assertTerminalAttachmentSource, assertTerminalSessionContext, assertWorkspaceLike } from './validation';
@@ -186,7 +187,7 @@ function registerIpc() {
   ipcMain.handle('workspaces:loadLayout', async (_event, workspaceId: unknown) => loadLayout(assertNonEmptyString(workspaceId, 'workspaceId')));
   ipcMain.handle('workspaces:saveLayout', async (_event, layout) => saveLayout(assertLayoutLike(layout)));
 
-  ipcMain.handle('fs:readDirectory', async (_event, targetPath: unknown, options?: { showHidden?: boolean }) => readDirectory(assertAbsolutePath(targetPath, 'targetPath'), options));
+  ipcMain.handle('fs:readDirectory', async (_event, targetPath: unknown) => readDirectory(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('fs:readFile', async (_event, targetPath: unknown) => readFile(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('fs:readFileDataUrl', async (_event, targetPath: unknown) => readFileDataUrl(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('fs:watchWorkspace', async (_event, targetPath: unknown) => watchWorkspace(assertAbsolutePath(targetPath, 'targetPath')));
@@ -219,6 +220,23 @@ function registerIpc() {
   ipcMain.handle('automation:loadRaw', async () => loadAutomationRaw());
   ipcMain.handle('automation:saveRaw', async (_event, content: unknown) => saveAutomationRaw(assertString(content, 'content')));
 
+  ipcMain.handle('extensions:list', async () => loadExtensions(await loadSettings()));
+  ipcMain.handle('extensions:reload', async () => loadExtensions(await loadSettings()));
+  ipcMain.handle('extensions:addLocalPackage', async (_event, targetPath: unknown) => {
+    const packagePath = assertAbsolutePath(targetPath, 'packagePath');
+    const settings = await loadSettings();
+    if (!settings.extensions.localPackagePaths.includes(packagePath)) settings.extensions.localPackagePaths.push(packagePath);
+    const saved = await saveSettings(settings);
+    return loadExtensions(saved);
+  });
+  ipcMain.handle('extensions:removeLocalPackage', async (_event, targetPath: unknown) => {
+    const packagePath = assertAbsolutePath(targetPath, 'packagePath');
+    const settings = await loadSettings();
+    settings.extensions.localPackagePaths = settings.extensions.localPackagePaths.filter((item) => item !== packagePath);
+    const saved = await saveSettings(settings);
+    return loadExtensions(saved);
+  });
+
   ipcMain.handle('attachments:inspectPath', async (_event, targetPath: unknown, source: unknown, options?: unknown) => inspectAttachmentPath(assertAbsolutePath(targetPath, 'targetPath'), assertTerminalAttachmentSource(source, 'source'), assertTerminalAttachmentOptions(options)));
   ipcMain.handle('attachments:savePastedImage', async (_event, dataUrl: unknown, name?: unknown, options?: unknown) => savePastedImageAttachment(assertNonEmptyString(dataUrl, 'dataUrl'), name == null ? undefined : assertNonEmptyString(name, 'name'), assertTerminalAttachmentOptions(options)));
 
@@ -243,7 +261,15 @@ function registerIpc() {
   ipcMain.handle('terminal:forgetSnapshot', async (_event, idOrRestoreId: unknown) => forgetTerminalSnapshot(assertNonEmptyString(idOrRestoreId, 'idOrRestoreId')));
 }
 
+protocol.registerSchemesAsPrivileged([{ scheme: 'stackdock-extension', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
+
 app.whenReady().then(async () => {
+  protocol.handle('stackdock-extension', (request) => {
+    const url = new URL(request.url);
+    const target = resolveExtensionAsset(url.hostname, url.pathname);
+    if (!target) return new Response('Not found', { status: 404 });
+    return net.fetch(`file://${target.replace(/\\/g, '/')}`);
+  });
   // Drop the default OS application menu (File / Edit / View / …). StackDock
   // ships its own in-app topbar, so the native menu bar is just noise.
   Menu.setApplicationMenu(null);

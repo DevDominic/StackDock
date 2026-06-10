@@ -87,6 +87,13 @@ dist-electron/              Electron main/preload build output (generated; packa
 - `npm run dist` / `npm run dist:x64:min` — legacy aliases; prefer `build:app` for current packaged-app checks.
 - `npm test` — vitest. `npm run typecheck` — both tsconfigs, `--noEmit`.
 
+## Extension Architecture
+- Built-in workspace UI surfaces (Explorer, Source Control/Git, Sessions, status items) are bundled extensions. Prefer adding new workspace side/bottom/status UI as extension contributions instead of hardcoding panels in `WorkspaceShell.tsx`.
+- Local extension JavaScript must run only inside sandboxed iframes served through the extension asset protocol.
+- Never dynamically import local package code into the StackDock renderer; local packages communicate with the host via the typed iframe bridge only.
+- Extension IPC and bridge payloads must use typed shared contracts from `src/shared/types.ts` and validated main-process boundaries.
+- New extension loader/enablement/bridge tests should run with `npm test`.
+
 ## Conventions
 - New backend capability = add channel in `main.ts` + arg guards in `validation.ts` + bridge method in `preload.ts` + type in `shared/types.ts` `StackDockApi`. Keep all four in sync.
 - Renderer never imports Node/`electron`; go through `api`.

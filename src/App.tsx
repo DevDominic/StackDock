@@ -5,6 +5,7 @@ import { api } from './lib/api';
 import { useWorkspaceStore } from './state/workspaceStore';
 import { applyTheme } from './lib/themeSupport';
 import type { StackDockSettings } from './shared/types';
+import { ExtensionProvider } from './extensions/ExtensionProvider';
 
 const WorkspaceShell = lazy(() => import('./components/workspace/WorkspaceShell.js').then((module) => ({ default: module.WorkspaceShell })));
 
@@ -64,7 +65,7 @@ export default function App() {
     return (
       <div className="root-shell">
         <Suspense fallback={<main className="app-shell"><div className="empty-pad muted">Loading workspace…</div></main>}>
-          <WorkspaceShell workspace={activeWorkspace} workspaces={workspaces} settings={settings} onSettingsApplied={handleSettingsApplied} onBack={closeWorkspace} onUpdateWorkspace={updateWorkspace} onOpenWorkspace={openWorkspace} />
+          <ExtensionProvider><WorkspaceShell workspace={activeWorkspace} workspaces={workspaces} settings={settings} onSettingsApplied={handleSettingsApplied} onBack={closeWorkspace} onUpdateWorkspace={updateWorkspace} onOpenWorkspace={openWorkspace} /></ExtensionProvider>
         </Suspense>
       </div>
     );

@@ -40,7 +40,7 @@ const api: StackDockApi = {
     saveLayout: (layout) => ipcRenderer.invoke('workspaces:saveLayout', layout),
   },
   fs: {
-    readDirectory: (targetPath, options) => ipcRenderer.invoke('fs:readDirectory', targetPath, options),
+    readDirectory: (targetPath) => ipcRenderer.invoke('fs:readDirectory', targetPath),
     readFile: (targetPath) => ipcRenderer.invoke('fs:readFile', targetPath),
     readFileDataUrl: (targetPath) => ipcRenderer.invoke('fs:readFileDataUrl', targetPath),
     watchWorkspace: (targetPath) => ipcRenderer.invoke('fs:watchWorkspace', targetPath),
@@ -72,6 +72,12 @@ const api: StackDockApi = {
     load: () => ipcRenderer.invoke('automation:load'),
     loadRaw: () => ipcRenderer.invoke('automation:loadRaw'),
     saveRaw: (content) => ipcRenderer.invoke('automation:saveRaw', content),
+  },
+  extensions: {
+    list: () => ipcRenderer.invoke('extensions:list'),
+    reload: () => ipcRenderer.invoke('extensions:reload'),
+    addLocalPackage: (targetPath) => ipcRenderer.invoke('extensions:addLocalPackage', targetPath),
+    removeLocalPackage: (targetPath) => ipcRenderer.invoke('extensions:removeLocalPackage', targetPath),
   },
   attachments: {
     getPathForFile: (file) => webUtils.getPathForFile(file as Parameters<typeof webUtils.getPathForFile>[0]),

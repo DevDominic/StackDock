@@ -5,19 +5,20 @@ import { api } from '../../lib/api';
 import { getErrorMessage } from '../../lib/errors';
 import { useToast } from '../common/ToastProvider';
 import { useSessionStore } from '../../state/sessionStore';
-import { FileTree } from './FileTree';
 import type { EditorDiffMode, EditorDiffModel, MediaKind, OpenFileTab } from './EditorPanel';
 import { WebTabPanel, type WebTab } from './WebTabPanel';
-import { GitPanel } from './GitPanel';
 import { TerminalPanel } from './TerminalPanel';
 import { CommandLauncher, type CommandAction } from './CommandLauncher';
 import { SessionSwitcher } from './SessionSwitcher';
 import { SettingsModal, type SettingsTab } from './SettingsModal';
 import { StatusBar } from './StatusBar';
 import { applyTheme } from '../../lib/themeSupport';
-import { GlobalSessionsSidebar } from './GlobalSessionsSidebar';
+import { useExtensions } from '../../extensions/ExtensionProvider';
+import { getEnabledStatusBarContributions, getEnabledViewContributions, resolveEnabledExtensions } from '../../extensions/registry';
+import type { WorkspaceExtensionContext } from '../../extensions/extensionTypes';
 import { WindowControls } from '../TitleBar';
 import { FolderIcon, FolderOpenIcon, GitBranchIcon, HomeIcon, PanelLeftIcon, SettingsIcon } from '../icons';
+import { resolveTerminalStartupCommand } from '../../shared/terminalProfiles';
 
 const EditorPanel = lazy(() => import('./EditorPanel.js').then((module) => ({ default: module.EditorPanel })));
 
@@ -158,6 +159,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const tabStripRef = useRef<HTMLDivElement>(null);
 
   const defaultProfile = useMemo(() => profiles[0], [profiles]);
+  const extensionRegistry = useExtensions();
 
   useEffect(() => {
     if (!appSettings) return;
@@ -222,7 +224,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
             const piResumeCommand = session.piResumeCommand ?? snapshot?.piResumeCommand;
             const startupCommand = 'resumeStartupCommand' in session && session.resumeStartupCommand ? session.resumeStartupCommand : piResumeCommand || session.startupCommand || (isPiSnapshotOutput(snapshot?.output) ? 'pi -r' : undefined);
             const created = await sessionStore.createSession({ workspaceId: workspace.id, workspaceName: workspace.name, workspacePath: workspace.path, profileId: session.profileId, cwd: session.cwd, name: session.name, startupCommand, restoreId: session.restoreId });
-            const restoredSession = { ...created, originalStartupCommand: session.originalStartupCommand ?? session.startupCommand, piSessionId: session.piSessionId ?? snapshot?.piSessionId, piResumeCommand, splitGroupId: session.splitGroupId, splitDirection: session.splitDirection };
+            const restoredSession = { ...created, originalStartupCommand: session.originalStartupCommand ?? session.startupCommand, piSessionId: session.piSessionId ?? snapshot?.piSessionId, piResumeCommand, restoredFromSnapshot: true, splitGroupId: session.splitGroupId, splitDirection: session.splitDirection };
             sessionStore.replaceSession(created.id, restoredSession);
             if (session.restoreId && (session.restoreId === loadedLayout?.activeTerminalRestoreId || session.restoreId === persistedActiveRestoreId)) restoredActiveRuntimeId = restoredSession.id;
             if (session.id === loadedLayout?.activeTerminalRuntimeId) restoredActiveRuntimeId = restoredSession.id;
@@ -664,7 +666,8 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     try {
       const requested = profileId ?? workspaceSetup?.defaultTerminalProfile ?? defaultProfile?.id ?? 'powershell';
       const effectiveProfile = profiles.some((profile) => profile.id === requested) ? requested : defaultProfile?.id ?? 'powershell';
-      const effectiveStartup = startupCommand || (workspaceSetup?.newSessionCommand ?? '');
+      const selectedProfile = profiles.find((profile) => profile.id === effectiveProfile);
+      const effectiveStartup = resolveTerminalStartupCommand({ explicitStartupCommand: startupCommand, profileStartupCommand: selectedProfile?.startupCommand, workspaceStartupCommand: workspaceSetup?.newSessionCommand });
       // A new session starts with just the terminal (no tabs) by default.
       await sessionStore.createSession({ workspaceId: workspace.id, workspaceName: workspace.name, workspacePath: workspace.path, profileId: effectiveProfile, cwd, name, startupCommand: effectiveStartup });
     } catch (error) { showToast(getErrorMessage(error, 'Could not create terminal'), 'error'); }
@@ -825,10 +828,70 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
 
   const defaultLayout = getDefaultLayout(workspace.id);
   const mergedLayout = layout ?? defaultLayout;
-  const explorerVisible = !!mergedLayout.panels.fileTreeVisible;
-  const gitVisible = !!mergedLayout.panels.gitPanelVisible && isRepo;
+  const extensionCtx: WorkspaceExtensionContext = {
+    workspace,
+    settings,
+    git,
+    sessions,
+    allSessions,
+    activeSessionId: activeTerminalId,
+    isRepo,
+    refreshToken,
+    actions: {
+      openFile,
+      openTerminalHere,
+      openGit: () => selectSidebar('git'),
+      refreshGit,
+      revealFolder: (targetPath = workspace.path) => void api.fs.revealInExplorer(targetPath),
+      selectSession: (id) => { const target = allSessions.find((session) => session.id === id); sessionStore.setActiveSession(id); if (target && target.workspaceId !== workspace.id) void onOpenWorkspace(target.workspaceId); },
+      createSession: () => createTerminal(undefined, 'Terminal', ''),
+    },
+    workspaces,
+    profiles,
+    defaultProfileId: workspaceSetup?.defaultTerminalProfile ?? settings?.defaultTerminalProfileId,
+    emptySessionsVisible: !!settings?.emptySessionsVisible,
+    showSessionCwdForAll: !!settings?.showSessionCwdForAll,
+    gitActions: {
+      error: gitError,
+      selectedFile: selectedGitFile,
+      selectedStagedPaths: selectedStagedGitPaths,
+      selectedChangePaths: selectedChangeGitPaths,
+      selectFile: selectGitFile,
+      stage,
+      stageSelected: stagePaths,
+      stageAll,
+      unstage,
+      unstageSelected: unstagePaths,
+      discard,
+      discardSelected: discardPaths,
+      commit,
+    },
+    sessionActions: {
+      create: async (target, profileId) => { const setup = automation?.workspaces[target.id]; const profile = profiles.find((item) => item.id === profileId); const startupCommand = resolveTerminalStartupCommand({ profileStartupCommand: profile?.startupCommand, workspaceStartupCommand: setup?.newSessionCommand }); await sessionStore.createSession({ workspaceId: target.id, workspaceName: target.name, workspacePath: target.path, profileId, cwd: target.path, name: 'Terminal', startupCommand }); if (target.id !== workspace.id) await onOpenWorkspace(target.id); },
+      openWorkspace: (id) => void onOpenWorkspace(id),
+      close: (id) => void closeTerminal(id),
+      rename: renameTerminal,
+      restart: (id) => void restartTerminal(id),
+      duplicate: (id) => void duplicateTerminal(id),
+      setCwd: (id, cwd) => void setTerminalCwd(id, cwd),
+      split: (id, direction) => void splitTerminal(id, direction),
+    },
+  };
+  const enabledExtensions = resolveEnabledExtensions(extensionRegistry.extensions, settings, mergedLayout.extensions);
+  const statusBarContributions = getEnabledStatusBarContributions(enabledExtensions, extensionCtx);
+  const sessionContributions = getEnabledViewContributions(enabledExtensions, 'sessions', extensionCtx);
+  const activityContributions = getEnabledViewContributions(enabledExtensions, 'activity', extensionCtx);
+  const sessionContribution = sessionContributions.find((item) => item.extensionId === 'stackdock.sessions');
+  const explorerContribution = activityContributions.find((item) => item.extensionId === 'stackdock.explorer');
+  const gitContribution = activityContributions.find((item) => item.extensionId === 'stackdock.git');
+  const renderExtensionView = (contribution: typeof activityContributions[number]) => extensionRegistry.nativeExtensions.get(contribution.extensionId)?.renderView?.(contribution, extensionCtx) ?? null;
+  const sessionsExtensionEnabled = !!sessionContribution;
+  const explorerExtensionEnabled = !!explorerContribution;
+  const gitExtensionEnabled = !!gitContribution;
+  const explorerVisible = explorerExtensionEnabled && !!mergedLayout.panels.fileTreeVisible;
+  const gitVisible = gitExtensionEnabled && !!mergedLayout.panels.gitPanelVisible && isRepo;
   const sidebarVisible = explorerVisible || gitVisible;
-  const sessionsVisible = mergedLayout.panels.sessionsVisible !== false;
+  const sessionsVisible = sessionsExtensionEnabled && mergedLayout.panels.sessionsVisible !== false;
   const panelSizes = mergedLayout.panels.panelSizes ?? { sessions: 14, explorer: 18, main: 68, editor: 72, git: 28, upper: 62, terminal: 38 };
   const safePanelSizes = getSafePanelSizes(panelSizes, sidebarVisible, sessionsVisible);
   const launcherActions: CommandAction[] = [
@@ -874,9 +937,9 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
           <button className="topbar-icon-btn" onClick={onBack} title="Back to workspaces" aria-label="Back to workspaces"><HomeIcon /></button>
           <span className="topbar-divider" aria-hidden />
           <div className="topbar-nav">
-            <button className={sessionsVisible ? 'topbar-icon-btn active-toggle' : 'topbar-icon-btn'} onClick={() => updatePanels({ sessionsVisible: !sessionsVisible })} title="Toggle Sessions" aria-label="Toggle Sessions"><PanelLeftIcon /></button>
-            <button className={explorerVisible ? 'topbar-icon-btn active-toggle' : 'topbar-icon-btn'} onClick={() => selectSidebar('explorer')} title="Explorer" aria-label="Explorer"><FolderIcon /></button>
-            {isRepo ? <button className={gitVisible ? 'topbar-icon-btn active-toggle' : 'topbar-icon-btn'} onClick={() => selectSidebar('git')} title="Source Control" aria-label="Source Control"><GitBranchIcon /></button> : null}
+            {sessionsExtensionEnabled ? <button className={sessionsVisible ? 'topbar-icon-btn active-toggle' : 'topbar-icon-btn'} onClick={() => updatePanels({ sessionsVisible: !sessionsVisible })} title="Toggle Sessions" aria-label="Toggle Sessions"><PanelLeftIcon /></button> : null}
+            {explorerExtensionEnabled ? <button className={explorerVisible ? 'topbar-icon-btn active-toggle' : 'topbar-icon-btn'} onClick={() => selectSidebar('explorer')} title="Explorer" aria-label="Explorer"><FolderIcon /></button> : null}
+            {isRepo && gitExtensionEnabled ? <button className={gitVisible ? 'topbar-icon-btn active-toggle' : 'topbar-icon-btn'} onClick={() => selectSidebar('git')} title="Source Control" aria-label="Source Control"><GitBranchIcon /></button> : null}
           </div>
         </div>
         <div className="topbar-title">
@@ -904,25 +967,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         {sessionsVisible ? (
           <>
             <Panel id="sessions" order={1} defaultSize={safePanelSizes.sessions} minSize={10} className="global-sessions-panel">
-              <GlobalSessionsSidebar
-                workspaces={workspaces}
-                activeWorkspaceId={workspace.id}
-                activeSessionId={sessionStore.activeSessionId}
-                sessions={allSessions}
-                profiles={profiles}
-                defaultProfileId={workspaceSetup?.defaultTerminalProfile ?? settings?.defaultTerminalProfileId}
-                emptySessionsVisible={!!settings?.emptySessionsVisible}
-                showSessionCwdForAll={!!settings?.showSessionCwdForAll}
-                onCreateSession={async (target, profileId) => { const setup = automation?.workspaces[target.id]; await sessionStore.createSession({ workspaceId: target.id, workspaceName: target.name, workspacePath: target.path, profileId, cwd: target.path, name: 'Terminal', startupCommand: setup?.newSessionCommand }); if (target.id !== workspace.id) await onOpenWorkspace(target.id); }}
-                onSelectSession={(id) => { const target = allSessions.find((session) => session.id === id); sessionStore.setActiveSession(id); if (target && target.workspaceId !== workspace.id) void onOpenWorkspace(target.workspaceId); }}
-                onOpenWorkspace={(id) => void onOpenWorkspace(id)}
-                onCloseSession={(id) => void closeTerminal(id)}
-                onRenameSession={renameTerminal}
-                onRestartSession={(id) => void restartTerminal(id)}
-                onDuplicateSession={(id) => void duplicateTerminal(id)}
-                onSetCwd={(id, cwd) => void setTerminalCwd(id, cwd)}
-                onSplitSession={(id, direction) => void splitTerminal(id, direction)}
-              />
+              {sessionContribution ? renderExtensionView(sessionContribution) : null}
             </Panel>
             <PanelResizeHandle id="sessions-resize" className="resize-handle vertical" />
           </>
@@ -933,17 +978,17 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
               {explorerVisible && gitVisible ? (
                 <PanelGroup direction="vertical" className="sidebar-stack" onLayout={([upper, gitSize]) => updatePanelSizes({ upper, git: gitSize })}>
                   <Panel id="sidebar-files" defaultSize={panelSizes.upper ?? 58} minSize={20}>
-                    <FileTree rootPath={workspace.path} gitFiles={git?.files ?? []} onOpenFile={openFile} onOpenTerminalHere={openTerminalHere} refreshToken={refreshToken} />
+                    {explorerContribution ? renderExtensionView(explorerContribution) : null}
                   </Panel>
                   <PanelResizeHandle id="sidebar-stack-resize" className="resize-handle horizontal" />
                   <Panel id="sidebar-git" defaultSize={panelSizes.git ?? 42} minSize={20}>
-                    <GitPanel status={git} error={gitError} selectedFile={selectedGitFile} selectedStagedPaths={selectedStagedGitPaths} selectedChangePaths={selectedChangeGitPaths} onSelectFile={selectGitFile} onStage={stage} onStageSelected={stagePaths} onStageAll={stageAll} onUnstage={unstage} onUnstageSelected={unstagePaths} onDiscard={discard} onDiscardSelected={discardPaths} onCommit={commit} onRefresh={refreshGit} />
+                    {gitContribution ? renderExtensionView(gitContribution) : null}
                   </Panel>
                 </PanelGroup>
               ) : gitVisible ? (
-                <GitPanel status={git} error={gitError} selectedFile={selectedGitFile} selectedStagedPaths={selectedStagedGitPaths} selectedChangePaths={selectedChangeGitPaths} onSelectFile={selectGitFile} onStage={stage} onStageSelected={stagePaths} onStageAll={stageAll} onUnstage={unstage} onUnstageSelected={unstagePaths} onDiscard={discard} onDiscardSelected={discardPaths} onCommit={commit} onRefresh={refreshGit} />
+                gitContribution ? renderExtensionView(gitContribution) : null
               ) : (
-                <FileTree rootPath={workspace.path} gitFiles={git?.files ?? []} onOpenFile={openFile} onOpenTerminalHere={openTerminalHere} refreshToken={refreshToken} />
+                explorerContribution ? renderExtensionView(explorerContribution) : null
               )}
             </Panel>
             <PanelResizeHandle id="explorer-resize" className="resize-handle vertical" />
@@ -1055,11 +1100,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
           </div>
         </Panel>
       </PanelGroup>
-      <StatusBar
-        git={git}
-        workspace={workspace}
-        actions={{ openGit: () => selectSidebar('git'), revealFolder: () => void api.fs.revealInExplorer(workspace.path) }}
-      />
+      <StatusBar contributions={statusBarContributions} ctx={extensionCtx} nativeExtensions={extensionRegistry.nativeExtensions} />
       <CommandLauncher open={launcherOpen} actions={launcherActions} onClose={() => setLauncherOpen(false)} />
       <SessionSwitcher
         open={sessionSwitcherOpen}

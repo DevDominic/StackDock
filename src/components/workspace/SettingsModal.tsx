@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
 import { getErrorMessage } from '../../lib/errors';
 import { DEFAULT_THEME_ID, applyTheme, getThemes, parseVsCodeThemeJson, registerThemes } from '../../lib/themeSupport';
-import type { AutomationConfig, PaletteCommand, StackDockSettings, Workspace, WorkspaceSetup } from '../../shared/types';
+import type { AutomationConfig, ExtensionListResult, ExtensionManifest, PaletteCommand, StackDockSettings, Workspace, WorkspaceSetup } from '../../shared/types';
 import { CommandsEditor } from './CommandsEditor';
 
-export type SettingsTab = 'general' | 'appearance' | 'terminal' | 'workspace';
+export type SettingsTab = 'general' | 'appearance' | 'terminal' | 'extensions' | 'workspace';
 
 interface Props {
   settings: StackDockSettings;
@@ -130,6 +130,64 @@ function cleanSetup(setup: WorkspaceSetup): WorkspaceSetup {
   return out;
 }
 
+function buildPersistableAutomation(config: AutomationConfig, originalKeys: Set<string>): AutomationConfig {
+  const workspaces: Record<string, WorkspaceSetup> = {};
+  for (const [key, value] of Object.entries(config.workspaces)) {
+    const cleaned = cleanSetup(value);
+    const isEmpty = !cleaned.defaultTerminalProfile && !cleaned.newSessionCommand && !cleaned.commands?.length;
+    // Keep entries the user actually configured; preserve originals so clearing one isn't a surprise.
+    if (!isEmpty || originalKeys.has(key)) workspaces[key] = cleaned;
+  }
+  return { commands: config.commands, workspaces };
+}
+
+type WorkspaceJsonSetup = WorkspaceSetup & { rootDirectory?: string; path?: string; name?: string };
+
+function stripWorkspaceJsonMetadata(raw: unknown): AutomationConfig {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Config must be a JSON object with "commands" and "workspaces"');
+  const record = raw as { commands?: unknown; workspaces?: unknown };
+  const workspaces: Record<string, WorkspaceSetup> = {};
+  if (record.workspaces && typeof record.workspaces === 'object' && !Array.isArray(record.workspaces)) {
+    for (const [key, value] of Object.entries(record.workspaces as Record<string, unknown>)) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        workspaces[key] = {};
+        continue;
+      }
+      const { defaultTerminalProfile, newSessionCommand, commands } = value as WorkspaceJsonSetup;
+      workspaces[key] = { defaultTerminalProfile, newSessionCommand, commands };
+    }
+  }
+  return { commands: Array.isArray(record.commands) ? record.commands as PaletteCommand[] : [], workspaces };
+}
+
+function extensionEnabled(manifest: ExtensionManifest, settings: StackDockSettings) {
+  let enabled = manifest.defaultEnabled === true;
+  if (settings.extensions.enabled.includes(manifest.id)) enabled = true;
+  if (settings.extensions.disabled.includes(manifest.id)) enabled = false;
+  return enabled;
+}
+
+function setExtensionEnabled(settings: StackDockSettings, extensionId: string, enabled: boolean): StackDockSettings {
+  return {
+    ...settings,
+    extensions: {
+      ...settings.extensions,
+      enabled: enabled ? [...new Set([...settings.extensions.enabled, extensionId])] : settings.extensions.enabled.filter((id) => id !== extensionId),
+      disabled: enabled ? settings.extensions.disabled.filter((id) => id !== extensionId) : [...new Set([...settings.extensions.disabled, extensionId])],
+    },
+  };
+}
+
+function extensionSourceLabel(manifest: ExtensionManifest) {
+  return manifest.source === 'local' ? `Local${manifest.packagePath ? ` — ${manifest.packagePath}` : ''}` : 'Bundled with StackDock';
+}
+
+function extensionInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'EX';
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
+}
+
 function setWindowOverlayDimmed(dimmed: boolean) {
   const styles = getComputedStyle(document.documentElement);
   if (dimmed) {
@@ -168,6 +226,27 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
   const [originalKeys, setOriginalKeys] = useState<Set<string>>(new Set());
   const [keyOrder, setKeyOrder] = useState<string[]>([]);
   const [selectedKey, setSelectedKey] = useState<string>(currentWorkspaceId || GLOBAL_KEY);
+  const [workspaceViewMode, setWorkspaceViewMode] = useState<'ui' | 'json'>('ui');
+  const [workspaceJson, setWorkspaceJson] = useState('');
+  const [workspaceJsonDirty, setWorkspaceJsonDirty] = useState(false);
+  const [wsSaved, setWsSaved] = useState(false);
+  const [extensionResult, setExtensionResult] = useState<ExtensionListResult>({ extensions: [], errors: [] });
+  const [extensionError, setExtensionError] = useState<string | null>(null);
+  const [extensionsLoading, setExtensionsLoading] = useState(false);
+
+  async function loadExtensions() {
+    setExtensionsLoading(true);
+    setExtensionError(null);
+    try {
+      setExtensionResult(await api.extensions.list());
+    } catch (err) {
+      setExtensionError(getErrorMessage(err, 'Could not load extensions'));
+    } finally {
+      setExtensionsLoading(false);
+    }
+  }
+
+  useEffect(() => { void loadExtensions(); }, []);
 
   useEffect(() => {
     let active = true;
@@ -208,11 +287,45 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
   const setup: WorkspaceSetup = (config?.workspaces[selectedKey]) ?? {};
   const selectedWorkspacePath = workspaces.find((w) => w.id === selectedKey)?.path;
 
+  function formatWorkspaceJson(source: AutomationConfig): string {
+    const automation = buildPersistableAutomation(source, originalKeys);
+    const withWorkspaceRoots: Record<string, WorkspaceJsonSetup> = {};
+    const keys = Array.from(new Set([...Object.keys(automation.workspaces), ...workspaces.map((workspace) => workspace.id)]));
+    for (const key of keys) {
+      const workspace = workspaces.find((item) => item.id === key);
+      withWorkspaceRoots[key] = {
+        ...(workspace ? { name: workspace.name, rootDirectory: workspace.path } : {}),
+        ...(automation.workspaces[key] ?? {}),
+      };
+    }
+    return JSON.stringify({ commands: automation.commands, workspaces: withWorkspaceRoots }, null, 2);
+  }
+
+  async function updateWorkspaceRootsFromJson(raw: unknown): Promise<Workspace[]> {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Config must be a JSON object with "commands" and "workspaces"');
+    const rawWorkspaces = (raw as { workspaces?: unknown }).workspaces;
+    if (!rawWorkspaces || typeof rawWorkspaces !== 'object' || Array.isArray(rawWorkspaces)) return workspaces;
+    let nextWorkspaces = workspaces;
+    for (const [key, value] of Object.entries(rawWorkspaces as Record<string, unknown>)) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+      const rootDirectory = (value as WorkspaceJsonSetup).rootDirectory ?? (value as WorkspaceJsonSetup).path;
+      if (typeof rootDirectory !== 'string' || !rootDirectory.trim()) continue;
+      const workspace = nextWorkspaces.find((item) => item.id === key);
+      if (!workspace || workspace.path === rootDirectory) continue;
+      const updated = await api.workspaces.update({ ...workspace, path: rootDirectory.trim() });
+      nextWorkspaces = nextWorkspaces.map((item) => (item.id === updated.id ? updated : item));
+    }
+    setWorkspaces(nextWorkspaces);
+    return nextWorkspaces;
+  }
+
   function setGlobalCommands(commands: PaletteCommand[]) {
+    setWsSaved(false);
     setConfig((prev) => (prev ? { ...prev, commands } : prev));
   }
 
   function patchSetup(patch: Partial<WorkspaceSetup>) {
+    setWsSaved(false);
     setConfig((prev) => {
       if (!prev) return prev;
       const current = prev.workspaces[selectedKey] ?? {};
@@ -220,22 +333,55 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
     });
   }
 
+  function showWorkspaceJsonMode() {
+    if (!config) return;
+    setWorkspaceJson(formatWorkspaceJson(config));
+    setWorkspaceJsonDirty(false);
+    setWsError(null);
+    setWsSaved(false);
+    setWorkspaceViewMode('json');
+  }
+
+  function showWorkspaceUiMode() {
+    if (workspaceJsonDirty && !window.confirm('Discard unsaved JSON changes and return to UI mode?')) return;
+    setWsError(null);
+    setWorkspaceJsonDirty(false);
+    setWorkspaceViewMode('ui');
+  }
+
   async function saveWorkspace() {
     if (!config) return;
     setWsSaving(true);
     setWsError(null);
+    setWsSaved(false);
     try {
-      const workspacesObj: Record<string, WorkspaceSetup> = {};
-      for (const [key, value] of Object.entries(config.workspaces)) {
-        const cleaned = cleanSetup(value);
-        const isEmpty = !cleaned.defaultTerminalProfile && !cleaned.newSessionCommand && !cleaned.commands?.length;
-        // Keep entries the user actually configured; preserve originals so clearing one isn't a surprise.
-        if (!isEmpty || originalKeys.has(key)) workspacesObj[key] = cleaned;
+      let saved: AutomationConfig;
+      let updatedWorkspaces = workspaces;
+      if (workspaceViewMode === 'json') {
+        const parsed = JSON.parse(workspaceJson);
+        updatedWorkspaces = await updateWorkspaceRootsFromJson(parsed);
+        const automation = stripWorkspaceJsonMetadata(parsed);
+        saved = await api.automation.saveRaw(JSON.stringify(automation, null, 2));
+      } else {
+        saved = await api.automation.saveRaw(JSON.stringify(buildPersistableAutomation(config, originalKeys), null, 2));
       }
-      const merged = { commands: config.commands, workspaces: workspacesObj };
-      const saved = await api.automation.saveRaw(JSON.stringify(merged, null, 2));
+      setConfig(saved);
       setOriginalKeys(new Set(Object.keys(saved.workspaces)));
+      if (workspaceViewMode === 'json') {
+        const withWorkspaceRoots: Record<string, WorkspaceJsonSetup> = {};
+        const keys = Array.from(new Set([...Object.keys(saved.workspaces), ...updatedWorkspaces.map((workspace) => workspace.id)]));
+        for (const key of keys) {
+          const workspace = updatedWorkspaces.find((item) => item.id === key);
+          withWorkspaceRoots[key] = {
+            ...(workspace ? { name: workspace.name, rootDirectory: workspace.path } : {}),
+            ...(saved.workspaces[key] ?? {}),
+          };
+        }
+        setWorkspaceJson(JSON.stringify({ commands: saved.commands, workspaces: withWorkspaceRoots }, null, 2));
+        setWorkspaceJsonDirty(false);
+      }
       onAutomationSaved(saved);
+      setWsSaved(true);
     } catch (err) {
       setWsError(getErrorMessage(err, 'Could not save workspace config'));
     } finally {
@@ -302,6 +448,8 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
     ? cleanCodeFontFamily(draft.editor.fontFamily)
     : cleanCodeFontFamily(draft.editor.fontFamily || draft.terminal.fontFamily);
   const codeFontPreset = findCodeFontPreset(codeFontFamily);
+  const enabledExtensionCount = extensionResult.extensions.filter((extension) => extensionEnabled(extension, draft)).length;
+  const localExtensionCount = extensionResult.extensions.filter((extension) => extension.source === 'local').length;
 
   function setCodeFontFamily(fontFamily: string) {
     const next = cleanCodeFontFamily(fontFamily);
@@ -320,13 +468,13 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
           <button className={tab === 'general' ? 'active-toggle' : ''} onClick={() => setTab('general')}>General</button>
           <button className={tab === 'appearance' ? 'active-toggle' : ''} onClick={() => setTab('appearance')}>Appearance</button>
           <button className={tab === 'terminal' ? 'active-toggle' : ''} onClick={() => setTab('terminal')}>Terminal profiles</button>
+          <button className={tab === 'extensions' ? 'active-toggle' : ''} onClick={() => setTab('extensions')}>Extensions</button>
           <button className={tab === 'workspace' ? 'active-toggle' : ''} onClick={() => setTab('workspace')}>Workspace</button>
         </div>
 
         {tab === 'general' ? (
           <div className="settings-tab-body">
             <label><input type="checkbox" checked={draft.confirmBeforeDiscard} onChange={(event) => setDraft({ ...draft, confirmBeforeDiscard: event.target.checked })} /> Confirm before discard</label>
-            <label><input type="checkbox" checked={draft.showHiddenFiles} onChange={(event) => setDraft({ ...draft, showHiddenFiles: event.target.checked })} /> Show hidden files</label>
             <label><input type="checkbox" checked={draft.emptySessionsVisible} onChange={(event) => setDraft({ ...draft, emptySessionsVisible: event.target.checked })} /> Show empty sessions</label>
             <label><input type="checkbox" checked={draft.showSessionCwdForAll} onChange={(event) => setDraft({ ...draft, showSessionCwdForAll: event.target.checked })} /> Always show session directories</label>
             <label><input type="checkbox" checked={draft.openLinksExternally} onChange={(event) => setDraft({ ...draft, openLinksExternally: event.target.checked })} /> Open terminal links in system browser</label>
@@ -393,17 +541,91 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
           <div className="settings-tab-body">
             <label>Default profile<select value={draft.defaultTerminalProfileId ?? ''} onChange={(event) => setDraft({ ...draft, defaultTerminalProfileId: event.target.value })}>{draft.terminalProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
             <h3>Terminal profiles</h3>
+            <p className="muted config-hint">Optional startup command runs after the shell opens; e.g. Pi uses <code>cmd.exe</code> + <code>pi</code>.</p>
             <div className="command-list">
               {draft.terminalProfiles.map((profile) => (
                 <div className="command-row profile-row" key={profile.id}>
                   <input value={profile.name} onChange={(event) => setDraft({ ...draft, terminalProfiles: draft.terminalProfiles.map((item) => item.id === profile.id ? { ...item, name: event.target.value } : item) })} placeholder="Name" />
                   <input value={profile.shell} onChange={(event) => setDraft({ ...draft, terminalProfiles: draft.terminalProfiles.map((item) => item.id === profile.id ? { ...item, shell: event.target.value } : item) })} placeholder="Shell" />
                   <input value={profile.args.join(' ')} onChange={(event) => setDraft({ ...draft, terminalProfiles: draft.terminalProfiles.map((item) => item.id === profile.id ? { ...item, args: event.target.value.split(' ').filter(Boolean) } : item) })} placeholder="Args" />
+                  <input value={profile.startupCommand ?? ''} onChange={(event) => setDraft({ ...draft, terminalProfiles: draft.terminalProfiles.map((item) => item.id === profile.id ? { ...item, startupCommand: event.target.value || undefined } : item) })} placeholder="Startup command (optional)" />
                   <button className="ghost danger" onClick={() => setDraft({ ...draft, terminalProfiles: draft.terminalProfiles.filter((item) => item.id !== profile.id) })}>Delete</button>
                 </div>
               ))}
             </div>
             <button className="ghost" onClick={() => setDraft({ ...draft, terminalProfiles: [...draft.terminalProfiles, { id: crypto.randomUUID(), name: '', shell: '', args: [] }] })}>Add profile</button>
+          </div>
+        ) : null}
+
+        {tab === 'extensions' ? (
+          <div className="settings-tab-body extension-settings-body">
+            <div className="extension-hero">
+              <div>
+                <span className="extension-kicker">Extension manager</span>
+                <h3>Customize StackDock surfaces</h3>
+                <p className="muted config-hint">Enable bundled UI pieces or add local extension packages. Save settings to apply visibility changes.</p>
+              </div>
+              <div className="extension-stats" aria-label="Extension summary">
+                <span><b>{enabledExtensionCount}</b> enabled</span>
+                <span><b>{extensionResult.extensions.length}</b> total</span>
+                <span><b>{localExtensionCount}</b> local</span>
+              </div>
+            </div>
+            <div className="row gap extension-actions">
+              <button className="ghost" disabled={extensionsLoading} onClick={loadExtensions}>{extensionsLoading ? 'Loading…' : 'Reload extensions'}</button>
+              <button className="primary" onClick={async () => {
+                const folder = await api.app.pickWorkspaceFolder();
+                if (!folder) return;
+                const result = await api.extensions.addLocalPackage(folder);
+                setExtensionResult(result);
+                setDraft({ ...draft, extensions: { ...draft.extensions, localPackagePaths: [...new Set([...draft.extensions.localPackagePaths, folder])] } });
+              }}>Add local package</button>
+            </div>
+            {extensionError ? <div className="banner error settings-warning">{extensionError}</div> : null}
+            {extensionResult.errors.length ? (
+              <div className="banner error settings-warning">
+                {extensionResult.errors.map((error, index) => <div key={`${error.packagePath ?? error.extensionId ?? 'extension'}:${index}`}>{error.packagePath ?? error.extensionId ?? 'Extension'}: {error.message}</div>)}
+              </div>
+            ) : null}
+            <div className="extension-grid">
+              {extensionResult.extensions.map((extension) => {
+                const enabled = extensionEnabled(extension, draft);
+                const views = extension.contributes?.views?.length ?? 0;
+                const statusItems = extension.contributes?.statusBar?.length ?? 0;
+                const source = extension.source === 'local' ? 'local' : 'bundled';
+                return (
+                  <div className={`extension-card ${enabled ? 'is-enabled' : 'is-disabled'}`} key={extension.id}>
+                    <div className="extension-glyph" aria-hidden="true">{extensionInitials(extension.name)}</div>
+                    <div className="extension-main">
+                      <div className="extension-title-line">
+                        <span className="extension-name">{extension.name}</span>
+                        <span className={`extension-badge ${source}`}>{source === 'local' ? 'Local' : 'Bundled'}</span>
+                      </div>
+                      <div className="extension-id">{extension.id}</div>
+                      {extension.description ? <p className="extension-description">{extension.description}</p> : null}
+                      <div className="extension-meta">
+                        <span>{views} view{views === 1 ? '' : 's'}</span>
+                        <span>{statusItems} status item{statusItems === 1 ? '' : 's'}</span>
+                        {extension.packagePath ? <span className="extension-path" title={extension.packagePath}>{extension.packagePath}</span> : null}
+                      </div>
+                    </div>
+                    <div className="extension-card-actions">
+                      <label className="extension-switch checkbox-field" title={enabled ? 'Enabled' : 'Disabled'}>
+                        <input type="checkbox" checked={enabled} onChange={(event) => setDraft(setExtensionEnabled(draft, extension.id, event.target.checked))} />
+                        <span>{enabled ? 'On' : 'Off'}</span>
+                      </label>
+                      {extension.source === 'local' && extension.packagePath ? <button className="ghost danger" onClick={async () => {
+                        const result = await api.extensions.removeLocalPackage(extension.packagePath!);
+                        setExtensionResult(result);
+                        setDraft({ ...draft, extensions: { ...draft.extensions, localPackagePaths: draft.extensions.localPackagePaths.filter((item) => item !== extension.packagePath), enabled: draft.extensions.enabled.filter((id) => id !== extension.id), disabled: draft.extensions.disabled.filter((id) => id !== extension.id) } });
+                      }}>Remove</button> : null}
+                    </div>
+                  </div>
+                );
+              })}
+              {!extensionResult.extensions.length && !extensionsLoading ? <div className="empty-pad muted extension-empty">No extensions found.</div> : null}
+            </div>
+            <p className="muted config-hint extension-save-note">Disabling a default extension hides that built-in surface.</p>
           </div>
         ) : null}
 
@@ -413,20 +635,43 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
               <b>Global commands</b> show up in every workspace's Ctrl+Shift+P palette and run in the current workspace's folder.
               Each workspace can also set its default terminal profile, a command run on every new session, and its own commands.
             </p>
-            <label>Editing<select value={selectedKey} disabled={wsLoading} onChange={(event) => setSelectedKey(event.target.value)}>{orderedKeys.map((key) => <option key={key} value={key}>{labelFor(key)}{key === currentWorkspaceId ? ' (current)' : ''}</option>)}</select></label>
+            <div className="row gap workspace-mode-row">
+              <button className="ghost" disabled={wsLoading || !config} onClick={workspaceViewMode === 'ui' ? showWorkspaceJsonMode : showWorkspaceUiMode}>
+                {workspaceViewMode === 'ui' ? 'View JSON Mode' : 'View UI Mode'}
+              </button>
+            </div>
             {wsLoading || !config ? (
               <div className="empty-pad muted">Loading…</div>
-            ) : selectedKey === GLOBAL_KEY ? (
-              <CommandsEditor commands={config.commands} onChange={setGlobalCommands} onRun={onRunCommand} cwdPlaceholder="Current workspace folder" />
+            ) : workspaceViewMode === 'json' ? (
+              <>
+                <p className="muted config-hint">Edit automation JSON directly. Change a workspace's <code>rootDirectory</code> to move that project's root. Save validates and normalizes the file.</p>
+                <textarea
+                  className="config-editor workspace-json-editor"
+                  spellCheck={false}
+                  value={workspaceJson}
+                  onChange={(event) => {
+                    setWorkspaceJson(event.target.value);
+                    setWorkspaceJsonDirty(true);
+                    setWsSaved(false);
+                  }}
+                />
+              </>
             ) : (
               <>
-                <label>Default terminal profile<select value={setup.defaultTerminalProfile ?? ''} onChange={(event) => patchSetup({ defaultTerminalProfile: event.target.value || undefined })}>
-                  <option value="">Use global default</option>
-                  {draft.terminalProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
-                </select></label>
-                <label>Run on every new session <span className="muted">(optional)</span><input value={setup.newSessionCommand ?? ''} onChange={(event) => patchSetup({ newSessionCommand: event.target.value || undefined })} placeholder="e.g. nvm use" /></label>
-                <h3>Commands</h3>
-                <CommandsEditor commands={setup.commands ?? []} onChange={(commands) => patchSetup({ commands })} onRun={onRunCommand} showSessionFields cwdPlaceholder={selectedWorkspacePath} />
+                <label>Editing<select value={selectedKey} disabled={wsLoading} onChange={(event) => setSelectedKey(event.target.value)}>{orderedKeys.map((key) => <option key={key} value={key}>{labelFor(key)}{key === currentWorkspaceId ? ' (current)' : ''}</option>)}</select></label>
+                {selectedKey === GLOBAL_KEY ? (
+                  <CommandsEditor commands={config.commands} onChange={setGlobalCommands} onRun={onRunCommand} cwdPlaceholder="Current workspace folder" />
+                ) : (
+                  <>
+                    <label>Default terminal profile<select value={setup.defaultTerminalProfile ?? ''} onChange={(event) => patchSetup({ defaultTerminalProfile: event.target.value || undefined })}>
+                      <option value="">Use global default</option>
+                      {draft.terminalProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+                    </select></label>
+                    <label>Run on every new session <span className="muted">(optional)</span><input value={setup.newSessionCommand ?? ''} onChange={(event) => patchSetup({ newSessionCommand: event.target.value || undefined })} placeholder="e.g. nvm use" /></label>
+                    <h3>Commands</h3>
+                    <CommandsEditor commands={setup.commands ?? []} onChange={(commands) => patchSetup({ commands })} onRun={onRunCommand} showSessionFields cwdPlaceholder={selectedWorkspacePath} />
+                  </>
+                )}
               </>
             )}
             {wsError ? <div className="banner error config-error">{wsError}</div> : null}
@@ -435,8 +680,9 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
 
         {tab === 'workspace' ? (
           <div className="modal-actions">
-            <button className="ghost" onClick={closeWithoutSave}>Close</button>
-            <button className="primary" disabled={wsLoading || wsSaving || !config} onClick={saveWorkspace}>{wsSaving ? 'Saving…' : 'Save workspace config'}</button>
+            {wsSaved && !wsSaving ? <span className="muted workspace-save-status">Saved</span> : null}
+            {workspaceViewMode === 'json' && workspaceJsonDirty && !wsSaved && !wsSaving ? <span className="muted workspace-save-status">Unsaved JSON changes</span> : null}
+            <button className="primary" disabled={wsLoading || wsSaving || !config} onClick={saveWorkspace}>{wsSaving ? 'Saving…' : 'Save'}</button>
           </div>
         ) : (
           <div className="modal-actions">

@@ -786,7 +786,7 @@ html[data-window-controls="native"] .topbar-right { padding-right: 138px; }
 .settings-modal > .panel-title.row button { width: 34px; height: 34px; min-height: 34px; padding: 0; border-radius: 10px; font-size: 18px; line-height: 1; }
 .settings-tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   align-self: stretch;
   gap: 3px;
   height: auto;
@@ -880,9 +880,109 @@ html[data-window-controls="native"] .topbar-right { padding-right: 138px; }
 }
 .code-font-note { font-size: 12px; font-weight: 400; }
 .settings-modal h3 { margin: 8px 0 0; font-size: 13px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-.profile-row { grid-template-columns: minmax(120px, 1fr) minmax(220px, 2fr) minmax(150px, 1.2fr) auto; }
+.profile-row { grid-template-columns: minmax(120px, 1fr) minmax(180px, 1.4fr) minmax(120px, 1fr) minmax(180px, 1.4fr) auto; }
 .command-list { display: flex; flex-direction: column; gap: 10px; margin: 0; }
 .command-row { display: grid; grid-template-columns: 1fr 2fr 1fr 1fr auto auto auto; gap: 8px; align-items: center; padding: 12px; background: color-mix(in srgb, var(--bg-panel) 78%, transparent); border: 1px solid var(--border); border-radius: 13px; }
+.extension-settings-body { gap: 14px; }
+.extension-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 13px;
+  background: color-mix(in srgb, var(--bg-panel) 78%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  box-shadow: none;
+}
+.extension-kicker { color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.settings-modal .extension-hero h3 { margin: 4px 0 3px; color: var(--text); font-size: 14px; font-weight: 650; letter-spacing: 0; text-transform: none; }
+.extension-hero .config-hint { margin: 0; max-width: 520px; }
+.extension-stats { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.extension-stats span {
+  min-width: 0;
+  padding: 5px 8px;
+  text-align: center;
+  background: color-mix(in srgb, var(--bg-elevated) 78%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.extension-stats b { color: var(--text); font-size: 12px; line-height: 1; }
+.extension-actions { justify-content: flex-end; }
+.extension-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.extension-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  gap: 13px;
+  align-items: center;
+  min-height: 96px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--bg-panel) 78%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  overflow: hidden;
+  transition: border-color .12s ease, background .12s ease;
+}
+.extension-card.is-enabled { border-color: color-mix(in srgb, var(--primary) 35%, var(--border)); }
+.extension-card.is-disabled { opacity: .68; }
+.extension-card:hover { border-color: var(--border-strong); background: color-mix(in srgb, var(--bg-elevated) 86%, transparent); }
+.extension-glyph {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 35%, var(--bg-elevated)));
+  color: var(--primary-fg);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  box-shadow: 0 10px 22px rgba(0,0,0,.22);
+}
+.extension-main { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.extension-title-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.extension-name { overflow: hidden; color: var(--text); font-size: 14px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+.extension-id { overflow: hidden; color: var(--muted); font-family: var(--code-font); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.extension-description { margin: 2px 0 0; color: color-mix(in srgb, var(--text) 78%, var(--muted)); font-size: 12px; line-height: 1.4; }
+.extension-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+.extension-meta span, .extension-badge {
+  max-width: 100%;
+  padding: 4px 8px;
+  overflow: hidden;
+  background: rgba(255,255,255,.045);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.extension-badge { flex: 0 0 auto; font-weight: 700; }
+.extension-badge.local { color: var(--git-untracked); border-color: rgba(115, 201, 145, .35); background: rgba(115, 201, 145, .10); }
+.extension-badge.bundled { color: var(--primary); border-color: var(--primary-border-soft); background: var(--accent-soft); }
+.extension-path { max-width: 260px; }
+.extension-card-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.extension-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 10px;
+  background: rgba(255,255,255,.045);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.extension-switch:hover { border-color: var(--primary-border-soft); }
+.extension-switch input { width: 16px; height: 16px; }
+.extension-empty { grid-column: 1 / -1; border: 1px dashed var(--border); border-radius: 14px; }
+.extension-save-note { margin-top: -2px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .settings-modal > .modal-actions { flex-shrink: 0; padding: 14px 18px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 92%, black); }
 .settings-modal > .modal-actions button { min-width: 78px; }
@@ -892,6 +992,9 @@ html[data-window-controls="native"] .topbar-right { padding-right: 138px; }
 .config-editor { width: 100%; min-height: 360px; resize: vertical; background: var(--editor-bg, #08090d); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-family: var(--code-font); font-weight: var(--code-font-weight); font-stretch: var(--code-font-width); font-feature-settings: var(--code-font-features); font-variation-settings: var(--code-font-variations); font-size: 13px; line-height: 1.5; white-space: pre; overflow: auto; tab-size: 2; }
 .config-editor:focus { outline: none; border-color: var(--primary); }
 .config-error { margin: 10px 0 0; }
+.workspace-mode-row { justify-content: flex-end; }
+.workspace-json-editor { flex: 1; min-height: 320px; }
+.workspace-save-status { align-self: center; margin-right: 4px; font-size: 12px; }
 .settings-warning { margin: 10px 0 0; background: var(--warning-bg); border-color: var(--warning-border); color: var(--warning-fg); }
 
 /* ---- Commands editor (Settings -> Workspace) ---- */
