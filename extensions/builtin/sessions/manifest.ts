@@ -1,0 +1,19 @@
+import type { ExtensionManifest } from '../../../src/shared/types';
+
+export const sessionsExtensionManifest: ExtensionManifest = {
+  id: 'stackdock.sessions',
+  name: 'Sessions',
+  version: '1.0.0',
+  defaultEnabled: true,
+  source: 'bundled',
+  contributes: {
+    views: [{ id: 'stackdock.sessions.view', extensionId: 'stackdock.sessions', title: 'Sessions', icon: 'sessions', location: 'sessions', order: 5, native: true }],
+    configuration: {
+      title: 'Sessions settings',
+      fields: [
+        { key: 'emptySessionsVisible', label: 'Show empty sessions', type: 'boolean', default: false, description: 'Show workspaces even when they have no active terminal sessions.' },
+        { key: 'showSessionCwdForAll', label: 'Always show session directories', type: 'boolean', default: false, description: 'Show the current directory on every session card.' },
+      ],
+    },
+  },
+};

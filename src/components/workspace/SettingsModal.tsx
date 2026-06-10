@@ -2,8 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
 import { getErrorMessage } from '../../lib/errors';
 import { DEFAULT_THEME_ID, applyTheme, getThemes, parseVsCodeThemeJson, registerThemes } from '../../lib/themeSupport';
-import type { AutomationConfig, ExtensionListResult, ExtensionManifest, PaletteCommand, StackDockSettings, Workspace, WorkspaceSetup } from '../../shared/types';
+import type { AutomationConfig, ExtensionConfigField, ExtensionConfigPrimitive, ExtensionListResult, ExtensionManifest, PaletteCommand, StackDockSettings, Workspace, WorkspaceSetup } from '../../shared/types';
 import { CommandsEditor } from './CommandsEditor';
+import { JsonCodeEditor } from './JsonCodeEditor';
+import { useExtensions } from '../../extensions/ExtensionProvider';
+import { coerceConfigValue, defaultsFromFields, getExtensionConfig, setExtensionConfig } from '../../extensions/configuration';
 
 export type SettingsTab = 'general' | 'appearance' | 'terminal' | 'extensions' | 'workspace';
 
@@ -208,6 +211,8 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
   const [themeError, setThemeError] = useState<string | null>(null);
   const [uiFontCustomOpen, setUiFontCustomOpen] = useState(false);
   const [codeFontCustomOpen, setCodeFontCustomOpen] = useState(false);
+  const [selectedExtensionConfigId, setSelectedExtensionConfigId] = useState<string | null>(null);
+  const extensionRegistry = useExtensions();
   const valid = draft.terminalProfiles.every((profile) => profile.name.trim() && profile.shell.trim());
   const themeOptions = useMemo(() => getThemes(draft.importedThemes), [draft.importedThemes]);
 
@@ -460,6 +465,25 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
     });
   }
 
+  function patchExtensionConfig(extensionId: string, patch: Record<string, ExtensionConfigPrimitive>) {
+    setDraft((current) => setExtensionConfig(current, extensionId, patch));
+  }
+
+  function renderConfigField(extensionId: string, field: ExtensionConfigField, value: ExtensionConfigPrimitive | undefined) {
+    const setValue = (next: unknown) => patchExtensionConfig(extensionId, { [field.key]: coerceConfigValue(field, next) });
+    if (field.type === 'boolean') return <label className="checkbox-field" key={field.key}><input type="checkbox" checked={value === true} onChange={(event) => setValue(event.target.checked)} /> {field.label}</label>;
+    if (field.type === 'select') return <label key={field.key}>{field.label}<select value={String(value ?? field.default ?? '')} onChange={(event) => setValue(event.target.value)}>{(field.options ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{field.description ? <span className="muted code-font-note">{field.description}</span> : null}</label>;
+    if (field.type === 'number') return <label key={field.key}>{field.label}<input type="number" min={field.min} max={field.max} step={field.step} value={Number(value ?? field.default ?? 0)} onChange={(event) => setValue(event.target.value)} />{field.description ? <span className="muted code-font-note">{field.description}</span> : null}</label>;
+    return <label key={field.key}>{field.label}<input value={String(value ?? field.default ?? '')} onChange={(event) => setValue(event.target.value)} />{field.description ? <span className="muted code-font-note">{field.description}</span> : null}</label>;
+  }
+
+  function renderExtensionConfigView(extension: ExtensionManifest) {
+    const native = extensionRegistry.nativeExtensions.get(extension.id);
+    const fields = extension.contributes?.configuration?.fields ?? [];
+    const config = getExtensionConfig(draft, extension.id, defaultsFromFields(fields));
+    return <div className="settings-tab-body extension-settings-body"><button className="ghost extension-back" onClick={() => setSelectedExtensionConfigId(null)}>← Back to extensions</button><div className="extension-hero"><div><span className="extension-kicker">Extension configuration</span><h3>{extension.contributes?.configuration?.title ?? extension.name}</h3><p className="muted config-hint">{extension.id}</p></div></div>{native?.renderSettings ? native.renderSettings({ manifest: extension, settings: draft, config, setConfig: (patch) => patchExtensionConfig(extension.id, patch) }) : <div className="extension-config-form">{fields.map((field) => renderConfigField(extension.id, field, config[field.key]))}</div>}</div>;
+  }
+
   return (
     <div className="modal-backdrop" onMouseDown={closeWithoutSave}>
       <div className="modal settings-modal" onMouseDown={(event) => event.stopPropagation()}>
@@ -474,9 +498,6 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
 
         {tab === 'general' ? (
           <div className="settings-tab-body">
-            <label><input type="checkbox" checked={draft.confirmBeforeDiscard} onChange={(event) => setDraft({ ...draft, confirmBeforeDiscard: event.target.checked })} /> Confirm before discard</label>
-            <label><input type="checkbox" checked={draft.emptySessionsVisible} onChange={(event) => setDraft({ ...draft, emptySessionsVisible: event.target.checked })} /> Show empty sessions</label>
-            <label><input type="checkbox" checked={draft.showSessionCwdForAll} onChange={(event) => setDraft({ ...draft, showSessionCwdForAll: event.target.checked })} /> Always show session directories</label>
             <label><input type="checkbox" checked={draft.openLinksExternally} onChange={(event) => setDraft({ ...draft, openLinksExternally: event.target.checked })} /> Open terminal links in system browser</label>
             <label><input type="checkbox" checked={draft.captureTerminalBrowserOpens} onChange={(event) => setDraft({ ...draft, captureTerminalBrowserOpens: event.target.checked })} /> Capture browser opens from terminal tools (applies to new terminals)</label>
             {draft.captureTerminalBrowserOpens ? (
@@ -492,7 +513,6 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
             ) : null}
             <label><input type="checkbox" checked={draft.autoSave} onChange={(event) => setDraft({ ...draft, autoSave: event.target.checked })} /> Auto save</label>
             <label>Auto save delay (ms)<input type="number" min={200} step={100} disabled={!draft.autoSave} value={draft.autoSaveDelayMs} onChange={(event) => setDraft({ ...draft, autoSaveDelayMs: Math.max(200, Number(event.target.value) || 0) })} /></label>
-            <label>Git refresh interval (seconds)<input type="number" min={1} step={1} value={draft.gitRefreshIntervalSeconds} onChange={(event) => setDraft({ ...draft, gitRefreshIntervalSeconds: Math.max(1, Number(event.target.value) || 0) })} /></label>
           </div>
         ) : null}
 
@@ -569,7 +589,11 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
           </div>
         ) : null}
 
-        {tab === 'extensions' ? (
+        {tab === 'extensions' && selectedExtensionConfigId ? (
+          extensionResult.extensions.find((extension) => extension.id === selectedExtensionConfigId) ? renderExtensionConfigView(extensionResult.extensions.find((extension) => extension.id === selectedExtensionConfigId)!) : <div className="settings-tab-body"><button className="ghost" onClick={() => setSelectedExtensionConfigId(null)}>← Back to extensions</button><p className="muted">Extension not found.</p></div>
+        ) : null}
+
+        {tab === 'extensions' && !selectedExtensionConfigId ? (
           <div className="settings-tab-body extension-settings-body">
             <div className="extension-hero">
               <div>
@@ -605,6 +629,7 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
                 const views = extension.contributes?.views?.length ?? 0;
                 const statusItems = extension.contributes?.statusBar?.length ?? 0;
                 const source = extension.source === 'local' ? 'local' : 'bundled';
+                const configurable = !!extension.contributes?.configuration || !!extensionRegistry.nativeExtensions.get(extension.id)?.renderSettings;
                 return (
                   <div className={`extension-card ${enabled ? 'is-enabled' : 'is-disabled'}`} key={extension.id}>
                     <div className="extension-glyph" aria-hidden="true">{extensionInitials(extension.name)}</div>
@@ -626,6 +651,7 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
                         <input type="checkbox" checked={enabled} onChange={(event) => setDraft(setExtensionEnabled(draft, extension.id, event.target.checked))} />
                         <span>{enabled ? 'On' : 'Off'}</span>
                       </label>
+                      {configurable ? <button className="ghost" onClick={() => setSelectedExtensionConfigId(extension.id)}>Configure</button> : null}
                       {extension.source === 'local' && extension.packagePath ? <button className="ghost danger" onClick={async () => {
                         const result = await api.extensions.removeLocalPackage(extension.packagePath!);
                         setExtensionResult(result);
@@ -647,22 +673,17 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
               <b>Global commands</b> show up in every workspace's Ctrl+Shift+P palette and run in the current workspace's folder.
               Each workspace can also set its default terminal profile, a command run on every new session, and its own commands.
             </p>
-            <div className="row gap workspace-mode-row">
-              <button className="ghost" disabled={wsLoading || !config} onClick={workspaceViewMode === 'ui' ? showWorkspaceJsonMode : showWorkspaceUiMode}>
-                {workspaceViewMode === 'ui' ? 'View JSON Mode' : 'View UI Mode'}
-              </button>
-            </div>
             {wsLoading || !config ? (
               <div className="empty-pad muted">Loading…</div>
             ) : workspaceViewMode === 'json' ? (
               <>
                 <p className="muted config-hint">Edit automation JSON directly. Change a workspace's <code>rootDirectory</code> to move that project's root. Save validates and normalizes the file.</p>
-                <textarea
-                  className="config-editor workspace-json-editor"
-                  spellCheck={false}
+                <JsonCodeEditor
+                  className="config-editor workspace-json-editor monaco-json-editor"
                   value={workspaceJson}
-                  onChange={(event) => {
-                    setWorkspaceJson(event.target.value);
+                  settings={draft}
+                  onChange={(next) => {
+                    setWorkspaceJson(next);
                     setWorkspaceJsonDirty(true);
                     setWsSaved(false);
                   }}
@@ -691,10 +712,15 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
         ) : null}
 
         {tab === 'workspace' ? (
-          <div className="modal-actions">
-            {wsSaved && !wsSaving ? <span className="muted workspace-save-status">Saved</span> : null}
-            {workspaceViewMode === 'json' && workspaceJsonDirty && !wsSaved && !wsSaving ? <span className="muted workspace-save-status">Unsaved JSON changes</span> : null}
-            <button className="primary" disabled={wsLoading || wsSaving || !config} onClick={saveWorkspace}>{wsSaving ? 'Saving…' : 'Save'}</button>
+          <div className="modal-actions workspace-modal-actions">
+            <button className="ghost" disabled={wsLoading || !config} onClick={workspaceViewMode === 'ui' ? showWorkspaceJsonMode : showWorkspaceUiMode}>
+              {workspaceViewMode === 'ui' ? 'View JSON Mode' : 'View UI Mode'}
+            </button>
+            <div className="workspace-save-actions">
+              {wsSaved && !wsSaving ? <span className="muted workspace-save-status">Saved</span> : null}
+              {workspaceViewMode === 'json' && workspaceJsonDirty && !wsSaved && !wsSaving ? <span className="muted workspace-save-status">Unsaved JSON changes</span> : null}
+              <button className="primary" disabled={wsLoading || wsSaving || !config} onClick={saveWorkspace}>{wsSaving ? 'Saving…' : 'Save'}</button>
+            </div>
           </div>
         ) : (
           <div className="modal-actions">

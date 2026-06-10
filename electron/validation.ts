@@ -35,7 +35,7 @@ export function assertExtensionSettingsLike(value: unknown): ExtensionSettings {
   if (value == null || typeof value !== 'object') throw new Error('extension settings invalid');
   const settings = value as ExtensionSettings;
   if (!Array.isArray(settings.localPackagePaths)) throw new Error('extension localPackagePaths must be array');
-  return { localPackagePaths: settings.localPackagePaths.map((item, index) => assertAbsolutePath(item, `localPackagePaths[${index}]`)), enabled: stringArray(settings.enabled, 'enabled'), disabled: stringArray(settings.disabled, 'disabled') };
+  return { localPackagePaths: settings.localPackagePaths.map((item, index) => assertAbsolutePath(item, `localPackagePaths[${index}]`)), enabled: stringArray(settings.enabled, 'enabled'), disabled: stringArray(settings.disabled, 'disabled'), config: settings.config && typeof settings.config === 'object' ? settings.config : {} };
 }
 export function assertBoolean(value: unknown, name: string): boolean {
   if (typeof value !== 'boolean') throw new Error(`${name} must be boolean`);

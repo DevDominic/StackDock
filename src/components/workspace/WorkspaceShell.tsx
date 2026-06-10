@@ -15,6 +15,7 @@ import { StatusBar } from './StatusBar';
 import { applyTheme } from '../../lib/themeSupport';
 import { useExtensions } from '../../extensions/ExtensionProvider';
 import { getEnabledStatusBarContributions, getEnabledViewContributions, resolveEnabledExtensions } from '../../extensions/registry';
+import { getExtensionConfig } from '../../extensions/configuration';
 import type { WorkspaceExtensionContext } from '../../extensions/extensionTypes';
 import { WindowControls } from '../TitleBar';
 import { FolderIcon, FolderOpenIcon, GitBranchIcon, HomeIcon, PanelLeftIcon, SettingsIcon } from '../icons';
@@ -186,6 +187,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }, [appSettings]);
   const workspaceSetup = automation?.workspaces[workspace.id];
   const isRepo = !!git?.isRepo;
+  const gitConfig = getExtensionConfig(settings, 'stackdock.git', { confirmBeforeDiscard: true, refreshIntervalSeconds: 1 });
 
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -416,13 +418,13 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   // Poll git so the branch/dirty count stays fresh and, crucially, so the Git
   // button appears moments after the user runs `git init` in the terminal.
   useEffect(() => {
-    const configured = settings?.gitRefreshIntervalSeconds ?? 1;
+    const configured = Number(gitConfig.refreshIntervalSeconds) || 1;
     const everyMs = Math.max(1, configured) * 1000;
     const tick = () => { if (document.visibilityState === 'visible') void refreshGit(); };
     const interval = window.setInterval(tick, everyMs);
     window.addEventListener('focus', tick);
     return () => { window.clearInterval(interval); window.removeEventListener('focus', tick); };
-  }, [workspace.path, settings?.gitRefreshIntervalSeconds, selectedGitFile?.path]);
+  }, [workspace.path, gitConfig.refreshIntervalSeconds, selectedGitFile?.path]);
 
   // If the repo goes away (or never existed), hide Source Control and clear its selection.
   useEffect(() => {
@@ -884,7 +886,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }
 
   async function discard(path: string) {
-    if (settings?.confirmBeforeDiscard !== false && !window.confirm(`Discard changes in ${path}? This cannot be undone.`)) return;
+    if (gitConfig.confirmBeforeDiscard !== false && !window.confirm(`Discard changes in ${path}? This cannot be undone.`)) return;
     try {
       setGitError(null);
       await discardPath(path);
@@ -895,7 +897,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
 
   async function discardPaths(paths: string[]) {
     if (!paths.length) return;
-    if (settings?.confirmBeforeDiscard !== false && !window.confirm(`Discard changes in ${paths.length} selected ${paths.length === 1 ? 'file' : 'files'}? This cannot be undone.`)) return;
+    if (gitConfig.confirmBeforeDiscard !== false && !window.confirm(`Discard changes in ${paths.length} selected ${paths.length === 1 ? 'file' : 'files'}? This cannot be undone.`)) return;
     try {
       setGitError(null);
       for (const path of paths) await discardPath(path);
@@ -1002,6 +1004,11 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       openFile,
       previewFile,
       openTerminalHere,
+      openView: (viewId) => {
+        if (viewId === 'stackdock.git.view') selectSidebar('git');
+        else if (viewId === 'stackdock.explorer.view') selectSidebar('explorer');
+        else if (viewId === 'stackdock.sessions.view') updatePanels({ sessionsVisible: true });
+      },
       openGit: () => selectSidebar('git'),
       refreshGit,
       revealFolder: (targetPath = workspace.path) => void api.fs.revealInExplorer(targetPath),
@@ -1011,8 +1018,6 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     workspaces,
     profiles,
     defaultProfileId: workspaceSetup?.defaultTerminalProfile ?? settings?.defaultTerminalProfileId,
-    emptySessionsVisible: !!settings?.emptySessionsVisible,
-    showSessionCwdForAll: !!settings?.showSessionCwdForAll,
     gitActions: {
       error: gitError,
       selectedFile: selectedGitFile,

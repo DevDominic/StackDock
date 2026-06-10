@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 const FILE_TREE_REFRESH_DEBOUNCE_MS = 500;
-import type { DirectoryEntry, GitFileStatus } from '../../shared/types';
-import { api } from '../../lib/api';
-import { FileIcon } from './fileIcons';
+import type { DirectoryEntry, GitFileStatus } from '../../../../src/shared/types';
+import { api } from '../../../../src/lib/api';
+import { FileIcon } from '../../../../src/components/workspace/fileIcons';
 
 interface Props {
   rootPath: string;

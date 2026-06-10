@@ -1,18 +1,16 @@
 import fs from 'fs/promises';
 import path from 'path';
 import type { ExtensionListResult, ExtensionLoadError, ExtensionManifest, StackDockSettings } from '../src/shared/types';
+import { explorerExtensionManifest } from '../extensions/builtin/explorer/manifest';
 import { gitExtensionManifest } from '../extensions/builtin/git/manifest';
+import { sessionsExtensionManifest } from '../extensions/builtin/sessions/manifest';
+import { workspaceStatusExtensionManifest } from '../extensions/builtin/workspace-status/manifest';
 
 const MANIFEST_FILE = 'stackdock.extension.json';
 const packageRoots = new Map<string, string>();
 
 export function getBundledExtensionManifests(): ExtensionManifest[] {
-  return [
-    { id: 'stackdock.explorer', name: 'Explorer', version: '1.0.0', defaultEnabled: true, source: 'bundled', contributes: { views: [{ id: 'stackdock.explorer.view', extensionId: 'stackdock.explorer', title: 'Explorer', icon: 'folder', location: 'activity', order: 10, native: true }] } },
-    gitExtensionManifest,
-    { id: 'stackdock.sessions', name: 'Sessions', version: '1.0.0', defaultEnabled: true, source: 'bundled', contributes: { views: [{ id: 'stackdock.sessions.view', extensionId: 'stackdock.sessions', title: 'Sessions', icon: 'sessions', location: 'sessions', order: 5, native: true }] } },
-    { id: 'stackdock.workspaceStatus', name: 'Workspace Status', version: '1.0.0', defaultEnabled: true, source: 'bundled', contributes: { statusBar: [{ id: 'stackdock.workspace.status', extensionId: 'stackdock.workspaceStatus', side: 'right', order: 10, native: true }] } },
-  ];
+  return [explorerExtensionManifest, gitExtensionManifest, sessionsExtensionManifest, workspaceStatusExtensionManifest];
 }
 
 function validId(id: string) { return /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id); }
@@ -32,7 +30,7 @@ function normalizeManifest(raw: unknown, root: string): ExtensionManifest {
     source: 'local',
     packagePath: root,
     capabilities: Array.isArray(source.capabilities) ? source.capabilities.filter((item): item is string => typeof item === 'string') : undefined,
-    contributes: { views: [], statusBar: [] },
+    contributes: { views: [], statusBar: [], configuration: source.contributes?.configuration },
   };
   const seen = new Set<string>();
   for (const view of source.contributes?.views ?? []) {

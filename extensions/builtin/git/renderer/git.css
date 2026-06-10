@@ -8,6 +8,19 @@
 .git-path-dir { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; color: var(--muted); }
 .git-path .git-path-name { flex: 0 0 auto; overflow: visible; text-overflow: clip; white-space: nowrap; }
 .git-panel .git-path .git-path-name { color: var(--text); text-decoration: none; }
+/* Source Control rows split the path into nested spans, so the shared
+   `.tree-row.git-* .tree-label` explorer rules can be overridden by the
+   git-path-name reset above depending on CSS order/specificity. Re-apply the
+   status colors in the Git extension itself so modified/added/deleted names
+   match their badges consistently. */
+.git-panel .git-file.git-modified .git-path-dir,
+.git-panel .git-file.git-modified .git-path-name { color: var(--git-modified); }
+.git-panel .git-file.git-untracked .git-path-dir,
+.git-panel .git-file.git-untracked .git-path-name,
+.git-panel .git-file.git-added .git-path-dir,
+.git-panel .git-file.git-added .git-path-name { color: var(--git-untracked); }
+.git-panel .git-file.git-deleted .git-path-dir,
+.git-panel .git-file.git-deleted .git-path-name { color: var(--git-deleted); text-decoration: line-through; }
 .git-badge {
   flex-shrink: 0;
   margin-left: 2px;

@@ -1,0 +1,16 @@
+import type { ExtensionManifest } from '../../../src/shared/types';
+
+export const workspaceStatusExtensionManifest: ExtensionManifest = {
+  id: 'stackdock.workspaceStatus',
+  name: 'Workspace Status',
+  version: '1.0.0',
+  defaultEnabled: true,
+  source: 'bundled',
+  contributes: {
+    statusBar: [{ id: 'stackdock.workspace.status', extensionId: 'stackdock.workspaceStatus', side: 'right', order: 10, native: true }],
+    configuration: {
+      title: 'Workspace Status settings',
+      fields: [{ key: 'showPath', label: 'Show workspace path', type: 'boolean', default: true, description: 'Show the full workspace path next to the workspace name.' }],
+    },
+  },
+};

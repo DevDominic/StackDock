@@ -1,5 +1,5 @@
 import type { MouseEvent, ReactNode } from 'react';
-import type { ExtensionManifest, ExtensionStatusBarContribution, ExtensionViewContribution, GitFileStatus, GitStatus, StackDockSettings, TerminalProfile, Workspace, WorkspaceTerminalSession } from '../shared/types';
+import type { ExtensionConfigPrimitive, ExtensionManifest, ExtensionStatusBarContribution, ExtensionViewContribution, GitFileStatus, GitStatus, StackDockSettings, TerminalProfile, Workspace, WorkspaceTerminalSession } from '../shared/types';
 
 export interface ExtensionCommand {
   id: string;
@@ -21,6 +21,7 @@ export interface WorkspaceExtensionContext {
     openFile(path: string): void | Promise<void>;
     previewFile(path: string): void | Promise<void>;
     openTerminalHere(path: string): void | Promise<void>;
+    openView(viewId: string): void;
     openGit(): void;
     refreshGit(): void | Promise<void>;
     revealFolder(path?: string): void | Promise<void>;
@@ -30,8 +31,6 @@ export interface WorkspaceExtensionContext {
   workspaces: Workspace[];
   profiles: TerminalProfile[];
   defaultProfileId?: string;
-  emptySessionsVisible: boolean;
-  showSessionCwdForAll: boolean;
   gitActions: {
     error: string | null;
     selectedFile: GitFileStatus | null;
@@ -65,9 +64,17 @@ export interface WorkspaceExtensionContext {
   };
 }
 
+export interface ExtensionSettingsContext {
+  manifest: ExtensionManifest;
+  settings: StackDockSettings;
+  config: Record<string, ExtensionConfigPrimitive>;
+  setConfig(patch: Record<string, ExtensionConfigPrimitive>): void;
+}
+
 export interface NativeExtension {
   manifest: ExtensionManifest;
   renderView?(contribution: ExtensionViewContribution, ctx: WorkspaceExtensionContext): ReactNode;
   renderStatusBar?(contribution: ExtensionStatusBarContribution, ctx: WorkspaceExtensionContext): ReactNode;
+  renderSettings?(ctx: ExtensionSettingsContext): ReactNode;
   getCommands?(ctx: WorkspaceExtensionContext): ExtensionCommand[];
 }

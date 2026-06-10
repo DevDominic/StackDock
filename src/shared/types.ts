@@ -22,11 +22,14 @@ export type ExtensionContributionLocation = 'activity' | 'sessions' | 'statusBar
 export type ExtensionSource = 'bundled' | 'local';
 export interface ExtensionViewContribution { id: string; extensionId: string; title: string; icon?: string; location: Exclude<ExtensionContributionLocation, 'statusBar'>; order?: number; native?: boolean; entry?: string; when?: 'always' | 'gitRepo'; }
 export interface ExtensionStatusBarContribution { id: string; extensionId: string; side: 'left' | 'right'; order?: number; label?: string; tooltip?: string; entry?: string; native?: boolean; when?: 'always' | 'gitRepo'; }
-export interface ExtensionManifest { id: string; name: string; version: string; description?: string; defaultEnabled?: boolean; source?: ExtensionSource; packagePath?: string; capabilities?: string[]; contributes?: { views?: ExtensionViewContribution[]; statusBar?: ExtensionStatusBarContribution[] }; }
+export type ExtensionConfigPrimitive = string | number | boolean;
+export interface ExtensionConfigField { key: string; label: string; type: 'boolean' | 'number' | 'text' | 'select'; description?: string; default?: ExtensionConfigPrimitive; min?: number; max?: number; step?: number; options?: { label: string; value: string }[]; }
+export interface ExtensionConfigurationContribution { title?: string; fields: ExtensionConfigField[]; }
+export interface ExtensionManifest { id: string; name: string; version: string; description?: string; defaultEnabled?: boolean; source?: ExtensionSource; packagePath?: string; capabilities?: string[]; contributes?: { views?: ExtensionViewContribution[]; statusBar?: ExtensionStatusBarContribution[]; configuration?: ExtensionConfigurationContribution }; }
 export interface ExtensionLoadError { extensionId?: string; packagePath?: string; message: string; }
 export interface ExtensionListResult { extensions: ExtensionManifest[]; errors: ExtensionLoadError[]; }
-export interface ExtensionSettings { localPackagePaths: string[]; disabled: string[]; enabled: string[]; }
-export interface WorkspaceExtensionState { enabled?: string[]; disabled?: string[]; activeActivityViewId?: string; activeBottomViewId?: string; panelSizesByViewId?: Record<string, number>; }
+export interface ExtensionSettings { localPackagePaths: string[]; disabled: string[]; enabled: string[]; config: Record<string, Record<string, ExtensionConfigPrimitive>>; }
+export interface WorkspaceExtensionState { enabled?: string[]; disabled?: string[]; activeActivityViewId?: string; activeBottomViewId?: string; panelSizesByViewId?: Record<string, number>; visibleViewIds?: string[]; }
 
 export interface StackDockSettings {
   /** Unified app + Monaco theme id. */

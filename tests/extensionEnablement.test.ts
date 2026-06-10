@@ -4,7 +4,7 @@ import { resolveEnabledExtensions } from '../src/extensions/enablement';
 
 const settings = (enabled: string[] = [], disabled: string[] = []): StackDockSettings => ({
   themeId: 'x', importedThemes: [], confirmBeforeDiscard: true, emptySessionsVisible: false, showSessionCwdForAll: false, gitRefreshIntervalSeconds: 0, autoSave: true, autoSaveDelayMs: 1000, openLinksExternally: false, captureTerminalBrowserOpens: true, capturedLinkOpenMode: 'tab' as const,
-  ui: { fontFamily: 'sans', fontSize: 13 }, code: { ligatures: true }, editor: { fontSize: 13, fontFamily: 'mono', tabSize: 2, wordWrap: 'off' }, terminal: { fontSize: 13, fontFamily: 'mono', cursorBlink: true }, terminalProfiles: [], extensions: { localPackagePaths: [], enabled, disabled },
+  ui: { fontFamily: 'sans', fontSize: 13 }, code: { ligatures: true }, editor: { fontSize: 13, fontFamily: 'mono', tabSize: 2, wordWrap: 'off' }, terminal: { fontSize: 13, fontFamily: 'mono', cursorBlink: true }, terminalProfiles: [], extensions: { localPackagePaths: [], enabled, disabled, config: {} },
 });
 const manifests: ExtensionManifest[] = [{ id: 'builtin.on', name: 'On', version: '1', defaultEnabled: true }, { id: 'local.off', name: 'Off', version: '1', defaultEnabled: false }];
 

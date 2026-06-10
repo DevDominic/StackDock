@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { TerminalProfile, Workspace, WorkspaceTerminalSession } from '../../shared/types';
+import type { TerminalProfile, Workspace, WorkspaceTerminalSession } from '../../../../src/shared/types';
 
 const LAST_PROFILE_KEY = 'stackdock.lastProfileId';
 

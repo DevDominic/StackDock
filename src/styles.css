@@ -942,8 +942,10 @@ html[data-window-controls="native"] .topbar-right { padding-right: 138px; }
 .config-editor { width: 100%; min-height: 360px; resize: vertical; background: var(--editor-bg, #08090d); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-family: var(--code-font); font-weight: var(--code-font-weight); font-stretch: var(--code-font-width); font-feature-settings: var(--code-font-features); font-variation-settings: var(--code-font-variations); font-size: 13px; line-height: 1.5; white-space: pre; overflow: auto; tab-size: 2; }
 .config-editor:focus { outline: none; border-color: var(--primary); }
 .config-error { margin: 10px 0 0; }
-.workspace-mode-row { justify-content: flex-end; }
+.workspace-modal-actions { justify-content: space-between; align-items: center; }
+.workspace-save-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
 .workspace-json-editor { flex: 1; min-height: 320px; }
+.monaco-json-editor { padding: 0; overflow: hidden; white-space: normal; resize: none; }
 .workspace-save-status { align-self: center; margin-right: 4px; font-size: 12px; }
 .settings-warning { margin: 10px 0 0; background: var(--warning-bg); border-color: var(--warning-border); color: var(--warning-fg); }
 

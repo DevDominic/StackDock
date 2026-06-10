@@ -1,5 +1,5 @@
 import fs from 'fs/promises';
-import type { StackDockSettings, TerminalProfile } from '../src/shared/types';
+import type { ExtensionConfigPrimitive, StackDockSettings, TerminalProfile } from '../src/shared/types';
 import { ensureDataDirs, getConfigPath } from './storage';
 
 const UI_FONT_FAMILY = '"Inter Variable", "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif';
@@ -24,6 +24,22 @@ function normalizeTerminalProfiles(profiles: TerminalProfile[] | undefined, fall
   });
 }
 
+function isConfigPrimitive(value: unknown): value is ExtensionConfigPrimitive {
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+}
+
+function normalizeExtensionConfig(rawConfig: unknown): Record<string, Record<string, ExtensionConfigPrimitive>> {
+  const normalized: Record<string, Record<string, ExtensionConfigPrimitive>> = {};
+  if (!rawConfig || typeof rawConfig !== 'object') return normalized;
+  for (const [extensionId, value] of Object.entries(rawConfig)) {
+    if (!value || typeof value !== 'object') continue;
+    const config: Record<string, ExtensionConfigPrimitive> = {};
+    for (const [key, entry] of Object.entries(value)) if (isConfigPrimitive(entry)) config[key] = entry;
+    normalized[extensionId] = config;
+  }
+  return normalized;
+}
+
 export function getDefaultSettings(): StackDockSettings {
   const programFiles = process.env['ProgramFiles'] ?? 'C:\\Program Files';
   return {
@@ -44,7 +60,16 @@ export function getDefaultSettings(): StackDockSettings {
     code: { ligatures: true },
     editor: { fontSize: 13, fontFamily: CODE_FONT_FAMILY, tabSize: 2, wordWrap: 'off' },
     terminal: { fontSize: 14, fontFamily: CODE_FONT_FAMILY, cursorBlink: true },
-    extensions: { localPackagePaths: [], disabled: [], enabled: [] },
+    extensions: {
+      localPackagePaths: [],
+      disabled: [],
+      enabled: [],
+      config: {
+        'stackdock.sessions': { emptySessionsVisible: false, showSessionCwdForAll: false },
+        'stackdock.git': { confirmBeforeDiscard: true, refreshIntervalSeconds: 1 },
+        'stackdock.workspaceStatus': { showPath: true },
+      },
+    },
     terminalProfiles: [
       { id: 'powershell', name: 'PowerShell', shell: 'powershell.exe', args: ['-NoLogo', '-NoExit'] },
       { id: 'cmd', name: 'Command Prompt', shell: 'cmd.exe', args: [] },
@@ -74,6 +99,25 @@ export async function loadSettings(): Promise<StackDockSettings> {
       : typeof rawEditor.themeId === 'string' && rawEditor.themeId.trim()
         ? rawEditor.themeId
         : defaults.themeId;
+    const rawExtensionConfig = normalizeExtensionConfig(raw.extensions?.config);
+    const extensionsConfig = {
+      ...defaults.extensions.config,
+      ...rawExtensionConfig,
+      'stackdock.sessions': {
+        ...defaults.extensions.config['stackdock.sessions'],
+        emptySessionsVisible: raw.emptySessionsVisible ?? rawExtensionConfig['stackdock.sessions']?.emptySessionsVisible ?? defaults.emptySessionsVisible,
+        showSessionCwdForAll: raw.showSessionCwdForAll ?? rawExtensionConfig['stackdock.sessions']?.showSessionCwdForAll ?? defaults.showSessionCwdForAll,
+      },
+      'stackdock.git': {
+        ...defaults.extensions.config['stackdock.git'],
+        confirmBeforeDiscard: raw.confirmBeforeDiscard ?? rawExtensionConfig['stackdock.git']?.confirmBeforeDiscard ?? defaults.confirmBeforeDiscard,
+        refreshIntervalSeconds: raw.gitRefreshIntervalSeconds ?? rawExtensionConfig['stackdock.git']?.refreshIntervalSeconds ?? defaults.gitRefreshIntervalSeconds,
+      },
+      'stackdock.workspaceStatus': {
+        ...defaults.extensions.config['stackdock.workspaceStatus'],
+        ...rawExtensionConfig['stackdock.workspaceStatus'],
+      },
+    };
     return {
       ...defaults,
       ...raw,
@@ -94,12 +138,16 @@ export async function loadSettings(): Promise<StackDockSettings> {
         importedThemes: undefined,
       },
       terminal: { ...defaults.terminal, ...rawTerminal, fontFamily: migrateCodeFont(rawTerminal.fontFamily) },
-      gitRefreshIntervalSeconds: Math.max(1, Number(raw.gitRefreshIntervalSeconds) || defaults.gitRefreshIntervalSeconds),
+      confirmBeforeDiscard: extensionsConfig['stackdock.git'].confirmBeforeDiscard !== false,
+      emptySessionsVisible: extensionsConfig['stackdock.sessions'].emptySessionsVisible === true,
+      showSessionCwdForAll: extensionsConfig['stackdock.sessions'].showSessionCwdForAll === true,
+      gitRefreshIntervalSeconds: Math.max(1, Number(extensionsConfig['stackdock.git'].refreshIntervalSeconds) || defaults.gitRefreshIntervalSeconds),
       terminalProfiles: normalizeTerminalProfiles(raw.terminalProfiles, defaults.terminalProfiles),
       extensions: {
         localPackagePaths: Array.isArray(raw.extensions?.localPackagePaths) ? raw.extensions.localPackagePaths.filter((item): item is string => typeof item === 'string') : defaults.extensions.localPackagePaths,
         disabled: Array.isArray(raw.extensions?.disabled) ? raw.extensions.disabled.filter((item): item is string => typeof item === 'string') : defaults.extensions.disabled,
         enabled: Array.isArray(raw.extensions?.enabled) ? raw.extensions.enabled.filter((item): item is string => typeof item === 'string') : defaults.extensions.enabled,
+        config: extensionsConfig,
       },
     };
   } catch {
@@ -110,6 +158,17 @@ export async function loadSettings(): Promise<StackDockSettings> {
 export async function saveSettings(settings: StackDockSettings): Promise<StackDockSettings> {
   if (settings.terminalProfiles.some((profile) => !profile.name.trim() || !profile.shell.trim())) throw new Error('Terminal profiles need name and shell');
   await ensureDataDirs();
-  await fs.writeFile(getConfigPath(), JSON.stringify({ ...settings, terminalProfiles: normalizeTerminalProfiles(settings.terminalProfiles, []) }, null, 2), 'utf8');
+  const gitConfig = settings.extensions.config?.['stackdock.git'] ?? {};
+  const sessionsConfig = settings.extensions.config?.['stackdock.sessions'] ?? {};
+  const persisted: StackDockSettings = {
+    ...settings,
+    confirmBeforeDiscard: gitConfig.confirmBeforeDiscard !== false,
+    gitRefreshIntervalSeconds: Math.max(1, Number(gitConfig.refreshIntervalSeconds) || settings.gitRefreshIntervalSeconds),
+    emptySessionsVisible: sessionsConfig.emptySessionsVisible === true,
+    showSessionCwdForAll: sessionsConfig.showSessionCwdForAll === true,
+    extensions: { ...settings.extensions, config: normalizeExtensionConfig(settings.extensions.config) },
+    terminalProfiles: normalizeTerminalProfiles(settings.terminalProfiles, []),
+  };
+  await fs.writeFile(getConfigPath(), JSON.stringify(persisted, null, 2), 'utf8');
   return loadSettings();
 }

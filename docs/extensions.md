@@ -22,6 +22,22 @@ Create a directory with `stackdock.extension.json`:
 
 Local package JavaScript runs only in sandboxed iframes served by StackDock. It is never dynamically imported into the main renderer.
 
+## Configuration
+Extensions can declare Settings UI fields with `contributes.configuration`:
+```json
+{
+  "contributes": {
+    "configuration": {
+      "title": "Notes settings",
+      "fields": [
+        { "key": "showArchived", "label": "Show archived notes", "type": "boolean", "default": false }
+      ]
+    }
+  }
+}
+```
+Configurable extensions show a **Configure** button in Settings > Extensions. Built-in native extensions may also provide a custom settings renderer.
+
 ## Bridge
 
 Iframe code communicates with the host using `postMessage` typed messages:
