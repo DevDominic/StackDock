@@ -8,4 +8,8 @@ export const explorerExtension: NativeExtension = {
   renderView: (_contribution, ctx) => (
     <FileTree rootPath={ctx.workspace.path} gitFiles={ctx.git?.files ?? []} onOpenFile={ctx.actions.openFile} onPreviewFile={ctx.actions.previewFile} onOpenTerminalHere={ctx.actions.openTerminalHere} refreshToken={ctx.refreshToken} />
   ),
+  getCommands: (ctx) => [
+    { id: 'stackdock.explorer.toggleSidebar', label: 'Toggle Sidebar', run: () => ctx.actions.toggleView('stackdock.explorer.view') },
+    { id: 'stackdock.explorer.showExplorer', label: 'Show Explorer', run: () => ctx.actions.openView('stackdock.explorer.view') },
+  ],
 };

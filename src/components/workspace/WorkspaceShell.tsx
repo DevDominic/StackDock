@@ -187,7 +187,8 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }, [appSettings]);
   const workspaceSetup = automation?.workspaces[workspace.id];
   const isRepo = !!git?.isRepo;
-  const gitConfig = getExtensionConfig(settings, 'stackdock.git', { confirmBeforeDiscard: true, refreshIntervalSeconds: 1 });
+  const gitExtensionId = extensionRegistry.extensions.find((manifest) => manifest.capabilities?.includes('git'))?.id;
+  const gitConfig = getExtensionConfig(settings, gitExtensionId ?? '', { confirmBeforeDiscard: true, refreshIntervalSeconds: 1 });
 
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -983,14 +984,46 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     }
   }
 
-  function selectSidebar(tab: 'explorer' | 'git') {
-    if (tab === 'git' && (!isRepo || !gitExtensionEnabled)) return;
-    if (tab === 'explorer') updatePanels({ fileTreeVisible: !mergedLayout.panels.fileTreeVisible });
-    else updatePanels({ gitPanelVisible: !mergedLayout.panels.gitPanelVisible });
-  }
-
   const defaultLayout = getDefaultLayout(workspace.id);
   const mergedLayout = layout ?? defaultLayout;
+
+  function updateExtensionState(next: NonNullable<WorkspaceLayout['extensions']>) {
+    setLayout((current) => {
+      const base = current ?? getDefaultLayout(workspace.id);
+      return { ...base, extensions: { ...(base.extensions ?? {}), ...next } };
+    });
+  }
+
+  function setViewVisible(viewId: string, visible: boolean) {
+    const current = mergedLayout.extensions?.visibleViewIds ?? [];
+    const next = visible ? [...new Set([...current, viewId])] : current.filter((id) => id !== viewId);
+    updateExtensionState({ visibleViewIds: next });
+  }
+
+  function openView(viewId: string) {
+    const sessionView = sessionContributions.some((view) => view.id === viewId);
+    if (sessionView) { updatePanels({ sessionsVisible: true }); return; }
+    if (!activityContributions.some((view) => view.id === viewId)) return;
+    setViewVisible(viewId, true);
+  }
+
+  function toggleView(viewId: string) {
+    const sessionView = sessionContributions.some((view) => view.id === viewId);
+    if (sessionView) { updatePanels({ sessionsVisible: !sessionsVisible }); return; }
+    if (!activityContributions.some((view) => view.id === viewId)) return;
+    setViewVisible(viewId, !visibleActivityViewIds.includes(viewId));
+  }
+
+  function toggleActivitySidebar() {
+    if (visibleActivityViewIds.length) updateExtensionState({ visibleViewIds: [] });
+    else if (activityContributions[0]) setViewVisible(activityContributions[0].id, true);
+  }
+
+  function renderContributionIcon(icon?: string) {
+    if (icon === 'git') return <GitBranchIcon />;
+    if (icon === 'sessions') return <PanelLeftIcon />;
+    return <FolderIcon />;
+  }
   const extensionCtx: WorkspaceExtensionContext = {
     workspace,
     settings,
@@ -1004,12 +1037,9 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       openFile,
       previewFile,
       openTerminalHere,
-      openView: (viewId) => {
-        if (viewId === 'stackdock.git.view') selectSidebar('git');
-        else if (viewId === 'stackdock.explorer.view') selectSidebar('explorer');
-        else if (viewId === 'stackdock.sessions.view') updatePanels({ sessionsVisible: true });
-      },
-      openGit: () => selectSidebar('git'),
+      openView,
+      toggleView,
+      openGit: () => { const gitView = activityContributions.find((view) => view.icon === 'git'); if (gitView) openView(gitView.id); },
       refreshGit,
       revealFolder: (targetPath = workspace.path) => void api.fs.revealInExplorer(targetPath),
       selectSession: (id) => { const target = allSessions.find((session) => session.id === id); sessionStore.setActiveSession(id); if (target && target.workspaceId !== workspace.id) void onOpenWorkspace(target.workspaceId); },
@@ -1054,17 +1084,14 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const statusBarContributions = getEnabledStatusBarContributions(enabledExtensions, extensionCtx);
   const sessionContributions = getEnabledViewContributions(enabledExtensions, 'sessions', extensionCtx);
   const activityContributions = getEnabledViewContributions(enabledExtensions, 'activity', extensionCtx);
-  const sessionContribution = sessionContributions.find((item) => item.extensionId === 'stackdock.sessions');
-  const explorerContribution = activityContributions.find((item) => item.extensionId === 'stackdock.explorer');
-  const gitContribution = activityContributions.find((item) => item.extensionId === 'stackdock.git');
+  const sessionContribution = sessionContributions[0] ?? null;
   const renderExtensionView = (contribution: typeof activityContributions[number]) => extensionRegistry.nativeExtensions.get(contribution.extensionId)?.renderView?.(contribution, extensionCtx) ?? null;
-  const sessionsExtensionEnabled = !!sessionContribution;
-  const explorerExtensionEnabled = !!explorerContribution;
-  const gitExtensionEnabled = !!gitContribution;
-  const explorerVisible = explorerExtensionEnabled && !!mergedLayout.panels.fileTreeVisible;
-  const gitVisible = gitExtensionEnabled && !!mergedLayout.panels.gitPanelVisible && isRepo;
-  const sidebarVisible = explorerVisible || gitVisible;
-  const sessionsVisible = sessionsExtensionEnabled && mergedLayout.panels.sessionsVisible !== false;
+  const legacyActivityViewIds = activityContributions.filter((_, index) => index === 0 ? mergedLayout.panels.fileTreeVisible : index === 1 ? mergedLayout.panels.gitPanelVisible : false).map((view) => view.id);
+  const configuredActivityViewIds = mergedLayout.extensions?.visibleViewIds;
+  const visibleActivityViewIds = (configuredActivityViewIds ?? legacyActivityViewIds).filter((id) => activityContributions.some((view) => view.id === id));
+  const visibleActivityContributions = activityContributions.filter((view) => visibleActivityViewIds.includes(view.id));
+  const sidebarVisible = visibleActivityContributions.length > 0;
+  const sessionsVisible = !!sessionContribution && mergedLayout.panels.sessionsVisible !== false;
   const panelSizes = mergedLayout.panels.panelSizes ?? { sessions: 14, explorer: 18, main: 68, editor: 72, git: 28, upper: 62, terminal: 38 };
   const safePanelSizes = getSafePanelSizes(panelSizes, sidebarVisible, sessionsVisible);
   const extensionCommands = enabledExtensions.flatMap((manifest) => extensionRegistry.nativeExtensions.get(manifest.id)?.getCommands?.(extensionCtx) ?? []);
@@ -1073,10 +1100,12 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     ...(workspaceSetup?.commands ?? []).map((command) => ({ id: `ws:${command.id}`, label: command.label, description: command.command, run: () => runPaletteCommand(command) })),
     ...(automation?.commands ?? []).map((command) => ({ id: `global:${command.id}`, label: command.label, description: command.command, run: () => runPaletteCommand(command) })),
     { id: 'new-terminal', label: 'New Terminal', run: () => createTerminal(undefined, 'Terminal', '') },
-    { id: 'toggle-tree', label: 'Toggle Sidebar', run: () => updatePanels({ fileTreeVisible: !explorerVisible, gitPanelVisible: false }) },
-    { id: 'show-explorer', label: 'Show Explorer', run: () => selectSidebar('explorer') },
     ...extensionCommands,
     { id: 'show-terminal', label: 'Show Terminal', run: showTerminal },
+    ...(activeTerminalId ? [
+      { id: 'restart-terminal', label: 'Restart Terminal', run: () => restartTerminal(activeTerminalId) },
+      { id: 'close-terminal', label: 'Close Terminal', run: () => closeTerminal(activeTerminalId) },
+    ] : []),
     { id: 'edit-config', label: 'Edit Workspace Config (JSON)', run: () => { setSettingsInitialTab('workspace'); setSettingsOpen(true); } },
     { id: 'open-folder', label: 'Open Workspace Folder', run: () => api.fs.revealInExplorer(workspace.path) },
   ];
@@ -1090,9 +1119,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       if ((event.ctrlKey || event.metaKey) && !event.shiftKey && key === 'p') { event.preventDefault(); setSessionSwitcherOpen(true); return; }
       if (inField) return;
       if ((event.ctrlKey || event.metaKey) && event.key === '`') { event.preventDefault(); toggleMainView(); }
-      if ((event.ctrlKey || event.metaKey) && key === 'b') { event.preventDefault(); updatePanels({ fileTreeVisible: !explorerVisible, gitPanelVisible: false }); }
-      if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 'e') { event.preventDefault(); selectSidebar('explorer'); }
-      if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 'g' && gitExtensionEnabled) { event.preventDefault(); selectSidebar('git'); }
+      if ((event.ctrlKey || event.metaKey) && key === 'b') { event.preventDefault(); toggleActivitySidebar(); }
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 't') { event.preventDefault(); void createTerminal(undefined, 'Terminal', ''); }
       if ((event.ctrlKey || event.metaKey) && key === 'w') {
         if (mainView === 'web' && activeWebId) { event.preventDefault(); closeLink(activeWebId); }
@@ -1101,7 +1128,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [activeFilePath, activeWebId, mainView, activeTerminalId, defaultProfile?.id, explorerVisible, gitExtensionEnabled, gitVisible, openFiles.length, openLinks.length, workspaceSetup, profiles]);
+  }, [activeFilePath, activeWebId, mainView, activeTerminalId, defaultProfile?.id, visibleActivityViewIds.length, activityContributions, openFiles.length, openLinks.length, workspaceSetup, profiles]);
 
   const webPane = webSplit ? (
     <>
@@ -1122,9 +1149,10 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
           <button className="topbar-icon-btn" onClick={onBack} title="Back to workspaces" aria-label="Back to workspaces"><HomeIcon /></button>
           <span className="topbar-divider" aria-hidden />
           <div className="topbar-nav">
-            {sessionsExtensionEnabled ? <button className={sessionsVisible ? 'topbar-icon-btn active-toggle' : 'topbar-icon-btn'} onClick={() => updatePanels({ sessionsVisible: !sessionsVisible })} title="Toggle Sessions" aria-label="Toggle Sessions"><PanelLeftIcon /></button> : null}
-            {explorerExtensionEnabled ? <button className={explorerVisible ? 'topbar-icon-btn active-toggle' : 'topbar-icon-btn'} onClick={() => selectSidebar('explorer')} title="Explorer" aria-label="Explorer"><FolderIcon /></button> : null}
-            {isRepo && gitExtensionEnabled ? <button className={gitVisible ? 'topbar-icon-btn active-toggle' : 'topbar-icon-btn'} onClick={() => selectSidebar('git')} title="Source Control" aria-label="Source Control"><GitBranchIcon /></button> : null}
+            {sessionContribution ? <button className={sessionsVisible ? 'topbar-icon-btn active-toggle' : 'topbar-icon-btn'} onClick={() => toggleView(sessionContribution.id)} title={sessionContribution.title} aria-label={sessionContribution.title}>{renderContributionIcon(sessionContribution.icon)}</button> : null}
+            {activityContributions.map((contribution) => (
+              <button key={contribution.id} className={visibleActivityViewIds.includes(contribution.id) ? 'topbar-icon-btn active-toggle' : 'topbar-icon-btn'} onClick={() => toggleView(contribution.id)} title={contribution.title} aria-label={contribution.title}>{renderContributionIcon(contribution.icon)}</button>
+            ))}
           </div>
         </div>
         <div className="topbar-title">
@@ -1159,21 +1187,19 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         ) : null}
         {sidebarVisible ? (
           <>
-            <Panel id="explorer" order={2} defaultSize={safePanelSizes.explorer} minSize={12} className="workspace-explorer">
-              {explorerVisible && gitVisible ? (
-                <PanelGroup direction="vertical" className="sidebar-stack" onLayout={([upper, gitSize]) => updatePanelSizes({ upper, git: gitSize })}>
-                  <Panel id="sidebar-files" defaultSize={panelSizes.upper ?? 58} minSize={20}>
-                    {explorerContribution ? renderExtensionView(explorerContribution) : null}
+            <Panel id="activity-sidebar" order={2} defaultSize={safePanelSizes.explorer} minSize={12} className="workspace-explorer">
+              {visibleActivityContributions.length > 1 ? (
+                <PanelGroup direction="vertical" className="sidebar-stack" onLayout={([upper, lower]) => updatePanelSizes({ upper, git: lower })}>
+                  <Panel id="activity-sidebar-primary" defaultSize={panelSizes.upper ?? 58} minSize={20}>
+                    {renderExtensionView(visibleActivityContributions[0])}
                   </Panel>
                   <PanelResizeHandle id="sidebar-stack-resize" className="resize-handle horizontal" />
-                  <Panel id="sidebar-git" defaultSize={panelSizes.git ?? 42} minSize={20}>
-                    {gitContribution ? renderExtensionView(gitContribution) : null}
+                  <Panel id="activity-sidebar-secondary" defaultSize={panelSizes.git ?? 42} minSize={20}>
+                    {visibleActivityContributions.slice(1).map((contribution) => <div key={contribution.id} className="extension-sidebar-view">{renderExtensionView(contribution)}</div>)}
                   </Panel>
                 </PanelGroup>
-              ) : gitVisible ? (
-                gitContribution ? renderExtensionView(gitContribution) : null
               ) : (
-                explorerContribution ? renderExtensionView(explorerContribution) : null
+                renderExtensionView(visibleActivityContributions[0])
               )}
             </Panel>
             <PanelResizeHandle id="explorer-resize" className="resize-handle vertical" />
@@ -1332,9 +1358,9 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function getSafePanelSizes(panelSizes: NonNullable<WorkspaceLayout['panels']['panelSizes']>, explorerVisible: boolean, sessionsVisible = true) {
+function getSafePanelSizes(panelSizes: NonNullable<WorkspaceLayout['panels']['panelSizes']>, sidebarVisible: boolean, sessionsVisible = true) {
   const sessions = sessionsVisible ? clamp(panelSizes.sessions ?? 14, 10, 24) : 0;
-  if (!explorerVisible) return { sessions, explorer: panelSizes.explorer ?? 18, main: 100 - sessions };
+  if (!sidebarVisible) return { sessions, explorer: panelSizes.explorer ?? 18, main: 100 - sessions };
 
   const maxExplorer = Math.max(12, 100 - sessions - 30);
   const explorer = clamp(panelSizes.explorer ?? 18, 12, maxExplorer);

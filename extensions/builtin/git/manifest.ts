@@ -6,6 +6,7 @@ export const gitExtensionManifest: ExtensionManifest = {
   version: '1.0.0',
   defaultEnabled: true,
   source: 'bundled',
+  capabilities: ['git'],
   contributes: {
     views: [{ id: 'stackdock.git.view', extensionId: 'stackdock.git', title: 'Source Control', icon: 'git', location: 'activity', order: 20, native: true, when: 'gitRepo' }],
     statusBar: [{ id: 'stackdock.git.status', extensionId: 'stackdock.git', side: 'left', order: 10, native: true, when: 'gitRepo' }],

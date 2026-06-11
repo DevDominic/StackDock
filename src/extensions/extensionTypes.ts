@@ -22,6 +22,7 @@ export interface WorkspaceExtensionContext {
     previewFile(path: string): void | Promise<void>;
     openTerminalHere(path: string): void | Promise<void>;
     openView(viewId: string): void;
+    toggleView(viewId: string): void;
     openGit(): void;
     refreshGit(): void | Promise<void>;
     revealFolder(path?: string): void | Promise<void>;
