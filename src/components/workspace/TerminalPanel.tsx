@@ -113,6 +113,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     let observer: ResizeObserver | null = null;
 
     const ligaturesEnabled = settings?.code.ligatures !== false;
+    const startAtBottom = settings?.terminal.startAtBottom === true;
     const terminal = new Terminal({
       fontSize: settings?.terminal.fontSize ?? 14,
       fontFamily: settings?.terminal.fontFamily || CODE_FONT_FAMILY,
@@ -206,6 +207,9 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
         // CUP 1;1 repaint — so it is written verbatim.
         replayingSnapshot = true;
         terminal.write(snapshotOutput, finishReplay);
+      } else if (startAtBottom) {
+        replayingSnapshot = true;
+        terminal.write('\r\n'.repeat(Math.max(0, terminal.rows - 1)), finishReplay);
       } else {
         finishReplay();
       }
@@ -281,7 +285,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       if (opened) terminal.dispose();
       if (terminalRef.current === terminal) terminalRef.current = null;
     };
-  }, [session.id, settings?.code.ligatures]);
+  }, [session.id, settings?.code.ligatures, settings?.terminal.startAtBottom]);
 
   useEffect(() => {
     onAttachmentErrorRef.current = onAttachmentError;

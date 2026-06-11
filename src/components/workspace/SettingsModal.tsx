@@ -566,6 +566,7 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
             <label>Editor word wrap<select value={draft.editor.wordWrap} onChange={(event) => setDraft({ ...draft, editor: { ...draft.editor, wordWrap: event.target.value as StackDockSettings['editor']['wordWrap'] } })}><option value="on">On</option><option value="off">Off</option></select></label>
             <label>Terminal font size<input type="number" min={6} value={draft.terminal.fontSize} onChange={(event) => setDraft({ ...draft, terminal: { ...draft.terminal, fontSize: Number(event.target.value) } })} /></label>
             <label><input type="checkbox" checked={draft.terminal.cursorBlink} onChange={(event) => setDraft({ ...draft, terminal: { ...draft.terminal, cursorBlink: event.target.checked } })} /> Terminal cursor blink</label>
+            <label><input type="checkbox" checked={draft.terminal.startAtBottom} onChange={(event) => setDraft({ ...draft, terminal: { ...draft.terminal, startAtBottom: event.target.checked } })} /> Start new terminals at bottom</label>
           </div>
         ) : null}
 

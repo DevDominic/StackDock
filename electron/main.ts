@@ -64,11 +64,13 @@ async function createWindow() {
   setTerminalWindow(mainWindow);
   setBridgeWindow(mainWindow);
 
-  if (!app.isPackaged) {
+  const loadBuiltRenderer = app.isPackaged || process.argv.includes('--built');
+
+  if (loadBuiltRenderer) {
+    await mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
+  } else {
     await mainWindow.loadURL('http://localhost:5173');
     if (process.env.STACKDOCK_OPEN_DEVTOOLS !== '0') mainWindow.webContents.openDevTools({ mode: 'detach' });
-  } else {
-    await mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
   }
 
   mainWindow.webContents.on('before-input-event', (event, input) => {

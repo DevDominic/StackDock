@@ -116,8 +116,7 @@ dist-electron/              Electron main/preload build output (generated; packa
 ```
 
 ## Commands
-- `npm run dev` — Vite + electron tsc watch + Electron with `--agent-browser` support (HMR at :5173, remote debugging at :9222 for `agent_browser connect 9222`). The script runs three long-lived processes from `package.json`: Vite watches `src/`, `tsc -p electron/tsconfig.json -w` rebuilds `electron/` into `dist-electron/`, and `nodemon --watch dist-electron --exec electron . --agent-browser` automatically restarts Electron whenever the rebuilt main/preload output changes. In short: edit renderer → HMR; edit Electron main/preload/services → TypeScript rebuilds then Electron restarts automatically. DevTools does not detach automatically in agent-browser mode.
-- `npm run dev:agent` — alias for `npm run dev` kept for compatibility.
+- `npm run dev` — build once (`npm run build`) then launch Electron with `--agent-browser --built` support. `--built` forces the unpackaged app to load `dist/index.html` instead of the Vite dev server. No Vite/tsc watch, no HMR, no auto-restart; rerun after source changes when testing latest build. Remote debugging is available for agent-browser interaction.
 - `npm run build` — tsc (electron) + vite build into `dist-electron/` and `dist/`.
 - `npm run build:app` — clean generated package artifacts, build, then create a maximally compressed Windows x64 portable `.exe` with `electron-builder`; output goes to `release/`. Stop `npm run dev` first so nodemon does not relaunch the app while packaging.
 - `npm run build:installer` — same build path but creates an NSIS installer in `release/`.
@@ -133,6 +132,7 @@ dist-electron/              Electron main/preload build output (generated; packa
 - New extension loader/enablement/bridge tests should run with `npm test`.
 
 ## Conventions
+- When asked to interact with or test the running Electron app, use the native `agent_browser` tool against the `npm run dev` app launched with `--agent-browser`; do not use manual browser-driving scripts unless explicitly requested.
 - New backend capability = add channel in `main.ts` + arg guards in `validation.ts` + bridge method in `preload.ts` + type in `shared/types.ts` `StackDockApi`. Keep all four in sync.
 - Renderer never imports Node/`electron`; go through `api`.
 - Theming is unified: a single `themeId` drives both Monaco and the app via CSS variables in `themeSupport.ts`. VS Code `*-color-theme.json` files can be imported by users.

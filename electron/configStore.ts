@@ -59,7 +59,7 @@ export function getDefaultSettings(): StackDockSettings {
     ui: { fontFamily: UI_FONT_FAMILY, fontSize: 13 },
     code: { ligatures: true },
     editor: { fontSize: 13, fontFamily: CODE_FONT_FAMILY, tabSize: 2, wordWrap: 'off' },
-    terminal: { fontSize: 14, fontFamily: CODE_FONT_FAMILY, cursorBlink: true },
+    terminal: { fontSize: 14, fontFamily: CODE_FONT_FAMILY, cursorBlink: true, startAtBottom: false },
     extensions: {
       localPackagePaths: [],
       disabled: [],
@@ -137,7 +137,7 @@ export async function loadSettings(): Promise<StackDockSettings> {
         themeId: undefined,
         importedThemes: undefined,
       },
-      terminal: { ...defaults.terminal, ...rawTerminal, fontFamily: migrateCodeFont(rawTerminal.fontFamily) },
+      terminal: { ...defaults.terminal, ...rawTerminal, fontFamily: migrateCodeFont(rawTerminal.fontFamily), startAtBottom: rawTerminal.startAtBottom === true },
       confirmBeforeDiscard: extensionsConfig['stackdock.git'].confirmBeforeDiscard !== false,
       emptySessionsVisible: extensionsConfig['stackdock.sessions'].emptySessionsVisible === true,
       showSessionCwdForAll: extensionsConfig['stackdock.sessions'].showSessionCwdForAll === true,

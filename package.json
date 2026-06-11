@@ -5,7 +5,7 @@
   "main": "dist-electron/electron/main.js",
   "type": "commonjs",
   "scripts": {
-    "dev": "concurrently -k \"vite\" \"tsc -p electron/tsconfig.json -w\" \"wait-on http://localhost:5173 dist-electron/electron/main.js && nodemon --watch dist-electron --exec electron . --agent-browser\"",
+    "dev": "npm run build && electron . --trace-warnings --agent-browser --built",
     "build": "tsc -p electron/tsconfig.json && vite build",
     "build:app": "npm run clean:dist && npm run build && electron-builder --win portable --x64 -c.compression=maximum",
     "build:installer": "npm run clean:dist && npm run build && electron-builder --win nsis --x64 -c.compression=maximum",
