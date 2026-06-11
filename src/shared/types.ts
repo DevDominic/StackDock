@@ -326,6 +326,7 @@ export interface StackDockApi {
     push(path: string): Promise<void>;
     pull(path: string): Promise<void>;
     fetch(path: string): Promise<void>;
+    ignored(path: string, paths: string[]): Promise<string[]>;
   };
   settings: {
     load(): Promise<StackDockSettings>;

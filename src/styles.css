@@ -441,6 +441,8 @@ html[data-window-controls="native"] .topbar-right { padding-right: 138px; }
 .tree-row.git-modified .tree-label, .tree-row.git-dir .tree-label { color: var(--git-modified); }
 .tree-row.git-untracked .tree-label, .tree-row.git-added .tree-label { color: var(--git-untracked); }
 .tree-row.git-deleted .tree-label { color: var(--git-deleted); text-decoration: line-through; }
+.tree-row.git-ignored .tree-label { color: color-mix(in srgb, var(--muted) 78%, black 22%); }
+.tree-row.git-ignored .tree-icon { opacity: .72; }
 /* ---- Right-click context menu ---- */
 .context-menu {
   position: fixed;

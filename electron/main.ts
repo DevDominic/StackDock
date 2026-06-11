@@ -5,7 +5,7 @@ import os from 'os';
 import path from 'path';
 import { addWorkspace, createWorkspace, listWorkspaces, loadLayout, loadRestoreState, removeWorkspace, saveLayout, saveRestoreState, updateWorkspace } from './workspaceStore';
 import { createFile, createFolder, deletePath, readDirectory, readFile, readFileDataUrl, renamePath, revealInExplorer, writeFile } from './fileService';
-import { addAll, commit, discardFile, fetch, getGitDiff, getGitFileContents, getGitStatus, listBranches, pull, push, stageFile, switchBranch, unstageFile } from '../extensions/builtin/git/main/gitService';
+import { addAll, commit, discardFile, fetch, getGitDiff, getGitFileContents, getGitStatus, getIgnoredFiles, listBranches, pull, push, stageFile, switchBranch, unstageFile } from '../extensions/builtin/git/main/gitService';
 import { createTerminal, forgetTerminalSnapshot, getTerminalProfiles, getTerminalSnapshot, killTerminal, loadOpenTerminalState, resizeTerminal, saveOpenTerminalState, setTerminalWindow, setVisibleTerminals, writeTerminal } from './terminalManager';
 import { setBridgeWindow, startBrowserBridge } from './browserBridge';
 import { ensureDataDirs } from './storage';
@@ -226,6 +226,7 @@ function registerIpc() {
   ipcMain.handle('git:push', async (_event, targetPath: unknown) => push(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('git:pull', async (_event, targetPath: unknown) => pull(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('git:fetch', async (_event, targetPath: unknown) => fetch(assertAbsolutePath(targetPath, 'targetPath')));
+  ipcMain.handle('git:ignored', async (_event, targetPath: unknown, paths: unknown) => getIgnoredFiles(assertAbsolutePath(targetPath, 'targetPath'), Array.isArray(paths) ? paths.map((item) => assertNonEmptyString(item, 'path')) : []));
 
   ipcMain.handle('settings:load', async () => loadSettings());
   ipcMain.handle('settings:save', async (_event, settings) => saveSettings(settings));

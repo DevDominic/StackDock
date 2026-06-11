@@ -143,3 +143,15 @@ export async function pull(cwd: string) {
 export async function fetch(cwd: string) {
   await runGit(cwd, ['fetch'], { timeoutMs: 120000 });
 }
+
+export async function getIgnoredFiles(cwd: string, filePaths: string[]): Promise<string[]> {
+  if (!filePaths.length) return [];
+  const relativePaths = filePaths.map((filePath) => path.relative(cwd, path.isAbsolute(filePath) ? filePath : path.join(cwd, filePath)).replace(/\\/g, '/'));
+  try {
+    const output = await runGit(cwd, ['check-ignore', ...relativePaths]);
+    return output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  } catch (error) {
+    const output = typeof error === 'object' && error && 'stdout' in error ? String((error as { stdout?: unknown }).stdout ?? '') : '';
+    return output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  }
+}

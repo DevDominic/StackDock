@@ -16,6 +16,7 @@ interface Props {
 
 interface GitDecoration { letter: string; cls: string }
 type GitLookup = (entry: DirectoryEntry) => GitDecoration | null;
+type IgnoredLookup = (entry: DirectoryEntry) => boolean;
 
 interface ContextTarget { entry: DirectoryEntry | null; x: number; y: number; }
 interface NodeProps {
@@ -23,6 +24,7 @@ interface NodeProps {
   depth: number;
   version: number;
   gitLookup: GitLookup;
+  ignoredLookup: IgnoredLookup;
   onOpenFile(path: string): void;
   onContextMenu(target: ContextTarget): void;
   loadChildren(path: string): Promise<DirectoryEntry[]>;
@@ -56,7 +58,7 @@ function buildGitLookup(rootPath: string, gitFiles: GitFileStatus[]): GitLookup 
   };
 }
 
-function FileNode({ entry, depth, version, gitLookup, onOpenFile, onContextMenu, loadChildren }: NodeProps) {
+function FileNode({ entry, depth, version, gitLookup, ignoredLookup, onOpenFile, onContextMenu, loadChildren }: NodeProps) {
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<DirectoryEntry[] | null>(null);
 
@@ -84,10 +86,12 @@ function FileNode({ entry, depth, version, gitLookup, onOpenFile, onContextMenu,
   };
 
   const git = gitLookup(entry);
+  const ignored = ignoredLookup(entry);
+  const rowClass = ['tree-row', git?.cls, ignored ? 'git-ignored' : ''].filter(Boolean).join(' ');
 
   return (
     <div>
-      <button className={git ? `tree-row ${git.cls}` : 'tree-row'} style={{ paddingLeft: 6 + depth * 12 }} onClick={toggle} onContextMenu={handleContextMenu}>
+      <button className={rowClass} style={{ paddingLeft: 6 + depth * 12 }} onClick={toggle} onContextMenu={handleContextMenu}>
         <span className="tree-twisty">{entry.isDirectory ? (expanded ? '▾' : '▸') : ''}</span>
         <FileIcon name={entry.name} isDirectory={entry.isDirectory} expanded={expanded} />
         <span className="tree-label">{entry.name}</span>
@@ -95,7 +99,7 @@ function FileNode({ entry, depth, version, gitLookup, onOpenFile, onContextMenu,
       </button>
       {entry.isDirectory && expanded && children ? (
         <div>
-          {children.map((child) => <FileNode key={child.path} entry={child} depth={depth + 1} version={version} gitLookup={gitLookup} onOpenFile={onOpenFile} onContextMenu={onContextMenu} loadChildren={loadChildren} />)}
+          {children.map((child) => <FileNode key={child.path} entry={child} depth={depth + 1} version={version} gitLookup={gitLookup} ignoredLookup={ignoredLookup} onOpenFile={onOpenFile} onContextMenu={onContextMenu} loadChildren={loadChildren} />)}
         </div>
       ) : null}
     </div>
@@ -108,20 +112,36 @@ export function FileTree({ rootPath, gitFiles, onOpenFile, onPreviewFile, onOpen
   const [loading, setLoading] = useState(true);
   const [menu, setMenu] = useState<ContextTarget | null>(null);
   const [treeVersion, setTreeVersion] = useState(0);
+  const [ignoredPaths, setIgnoredPaths] = useState<Set<string>>(() => new Set());
   const menuRef = useRef<HTMLDivElement | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const previousRootPathRef = useRef(rootPath);
-  const loadChildren = useMemo(() => async (path: string) => api.fs.readDirectory(path), []);
+  const ignoredLookup = useMemo<IgnoredLookup>(() => (entry) => ignoredPaths.has(normalizePath(entry.path).toLowerCase()), [ignoredPaths]);
+  const rememberIgnored = async (entries: DirectoryEntry[]) => {
+    if (!entries.length) return;
+    const ignored = await api.git.ignored(rootPath, entries.map((entry) => entry.path));
+    if (!ignored.length) return;
+    setIgnoredPaths((current) => {
+      const next = new Set(current);
+      for (const item of ignored) next.add(normalizePath(joinPath(rootPath, item)).toLowerCase());
+      return next;
+    });
+  };
+  const loadChildren = useMemo(() => async (path: string) => {
+    const entries = await api.fs.readDirectory(path);
+    void rememberIgnored(entries);
+    return entries;
+  }, [rootPath]);
 
   useEffect(() => {
     let active = true;
     const rootChanged = previousRootPathRef.current !== rootPath;
     previousRootPathRef.current = rootPath;
     const showLoading = rootChanged || rootChildren.length === 0;
-    if (rootChanged) setRootChildren([]);
+    if (rootChanged) { setRootChildren([]); setIgnoredPaths(new Set()); }
     if (showLoading) setLoading(true);
     api.fs.readDirectory(rootPath)
-      .then((items) => { if (active) setRootChildren(items); })
+      .then((items) => { if (active) { setRootChildren(items); void rememberIgnored(items); } })
       .finally(() => { if (active && showLoading) setLoading(false); });
     return () => { active = false; };
   }, [rootPath, refreshToken, treeVersion]);
@@ -192,7 +212,7 @@ export function FileTree({ rootPath, gitFiles, onOpenFile, onPreviewFile, onOpen
       </div>
       {loading ? <div className="muted pad">Loading...</div> : null}
       <div className="tree-list">
-        {rootChildren.map((entry) => <FileNode key={entry.path} entry={entry} depth={0} version={treeVersion} gitLookup={gitLookup} onOpenFile={onOpenFile} onContextMenu={setMenu} loadChildren={loadChildren} />)}
+        {rootChildren.map((entry) => <FileNode key={entry.path} entry={entry} depth={0} version={treeVersion} gitLookup={gitLookup} ignoredLookup={ignoredLookup} onOpenFile={onOpenFile} onContextMenu={setMenu} loadChildren={loadChildren} />)}
       </div>
       {menu ? (
         <div ref={menuRef} className="context-menu" style={{ top: menu.y, left: menu.x }} onMouseDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.stopPropagation()}>

@@ -69,6 +69,7 @@ const api: StackDockApi = {
     push: (targetPath) => ipcRenderer.invoke('git:push', targetPath),
     pull: (targetPath) => ipcRenderer.invoke('git:pull', targetPath),
     fetch: (targetPath) => ipcRenderer.invoke('git:fetch', targetPath),
+    ignored: (targetPath, paths) => ipcRenderer.invoke('git:ignored', targetPath, paths),
   },
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
