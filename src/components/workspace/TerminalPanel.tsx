@@ -183,28 +183,29 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       restoredSnapshot = true;
       while (queuedLiveOutput.length) enqueueTerminalWrite(queuedLiveOutput.shift()!);
     };
-    void api.terminal.snapshot(session.restoreId ?? session.id).then((snapshot) => {
+    // Hold the replay until xterm is opened and fitted: writing while the
+    // terminal is still at its default 80x24 wraps the snapshot at the wrong
+    // column and counts the rows padding below against the wrong viewport.
+    let markOpenedAndFitted!: () => void;
+    const openedAndFitted = new Promise<void>((resolve) => { markOpenedAndFitted = resolve; });
+    void Promise.all([api.terminal.snapshot(session.restoreId ?? session.id), openedAndFitted]).then(([snapshot]) => {
       if (disposed) return;
       const snapshotOutput = snapshot?.output ? sanitizeSnapshotReplay(snapshot.output) : '';
       const finishReplay = () => {
         replayingSnapshot = false;
         if (disposed) return;
-        if (session.restoredFromSnapshot && snapshot?.piResumeCommand) enqueueTerminalWrite(`\x1b[2m[resuming Pi session with: ${snapshot.piResumeCommand}]\x1b[0m\r\n`);
         flushLiveOutput();
       };
       if (snapshotOutput) {
         // Replay bypasses the rAF queue so the write callback marks exactly when
         // parsing finished; onData stays muted until then so xterm's answers to
         // any replayed queries never reach the live pty as input.
+        // The snapshot is the main process's serialized headless buffer: it
+        // already contains the restored-scrollback separator, the resume notice,
+        // and the blank viewport + homed cursor that protect against ConPTY's
+        // CUP 1;1 repaint — so it is written verbatim.
         replayingSnapshot = true;
-        // For a fresh pty the shell repaints with absolute cursor moves rooted
-        // at the viewport top (ConPTY emits CUP 1;1), which would overwrite the
-        // replayed lines in place. Push the replay fully into scrollback with a
-        // viewport's worth of newlines and home the cursor so live output
-        // paints onto a blank screen instead.
-        terminal.write(session.restoredFromSnapshot
-          ? `${snapshotOutput}\r\n\x1b[2m──── restored scrollback; live output follows ────\x1b[0m${'\r\n'.repeat(terminal.rows)}\x1b[H`
-          : snapshotOutput, finishReplay);
+        terminal.write(snapshotOutput, finishReplay);
       } else {
         finishReplay();
       }
@@ -257,10 +258,13 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       observer = new ResizeObserver(() => window.requestAnimationFrame(() => resizeTerminal()));
       observer.observe(mountRef.current);
       resizeTerminal();
+      markOpenedAndFitted();
     });
 
     return () => {
       disposed = true;
+      // Settle the gate so the pending replay Promise.all can't outlive the view.
+      markOpenedAndFitted();
       window.cancelAnimationFrame(openFrame);
       observer?.disconnect();
       if (terminalWriteFrame != null) window.cancelAnimationFrame(terminalWriteFrame);
