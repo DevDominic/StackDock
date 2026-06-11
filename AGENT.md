@@ -17,6 +17,10 @@ Contract: every IPC arg is validated in `electron/validation.ts` (assert* helper
 
 Persistence: JSON files in the Electron userData dir (`electron/storage.ts` sets up dirs). Settings → `configStore.ts`, automation → `automationStore.ts`, workspaces + per-workspace layouts → `workspaceStore.ts`.
 
+## Map Info
+
+When making changes to file directories, creating new files, adjusting file names etc., ensure that `AGENT.md` is updated to reflect any changes to the Map
+
 ## Map
 ```
 electron/                  Main process (Node services, IO)
