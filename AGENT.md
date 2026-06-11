@@ -25,10 +25,9 @@ electron/                  Main process (Node services, IO)
   validation.ts            assert* guards for every IPC arg
   workspaceStore.ts        Workspace CRUD + layout load/save (JSON)
   fileService.ts           fs ops: read/write/create/rename/delete dir & files
-  gitService.ts            git status/diff/stage/unstage/discard/commit/addAll
-  gitParser.ts             Parse git porcelain output → GitStatus
+  browserBridge.ts         webview/browser bridge main-process handling
+  extensionService.ts      bundled/local extension manifest loading + assets
   terminalManager.ts       node-pty session lifecycle, data/exit/status events
-  terminalStatusParser.ts  Parses StackDock OSC status-bar messages from terminal output
   attachmentService.ts     Terminal drag/drop/paste attachment inspection/cache
   configStore.ts           Settings (theme, editor, terminal profiles) persist
   automationStore.ts       automation.json: palette cmds + per-workspace setups
@@ -38,7 +37,10 @@ electron/                  Main process (Node services, IO)
 src/
   main.tsx                 Renderer entry
   App.tsx                  Dashboard ⇄ WorkspaceShell switch; loads settings/theme
-  shared/types.ts          ★ Shared API + domain types (main ↔ renderer contract)
+  shared/
+    types.ts               ★ Shared API + domain types (main ↔ renderer contract)
+    terminalProfiles.ts    Terminal-profile defaults and helpers
+    terminalSnapshot.ts    Terminal snapshot sanitizing/trimming helpers
   lib/
     api.ts                 = window.stackdock (the ONLY backend entry from UI)
     themeSupport.ts        VS Code theme JSON → Monaco theme + app CSS vars (large)
@@ -54,24 +56,56 @@ src/
     TitleBar.tsx                       Custom/native window titlebar controls
     icons.tsx                          Shared SVG icon components
     dashboard/WorkspaceDashboard.tsx   Home: list/add/create/pin/open workspaces
+    common/ToastProvider.tsx           Toasts
     workspace/
-      WorkspaceShell.tsx               ★ Main layout: wires all panels (largest file)
+      WorkspaceShell.tsx               ★ Main layout: wires extension views + panels
       EditorPanel.tsx                  Monaco editor + open-file tabs
       TerminalPanel.tsx                xterm view bound to a pty session
-      FileTree.tsx                     File explorer
-      GitPanel.tsx                     Source-control panel
       WebTabPanel.tsx                  In-app browser <webview> tabs
-      GlobalSessionsSidebar.tsx        All terminal sessions across workspaces
       SessionSwitcher.tsx              Session picker UI
       CommandLauncher.tsx              Command palette
       CommandsEditor.tsx               Edit global/per-workspace commands
       NewTerminalMenu.tsx              Terminal-profile picker
       SettingsModal.tsx                Settings UI (theme/editor/terminal/profiles)
       StatusBar.tsx                    Bottom widget status bar
+      JsonCodeEditor.tsx               JSON editor wrapper used by settings/commands
       fileIcons.tsx                    Path → icon mapping
-    common/ToastProvider.tsx           Toasts
-  styles.css                           Global CSS (driven by theme CSS vars)
+  extensions/
+    ExtensionFrame.tsx     sandboxed iframe host for local extension views
+    ExtensionProvider.tsx  extension context/provider wiring
+    configuration.ts       extension configuration helpers
+    enablement.ts          enablement/filtering of extension contributions
+    extensionTypes.ts      renderer extension interfaces and contexts
+    registry.tsx           registers bundled native extension renderers
+  styles.css               Global CSS (driven by theme CSS vars)
 
+extensions/                 Built-in extension packages
+  builtin/explorer/
+    manifest.ts
+    renderer/FileTree.tsx
+    renderer/index.tsx
+    renderer/explorer.css
+  builtin/git/
+    manifest.ts
+    main/gitService.ts     git status/diff/stage/unstage/discard/commit/addAll
+    main/gitParser.ts      Parse git porcelain output → GitStatus
+    renderer/GitPanel.tsx
+    renderer/index.tsx
+    renderer/git.css
+  builtin/sessions/
+    manifest.ts
+    renderer/GlobalSessionsSidebar.tsx
+    renderer/SessionsSettings.tsx
+    renderer/index.tsx
+    renderer/sessions.css
+  builtin/workspace-status/
+    manifest.ts
+    renderer/WorkspaceStatusSettings.tsx
+    renderer/index.tsx
+    renderer/workspaceStatus.css
+
+tests/                      Vitest coverage for services, extensions, git, terminals
+docs/                       Extension authoring and folder-format docs
 release/                    electron-builder output dir for packaged .exe/installers (generated, not source)
 dist/                       Vite renderer build output (generated; packaging input)
 dist-electron/              Electron main/preload build output (generated; packaging input)
