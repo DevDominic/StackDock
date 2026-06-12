@@ -6,7 +6,7 @@ import path from 'path';
 import { addWorkspace, createWorkspace, listWorkspaces, loadLayout, loadRestoreState, removeWorkspace, saveLayout, saveRestoreState, updateWorkspace } from './workspaceStore';
 import { createFile, createFolder, deletePath, readDirectory, readFile, readFileDataUrl, renamePath, revealInExplorer, writeFile } from './fileService';
 import { addAll, commit, discardFile, fetch, getGitDiff, getGitFileContents, getGitStatus, getIgnoredFiles, listBranches, pull, push, stageFile, switchBranch, unstageFile } from '../extensions/builtin/git/main/gitService';
-import { createTerminal, forgetTerminalSnapshot, getTerminalProfiles, getTerminalSnapshot, killTerminal, loadOpenTerminalState, resizeTerminal, saveOpenTerminalState, setTerminalWindow, setVisibleTerminals, writeTerminal } from './terminalManager';
+import { createTerminal, forgetTerminalSnapshot, getTerminalProfiles, getTerminalSnapshot, killTerminal, loadOpenTerminalState, markTerminalReady, resizeTerminal, saveOpenTerminalState, setTerminalWindow, setVisibleTerminals, writeTerminal } from './terminalManager';
 import { setBridgeWindow, startBrowserBridge } from './browserBridge';
 import { ensureDataDirs } from './storage';
 import { logError } from './log';
@@ -269,6 +269,7 @@ function registerIpc() {
   ipcMain.handle('terminal:restoreState', async () => loadOpenTerminalState());
   ipcMain.handle('terminal:write', async (_event, id: unknown, data: unknown) => writeTerminal(assertNonEmptyString(id, 'id'), assertString(data, 'data')));
   ipcMain.handle('terminal:resize', async (_event, id: unknown, cols: unknown, rows: unknown) => resizeTerminal(assertNonEmptyString(id, 'id'), assertNumber(cols, 'cols', 2, 500), assertNumber(rows, 'rows', 1, 500)));
+  ipcMain.handle('terminal:ready', async (_event, id: unknown) => markTerminalReady(assertNonEmptyString(id, 'id')));
   ipcMain.handle('terminal:setVisible', async (_event, ids: unknown) => {
     if (!Array.isArray(ids)) throw new Error('ids must be an array');
     setVisibleTerminals(ids.map((id, index) => assertNonEmptyString(id, `ids[${index}]`)));

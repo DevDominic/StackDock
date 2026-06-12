@@ -4,7 +4,7 @@ import path from 'path';
 import * as pty from 'node-pty';
 import { Terminal as HeadlessTerminal, type ITerminalAddon as HeadlessTerminalAddon } from '@xterm/headless';
 import { SerializeAddon } from '@xterm/addon-serialize';
-import { sanitizeSnapshotReplay, trimSnapshotOutput } from '../src/shared/terminalSnapshot';
+import { buildRestoredScrollbackBarrier, sanitizeSnapshotReplay, trimSnapshotOutput } from '../src/shared/terminalSnapshot';
 import { resolveTerminalStartupCommand } from '../src/shared/terminalProfiles';
 import type { TerminalPersistedState, TerminalPersistedTab, TerminalProfile, TerminalSession, TerminalSessionContext, TerminalSnapshot } from '../src/shared/types';
 import { getDefaultSettings, loadSettings } from './configStore';
@@ -18,6 +18,7 @@ interface RecordEntry {
   pendingData: string[];
   flushTimer: NodeJS.Timeout | null;
   pendingStartupCommand: { command: string; timer: NodeJS.Timeout } | null;
+  pendingRestoreBarrier: { resumeCommand?: string } | null;
   // Shadow terminal that interprets every pty byte so snapshots can persist the
   // *rendered* buffer instead of the raw stream. TUI apps (pi, claude, codex)
   // emit absolute-cursor repaint frames that only replay correctly into a
@@ -200,15 +201,24 @@ function isTerminalVisible(entry: RecordEntry) {
   return visibleTerminalIds.has(entry.session.id);
 }
 
-// Startup commands are held until the renderer attaches and sizes the pty
-// (or a fallback timeout for tabs restored in the background). TUI apps like
-// pi paint their first frame immediately; launching them against the spawn-time
-// 120x30 placeholder mangles the layout until the next real resize repaints.
+// Startup commands are held until the renderer has replayed the restored
+// snapshot and calls terminal.ready (or a fallback timeout for tabs restored in
+// the background). TUI apps like pi paint their first frame immediately;
+// launching them before the real-geometry restore barrier is serialized lets
+// absolute cursor repaints overwrite restored history.
+function applyPendingRestoreBarrier(entry: RecordEntry) {
+  const pending = entry.pendingRestoreBarrier;
+  if (!pending || entry.headlessDisposed) return;
+  entry.pendingRestoreBarrier = null;
+  entry.headless.write(buildRestoredScrollbackBarrier(entry.headless.rows, pending.resumeCommand));
+}
+
 function flushPendingStartupCommand(entry: RecordEntry) {
   const pending = entry.pendingStartupCommand;
   if (!pending) return;
   entry.pendingStartupCommand = null;
   clearTimeout(pending.timer);
+  applyPendingRestoreBarrier(entry);
   if (terminals.has(entry.session.id)) entry.terminal.write(`${pending.command}\r`);
 }
 
@@ -306,18 +316,17 @@ export async function createTerminal(profileId: string, cwd: string, name?: stri
   const headless = new HeadlessTerminal({ cols: SPAWN_COLS, rows: SPAWN_ROWS, scrollback: SNAPSHOT_SCROLLBACK_LINES, allowProposedApi: true });
   const serializeAddon = new SerializeAddon();
   headless.loadAddon(serializeAddon as unknown as HeadlessTerminalAddon);
+  const pendingRestoreBarrier = session.restoredFromSnapshot && priorSnapshot?.output
+    ? { resumeCommand: normalizedStartupCommand && PI_COMMAND_PATTERN.test(normalizedStartupCommand) ? normalizedStartupCommand : undefined }
+    : null;
   if (session.restoredFromSnapshot && priorSnapshot?.output) {
-    // Seed the previous session's buffer, then push it fully into scrollback
-    // and home the cursor: a fresh ConPTY repaints with absolute cursor moves
-    // rooted at the viewport top (CUP 1;1), which would otherwise overwrite the
-    // restored lines in place. The renderer replays this same serialized state,
-    // so screen and snapshot stay in lockstep.
-    const resumeNotice = normalizedStartupCommand && PI_COMMAND_PATTERN.test(normalizedStartupCommand)
-      ? `\x1b[2m[resuming Pi session with: ${normalizedStartupCommand}]\x1b[0m\r\n`
-      : '';
-    headless.write(`${priorSnapshot.output}\x1b[0m\r\n\x1b[2m──── restored scrollback; live output follows ────\x1b[0m\r\n${resumeNotice}${'\r\n'.repeat(headless.rows)}\x1b[H`);
+    // Seed only the previous session's rendered buffer at spawn geometry. The
+    // separator, blank viewport, and homed cursor are applied after the first
+    // real resize so tall windows cannot pull old scrollback back into the live
+    // repaint area.
+    headless.write(`${priorSnapshot.output}\x1b[0m`);
   }
-  const entry: RecordEntry = { session, context, terminal, pendingData: [], flushTimer: null, pendingStartupCommand: null, headless, serializeAddon, recentOutput: '', headlessDisposed: false, discardSnapshot: false };
+  const entry: RecordEntry = { session, context, terminal, pendingData: [], flushTimer: null, pendingStartupCommand: null, pendingRestoreBarrier, headless, serializeAddon, recentOutput: '', headlessDisposed: false, discardSnapshot: false };
   terminal.onData((data) => queueTerminalOutput(entry, data));
   terminal.onExit(({ exitCode }) => {
     cancelPendingStartupCommand(entry);
@@ -351,8 +360,15 @@ export async function resizeTerminal(id: string, cols: number, rows: number) {
   const safeCols = Math.max(2, cols);
   const safeRows = Math.max(1, rows);
   entry.terminal.resize(safeCols, safeRows);
-  if (!entry.headlessDisposed) entry.headless.resize(safeCols, safeRows);
-  flushPendingStartupCommand(entry);
+  if (!entry.headlessDisposed) {
+    entry.headless.resize(safeCols, safeRows);
+    applyPendingRestoreBarrier(entry);
+  }
+}
+
+export async function markTerminalReady(id: string) {
+  const entry = terminals.get(id);
+  if (entry) flushPendingStartupCommand(entry);
 }
 
 export async function killTerminal(id: string, preserveSnapshot = false) {

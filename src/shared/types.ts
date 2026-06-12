@@ -357,6 +357,7 @@ export interface StackDockApi {
     restoreState(): Promise<TerminalPersistedState | null>;
     write(id: string, data: string): Promise<void>;
     resize(id: string, cols: number, rows: number): Promise<void>;
+    ready(id: string): Promise<void>;
     setVisible(ids: string[]): Promise<void>;
     kill(id: string): Promise<void>;
     snapshot(idOrRestoreId: string): Promise<TerminalSnapshot | null>;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sanitizeSnapshotReplay, trimSnapshotOutput } from '../src/shared/terminalSnapshot';
+import { buildRestoredScrollbackBarrier, sanitizeSnapshotReplay, trimSnapshotOutput } from '../src/shared/terminalSnapshot';
 
 describe('terminal snapshot sanitation', () => {
   it('strips complete leading device attribute responses', () => {
@@ -42,5 +42,18 @@ describe('terminal snapshot sanitation', () => {
     const output = trimSnapshotOutput(`${'😀'.repeat(8)}ok`, 7);
     expect(output).not.toContain('\ufffd');
     expect(output.endsWith('ok')).toBe(true);
+  });
+
+  it('builds a restored scrollback barrier with resume notice and viewport padding', () => {
+    const barrier = buildRestoredScrollbackBarrier(3, 'pi -r');
+    expect(barrier).toContain('──── restored scrollback; live output follows ────');
+    expect(barrier).toContain('[resuming Pi session with: pi -r]');
+    expect(barrier).toMatch(/(?:\r\n){3}\x1b\[H$/);
+    expect(barrier.endsWith('\x1b[H')).toBe(true);
+  });
+
+  it('clamps invalid restored scrollback barrier row counts', () => {
+    expect(buildRestoredScrollbackBarrier(-2)).not.toMatch(/(?:\r\n){3}\x1b\[H$/);
+    expect(buildRestoredScrollbackBarrier(Number.NaN)).not.toMatch(/(?:\r\n){3}\x1b\[H$/);
   });
 });

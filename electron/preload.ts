@@ -104,6 +104,7 @@ const api: StackDockApi = {
     restoreState: () => ipcRenderer.invoke('terminal:restoreState'),
     write: (id, data) => ipcRenderer.invoke('terminal:write', id, data),
     resize: (id, cols, rows) => ipcRenderer.invoke('terminal:resize', id, cols, rows),
+    ready: (id) => ipcRenderer.invoke('terminal:ready', id),
     setVisible: (ids) => ipcRenderer.invoke('terminal:setVisible', ids),
     kill: (id) => ipcRenderer.invoke('terminal:kill', id),
     snapshot: (idOrRestoreId) => ipcRenderer.invoke('terminal:snapshot', idOrRestoreId),

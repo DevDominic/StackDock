@@ -92,7 +92,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
   onOpenLinkRef.current = onOpenLink;
   onAttachmentErrorRef.current = onAttachmentError;
 
-  const resizeTerminal = () => {
+  const resizeTerminal = async () => {
     const mount = mountRef.current;
     const terminal = terminalRef.current;
     if (!mount || !terminal) return;
@@ -100,7 +100,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     if (rect.width < 20 || rect.height < 20) return;
     try {
       fitAddonRef.current?.fit();
-      void api.terminal.resize(session.id, terminal.cols, terminal.rows);
+      await api.terminal.resize(session.id, terminal.cols, terminal.rows);
     } catch {
       // xterm can briefly lack render dimensions while a parent tab is hidden.
       // Next resize/focus retries safely.
@@ -189,22 +189,23 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     // column and counts the rows padding below against the wrong viewport.
     let markOpenedAndFitted!: () => void;
     const openedAndFitted = new Promise<void>((resolve) => { markOpenedAndFitted = resolve; });
-    void Promise.all([api.terminal.snapshot(session.restoreId ?? session.id), openedAndFitted]).then(([snapshot]) => {
+    void openedAndFitted.then(() => api.terminal.snapshot(session.restoreId ?? session.id)).then((snapshot) => {
       if (disposed) return;
       const snapshotOutput = snapshot?.output ? sanitizeSnapshotReplay(snapshot.output) : '';
       const finishReplay = () => {
         replayingSnapshot = false;
         if (disposed) return;
+        void api.terminal.ready(session.id).catch(() => undefined);
         flushLiveOutput();
       };
       if (snapshotOutput) {
         // Replay bypasses the rAF queue so the write callback marks exactly when
         // parsing finished; onData stays muted until then so xterm's answers to
         // any replayed queries never reach the live pty as input.
-        // The snapshot is the main process's serialized headless buffer: it
-        // already contains the restored-scrollback separator, the resume notice,
-        // and the blank viewport + homed cursor that protect against ConPTY's
-        // CUP 1;1 repaint — so it is written verbatim.
+        // The snapshot is the main process's serialized headless buffer at the
+        // real fitted geometry, including the restored-scrollback separator,
+        // resume notice, and blank viewport that protect against ConPTY's CUP
+        // 1;1 repaint — so it is written verbatim.
         replayingSnapshot = true;
         terminal.write(snapshotOutput, finishReplay);
       } else if (startAtBottom) {
@@ -213,7 +214,12 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       } else {
         finishReplay();
       }
-    }).catch(() => { if (!disposed) flushLiveOutput(); });
+    }).catch(() => {
+      if (!disposed) {
+        void api.terminal.ready(session.id).catch(() => undefined);
+        flushLiveOutput();
+      }
+    });
 
     const disposeData = api.onTerminalData(({ id, data }) => {
       if (id !== session.id) return;
@@ -259,10 +265,11 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       opened = true;
       loadWebglRenderer();
       if (ligaturesAddon) terminal.loadAddon(ligaturesAddon as unknown as ITerminalAddon);
-      observer = new ResizeObserver(() => window.requestAnimationFrame(() => resizeTerminal()));
+      observer = new ResizeObserver(() => window.requestAnimationFrame(() => { void resizeTerminal(); }));
       observer.observe(mountRef.current);
-      resizeTerminal();
-      markOpenedAndFitted();
+      void resizeTerminal().finally(() => {
+        if (!disposed) markOpenedAndFitted();
+      });
     });
 
     return () => {
@@ -300,13 +307,13 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     terminal.options.fontWeight = '300';
     terminal.options.fontWeightBold = '300';
     terminal.options.cursorBlink = settings?.terminal.cursorBlink ?? true;
-    window.requestAnimationFrame(() => resizeTerminal());
+    window.requestAnimationFrame(() => { void resizeTerminal(); });
   }, [settings?.themeId, settings?.importedThemes, settings?.terminal.fontSize, settings?.terminal.fontFamily, settings?.terminal.cursorBlink]);
 
   useEffect(() => {
     if (!focused) return;
     window.requestAnimationFrame(() => {
-      resizeTerminal();
+      void resizeTerminal();
       terminalRef.current?.focus();
     });
   }, [focused, session.id]);
