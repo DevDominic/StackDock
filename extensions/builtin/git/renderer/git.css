@@ -1,11 +1,13 @@
-.git-panel { height: 100%; overflow: auto; }
-.sidebar-stack .git-panel { height: 100%; }
+.git-panel { height: 100%; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding-bottom: 8px; }
+.sidebar-stack .git-panel { height: 100%; min-height: 0; }
+.git-panel > * { flex: 0 0 auto; }
 
 /* Source Control path: filename stays fully visible; the directory prefix
    truncates from the left (direction: rtl) so the nearest, most distinguishing
    folders survive on narrow sidebars. Row keeps title={path} as a tooltip. */
 .git-path { flex: 1; min-width: 0; display: flex; align-items: center; overflow: hidden; }
 .git-path-dir { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; color: var(--muted); }
+.git-path-separator { flex: 0 0 auto; color: var(--muted); }
 .git-path .git-path-name { flex: 0 0 auto; overflow: visible; text-overflow: clip; white-space: nowrap; }
 .git-panel .git-path .git-path-name { color: var(--text); text-decoration: none; }
 /* Source Control rows split the path into nested spans, so the shared
@@ -14,12 +16,16 @@
    status colors in the Git extension itself so modified/added/deleted names
    match their badges consistently. */
 .git-panel .git-file.git-modified .git-path-dir,
+.git-panel .git-file.git-modified .git-path-separator,
 .git-panel .git-file.git-modified .git-path-name { color: var(--git-modified); }
 .git-panel .git-file.git-untracked .git-path-dir,
+.git-panel .git-file.git-untracked .git-path-separator,
 .git-panel .git-file.git-untracked .git-path-name,
 .git-panel .git-file.git-added .git-path-dir,
+.git-panel .git-file.git-added .git-path-separator,
 .git-panel .git-file.git-added .git-path-name { color: var(--git-untracked); }
 .git-panel .git-file.git-deleted .git-path-dir,
+.git-panel .git-file.git-deleted .git-path-separator,
 .git-panel .git-file.git-deleted .git-path-name { color: var(--git-deleted); text-decoration: line-through; }
 .git-badge {
   flex-shrink: 0;
@@ -63,7 +69,7 @@
 .git-error { margin: 8px 12px; }
 .git-panel .panel-title .ghost { background: var(--ghost-bg); border-color: var(--border); color: var(--text); box-shadow: none; }
 .git-panel .panel-title .ghost:hover { background: var(--button-hover-bg); border-color: var(--button-hover-border); }
-.git-actions { border-top: 1px solid var(--border); padding: 9px 14px; align-items: center; }
+.git-actions { border-top: 1px solid var(--border); margin-top: 6px; padding: 9px 14px; align-items: center; }
 .git-batch-actions { display: flex; flex-wrap: nowrap; gap: 6px; min-height: 42px; background: color-mix(in srgb, var(--bg-panel) 88%, transparent); }
 .git-batch-actions.is-active { position: sticky; bottom: 0; z-index: 4; box-shadow: 0 -8px 18px color-mix(in srgb, var(--bg) 72%, transparent); }
 .git-selection-hint { min-width: 0; font-size: 12px; line-height: 1.35; color: var(--muted); }

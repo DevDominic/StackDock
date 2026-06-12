@@ -41,7 +41,7 @@ function splitPath(path: string) {
   const normalized = path.replace(/\\/g, '/');
   const index = normalized.lastIndexOf('/');
   return index >= 0
-    ? { dir: normalized.slice(0, index + 1), name: normalized.slice(index + 1) }
+    ? { dir: normalized.slice(0, index), name: normalized.slice(index + 1) }
     : { dir: '', name: normalized };
 }
 
@@ -103,7 +103,7 @@ function GitGroup({ title, group, files, selectedFile, selectedPaths, onSelectFi
               <span className="tree-twisty" />
               <FileIcon name={name} isDirectory={false} expanded={false} />
               <span className="git-path">
-                {dir ? <span className="git-path-dir">{dir}</span> : null}
+                {dir ? <><span className="git-path-dir">{dir}</span><span className="git-path-separator">/</span></> : null}
                 <span className="tree-label git-path-name">{name}</span>
               </span>
               <span className="git-row-actions" aria-label={`${title} actions`}>
