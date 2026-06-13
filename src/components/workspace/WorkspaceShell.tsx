@@ -1115,7 +1115,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       { id: 'close-terminal', label: 'Close Terminal', run: () => closeTerminal(activeTerminalId) },
     ] : []),
     ...settingsActions,
-    { id: 'open-folder', label: 'Open Workspace Folder', run: () => api.fs.revealInExplorer(workspace.path) },
+    { id: 'open-folder', label: 'Open Workspace Folder', run: () => api.shell.openPath(workspace.path) },
   ];
 
   useEffect(() => {
@@ -1170,7 +1170,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
               </div>
             ) : null}
             <button className="topbar-icon-btn" onClick={() => { setSettingsInitialTab('general'); setSettingsOpen(true); }} title="Settings" aria-label="Settings"><SettingsIcon /></button>
-            <button className="topbar-icon-btn" onClick={() => void api.fs.revealInExplorer(workspace.path)} title="Open Folder" aria-label="Open Folder"><FolderOpenIcon /></button>
+            <button className="topbar-icon-btn" onClick={() => void api.shell.openPath(workspace.path)} title="Open Folder" aria-label="Open Folder"><FolderOpenIcon /></button>
           </div>
           <span className="topbar-divider" aria-hidden />
           <WindowControls />
