@@ -721,7 +721,7 @@ html[data-window-controls="native"] .workspace-titlebar::after { right: 138px; }
 .toast.error { border-color: var(--error-border); }
 .toast.info { border-color: var(--border-strong); }
 .edit-modal label, .settings-modal label { display: flex; flex-direction: column; gap: 7px; margin: 0; }
-.edit-modal input, .settings-modal input, .settings-modal select { width: 100%; background: color-mix(in srgb, var(--bg-panel) 88%, black); color: inherit; border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px; transition: border-color .12s ease, box-shadow .12s ease, background-color .12s ease; }
+.edit-modal input, .settings-modal input, .settings-modal select { width: 100%; background: color-mix(in srgb, var(--bg-panel) 88%, black); color: inherit; border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px; font-weight: 400; transition: border-color .12s ease, box-shadow .12s ease, background-color .12s ease; }
 .edit-modal input:focus, .settings-modal input:focus, .settings-modal select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--accent-soft); }
 .settings-modal {
   width: min(760px, calc(100vw - 32px));
@@ -971,8 +971,9 @@ html[data-window-controls="native"] .workspace-titlebar::after { right: 138px; }
 .command-card label { margin: 0 !important; }
 .command-card .field span { font-size: 11px; color: var(--muted); }
 .command-card-head { display: flex; align-items: flex-end; gap: 8px; }
-.command-card-row { display: flex; gap: 8px; }
+.command-card-row { display: flex; align-items: flex-start; gap: 8px; }
 .command-card-row .field, .field.grow { flex: 1; min-width: 0; }
+.command-card-row .keybind-field { flex: 0 0 170px; }
 .command-card-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .command-card-actions button { min-height: 30px; }
 .checkbox-field { flex-direction: row !important; align-items: center; gap: 8px; font-size: 12px; }
@@ -995,6 +996,9 @@ html[data-window-controls="native"] .workspace-titlebar::after { right: 138px; }
 .keybind-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 10px 12px; background: color-mix(in srgb, var(--bg-panel) 78%, transparent); border: 1px solid var(--border); border-radius: 10px; }
 .keybind-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .keybind-field { min-width: 170px; }
+.command-card .keybind-editor { width: 100%; }
+.command-card .keybind-recorder { flex: 1 1 auto; min-height: 37px; overflow: hidden; text-overflow: ellipsis; border-radius: 10px; background: color-mix(in srgb, var(--bg-panel) 88%, black); padding: 9px 11px; font-weight: 400; text-align: center; }
+.command-card .keybind-editor .ghost { flex: 0 0 auto; min-height: 37px; padding-inline: 9px; }
 
 /* ---- Bottom status bar (widget-based, VSCode-style) ---- */
 .statusbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 26px; flex-shrink: 0; padding: 0 6px; background: var(--statusbar-bg); border-top: 1px solid var(--statusbar-border); font-size: 11px; line-height: 1; color: var(--statusbar-fg); }
