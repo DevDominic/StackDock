@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { Terminal, type ILink, type ITerminalAddon } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { LigaturesAddon } from '@xterm/addon-ligatures';
@@ -7,6 +7,7 @@ import { sanitizeSnapshotReplay } from '../../shared/terminalSnapshot';
 import type { StackDockSettings, TerminalAttachment, TerminalAttachmentSource, TerminalSession } from '../../shared/types';
 import { api } from '../../lib/api';
 import { serializeTerminalAttachments, summarizeTerminalAttachments } from '../../lib/terminalAttachments';
+import { useToast } from '../common/ToastProvider';
 
 import '@xterm/xterm/css/xterm.css';
 
@@ -85,8 +86,10 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
   const mountRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const { showToast } = useToast();
   const [dragOver, setDragOver] = useState(false);
   const [attachmentStatus, setAttachmentStatus] = useState<string | null>(null);
+  const [terminalMenu, setTerminalMenu] = useState<{ x: number; y: number; canCopy: boolean; canPaste: boolean } | null>(null);
   const onOpenLinkRef = useRef(onOpenLink);
   const onAttachmentErrorRef = useRef(onAttachmentError);
   onOpenLinkRef.current = onOpenLink;
@@ -363,14 +366,68 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     }
   }
 
+  function clipboardHasPasteableContent() {
+    return api.attachments.hasClipboardText() || api.attachments.hasClipboardImage();
+  }
+
+  async function copySelection() {
+    const terminal = terminalRef.current;
+    if (!terminal?.hasSelection()) {
+      showToast('No terminal selection to copy', 'info');
+      return false;
+    }
+
+    try {
+      await navigator.clipboard.writeText(terminal.getSelection());
+      terminal.clearSelection();
+      terminal.focus();
+      showToast('Copied terminal selection', 'success');
+      return true;
+    } catch {
+      terminal.focus();
+      showToast('Could not copy terminal selection', 'error');
+      return false;
+    }
+  }
+
   async function insertClipboardImage() {
     try {
       const attachment = await api.attachments.saveClipboardImage('pasted-image');
-      if (!attachment) return;
+      if (!attachment) return false;
       await insertAttachmentObjects([attachment]);
+      return true;
     } catch (error) {
       reportAttachmentError(error, 'Could not paste image');
+      return false;
     }
+  }
+
+  async function pasteClipboard() {
+    const terminal = terminalRef.current;
+    if (api.attachments.hasClipboardText()) {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text) {
+          terminal?.paste(text);
+          terminal?.focus();
+          showToast('Pasted from clipboard', 'success');
+          return true;
+        }
+      } catch {
+        terminal?.focus();
+        showToast('Could not paste from clipboard', 'error');
+        return false;
+      }
+    } else if (api.attachments.hasClipboardImage()) {
+      const attached = await insertClipboardImage();
+      if (attached) showToast('Attached clipboard image', 'success');
+      terminal?.focus();
+      return attached;
+    }
+
+    terminal?.focus();
+    showToast('Clipboard is empty', 'info');
+    return false;
   }
 
   function filesFromDataTransfer(dataTransfer: DataTransfer | null) {
@@ -425,27 +482,44 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     if (!event.shiftKey && key === 'c' && terminal?.hasSelection()) {
       event.preventDefault();
       event.stopPropagation();
-      void navigator.clipboard.writeText(terminal.getSelection()).catch(() => undefined);
-      terminal.clearSelection();
+      void copySelection();
       return;
     }
 
-    if (!event.shiftKey && key === 'v') {
-      if (api.attachments.hasClipboardText()) {
-        event.preventDefault();
-        event.stopPropagation();
-        void navigator.clipboard.readText().then((text) => {
-          if (text) terminal?.paste(text);
-          terminal?.focus();
-        }).catch(() => undefined);
-        return;
-      }
-      if (!api.attachments.hasClipboardImage()) return;
+    if (!event.shiftKey && key === 'v' && clipboardHasPasteableContent()) {
       event.preventDefault();
       event.stopPropagation();
-      void insertClipboardImage();
+      void pasteClipboard();
     }
   }
+
+  function handleContextMenu(event: ReactMouseEvent<HTMLDivElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    const menuWidth = 180;
+    const menuHeight = 90;
+    setTerminalMenu({
+      x: Math.min(event.clientX, Math.max(0, window.innerWidth - menuWidth)),
+      y: Math.min(event.clientY, Math.max(0, window.innerHeight - menuHeight)),
+      canCopy: !!terminalRef.current?.hasSelection(),
+      canPaste: clipboardHasPasteableContent(),
+    });
+    terminalRef.current?.focus();
+  }
+
+  useEffect(() => {
+    if (!terminalMenu) return;
+    const close = () => setTerminalMenu(null);
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
+    window.addEventListener('mousedown', close);
+    window.addEventListener('resize', close);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [terminalMenu]);
 
   return (
     <div
@@ -456,9 +530,16 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       onDrop={handleDrop}
       onPaste={handlePaste}
       onKeyDownCapture={handleKeyDownCapture}
+      onContextMenu={handleContextMenu}
     >
       <div ref={mountRef} className="terminal-mount" />
       {attachmentStatus ? <div className="terminal-attachment-status">{attachmentStatus}</div> : null}
+      {terminalMenu ? (
+        <div className="context-menu terminal-context-menu" style={{ top: terminalMenu.y, left: terminalMenu.x }} onMouseDown={(event) => event.stopPropagation()}>
+          <button className="context-menu-item" disabled={!terminalMenu.canCopy} onClick={() => { setTerminalMenu(null); void copySelection(); }}>Copy</button>
+          <button className="context-menu-item" disabled={!terminalMenu.canPaste} onClick={() => { setTerminalMenu(null); void pasteClipboard(); }}>Paste</button>
+        </div>
+      ) : null}
     </div>
   );
 }
