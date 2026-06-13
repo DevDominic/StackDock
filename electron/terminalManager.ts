@@ -132,12 +132,25 @@ function normalizePiStartupCommand(command: string | undefined, restoreId: strin
   return `${trimmed} --name ${quoteArg(stackDockPiSessionName(restoreId))}`;
 }
 
+function getPiNamedSessionTarget(command: string) {
+  const match = command.match(/(?:^|\s)--name(?:=|\s+)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\S+)/i);
+  const raw = match?.[1];
+  if (!raw) return null;
+  if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) return raw.slice(1, -1).replace(/\\(["'\\$`])/g, '$1');
+  return raw;
+}
+
 function buildPiResumeCommand(session: TerminalSession, snapshot?: TerminalSnapshot | null) {
   const piResumeCommand = session.piResumeCommand ?? snapshot?.piResumeCommand;
-  if (piResumeCommand) return piResumeCommand;
+  if (piResumeCommand) {
+    const namedTarget = getPiNamedSessionTarget(piResumeCommand);
+    return namedTarget ? `pi -r ${quoteArg(namedTarget)}` : piResumeCommand;
+  }
   const piSessionId = session.piSessionId ?? snapshot?.piSessionId;
   if (piSessionId) return `pi --session ${piSessionId}`;
   if (session.startupCommand && PI_COMMAND_PATTERN.test(session.startupCommand)) {
+    const namedTarget = getPiNamedSessionTarget(session.startupCommand);
+    if (namedTarget) return `pi -r ${quoteArg(namedTarget)}`;
     if (piCommandHasStableTarget(session.startupCommand)) return session.startupCommand;
     return 'pi -r';
   }
