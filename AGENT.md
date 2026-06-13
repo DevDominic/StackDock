@@ -17,103 +17,15 @@ Contract: every IPC arg is validated in `electron/validation.ts` (assert* helper
 
 Persistence: JSON files in the Electron userData dir (`electron/storage.ts` sets up dirs). Settings → `configStore.ts`, automation → `automationStore.ts`, workspaces + per-workspace layouts → `workspaceStore.ts`.
 
-## Map Info
+## Project Map
 
-When making changes to file directories, creating new files, adjusting file names etc., ensure that `AGENT.md` is updated to reflect any changes to the Map
+Repository map lives in `PROJECT_MAP.md`. Update `PROJECT_MAP.md` when changing folder structure, adding/removing major files, or changing architecture flows.
 
-## Map
-```
-electron/                  Main process (Node services, IO)
-  main.ts                  App bootstrap + ALL ipcMain.handle registrations
-  preload.ts               contextBridge → window.stackdock
-  validation.ts            assert* guards for every IPC arg
-  workspaceStore.ts        Workspace CRUD + layout load/save (JSON)
-  fileService.ts           fs ops: read/write/create/rename/delete dir & files
-  browserBridge.ts         webview/browser bridge main-process handling
-  extensionService.ts      bundled/local extension manifest loading + assets
-  terminalManager.ts       node-pty session lifecycle, data/exit/status events
-  attachmentService.ts     Terminal drag/drop/paste attachment inspection/cache
-  configStore.ts           Settings (theme, editor, terminal profiles) persist
-  automationStore.ts       automation.json: palette cmds + per-workspace setups
-  storage.ts               userData data-dir setup
-  log.ts                   Error logging
+To create or refresh the project map, use the standalone project-mapping prompt, not this file.
 
-src/
-  main.tsx                 Renderer entry
-  App.tsx                  Dashboard ⇄ WorkspaceShell switch; loads settings/theme
-  shared/
-    types.ts               ★ Shared API + domain types (main ↔ renderer contract)
-    terminalProfiles.ts    Terminal-profile defaults and helpers
-    terminalSnapshot.ts    Terminal snapshot sanitizing/trimming helpers
-  lib/
-    api.ts                 = window.stackdock (the ONLY backend entry from UI)
-    themeSupport.ts        VS Code theme JSON → Monaco theme + app CSS vars (large)
-    editorSupport.ts       Monaco language/config registration
-    monacoEnvironment.ts   Monaco web-worker wiring
-    terminalAttachments.ts Terminal attachment serialization helpers
-    errors.ts              Error helpers
-    themes/                Bundled VS Code color-theme JSON
-  state/                   zustand stores (renderer-only state)
-    workspaceStore.ts      Workspace list + active workspace
-    sessionStore.ts        Global terminal-session registry (cross-workspace)
-  components/
-    TitleBar.tsx                       Custom/native window titlebar controls
-    icons.tsx                          Shared SVG icon components
-    dashboard/WorkspaceDashboard.tsx   Home: list/add/create/pin/open workspaces
-    common/ToastProvider.tsx           Toasts
-    workspace/
-      WorkspaceShell.tsx               ★ Main layout: wires extension views + panels
-      EditorPanel.tsx                  Monaco editor + open-file tabs
-      TerminalPanel.tsx                xterm view bound to a pty session
-      WebTabPanel.tsx                  In-app browser <webview> tabs
-      SessionSwitcher.tsx              Session picker UI
-      CommandLauncher.tsx              Command palette
-      CommandsEditor.tsx               Edit global/per-workspace commands
-      NewTerminalMenu.tsx              Terminal-profile picker
-      SettingsModal.tsx                Settings UI (theme/editor/terminal/profiles)
-      StatusBar.tsx                    Bottom widget status bar
-      JsonCodeEditor.tsx               JSON editor wrapper used by settings/commands
-      fileIcons.tsx                    Path → icon mapping
-  extensions/
-    ExtensionFrame.tsx     sandboxed iframe host for local extension views
-    ExtensionProvider.tsx  extension context/provider wiring
-    configuration.ts       extension configuration helpers
-    enablement.ts          enablement/filtering of extension contributions
-    extensionTypes.ts      renderer extension interfaces and contexts
-    registry.tsx           registers bundled native extension renderers
-  styles.css               Global CSS (driven by theme CSS vars)
-
-extensions/                 Built-in extension packages
-  builtin/explorer/
-    manifest.ts
-    renderer/FileTree.tsx
-    renderer/index.tsx
-    renderer/explorer.css
-  builtin/git/
-    manifest.ts
-    main/gitService.ts     git status/diff/stage/unstage/discard/commit/addAll
-    main/gitParser.ts      Parse git porcelain output → GitStatus
-    renderer/GitPanel.tsx
-    renderer/index.tsx
-    renderer/git.css
-  builtin/sessions/
-    manifest.ts
-    renderer/GlobalSessionsSidebar.tsx
-    renderer/SessionsSettings.tsx
-    renderer/index.tsx
-    renderer/sessions.css
-  builtin/workspace-status/
-    manifest.ts
-    renderer/WorkspaceStatusSettings.tsx
-    renderer/index.tsx
-    renderer/workspaceStatus.css
-
-tests/                      Vitest coverage for services, extensions, git, terminals, renderer stores
-docs/                       Extension authoring and folder-format docs
-release/                    electron-builder output dir for packaged .exe/installers (generated, not source)
-dist/                       Vite renderer build output (generated; packaging input)
-dist-electron/              Electron main/preload build output (generated; packaging input)
-```
+Use LeanCTX for repo exploration where available.
+Prefer small, targeted changes.
+Do not modify generated files, lockfiles, dependency files, or git state unless explicitly requested.
 
 ## Commands
 - `npm run dev` — build once (`npm run build`) then launch Electron with `--agent-browser --built` support. `--built` forces the unpackaged app to load `dist/index.html` instead of the Vite dev server. No Vite/tsc watch, no HMR, no auto-restart; rerun after source changes when testing latest build. Remote debugging is available for agent-browser interaction.
