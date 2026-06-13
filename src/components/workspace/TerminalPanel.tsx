@@ -259,6 +259,8 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       },
     });
 
+    const settleFit = () => window.requestAnimationFrame(() => window.requestAnimationFrame(() => { void resizeTerminal(); }));
+
     // Defer open by one frame. React StrictMode mounts, cleans up, then mounts
     // again in dev; opening immediately leaves xterm internal timers alive after
     // dispose and causes "reading 'dimensions'" errors.
@@ -270,6 +272,9 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       if (ligaturesAddon) terminal.loadAddon(ligaturesAddon as unknown as ITerminalAddon);
       observer = new ResizeObserver(() => window.requestAnimationFrame(() => { void resizeTerminal(); }));
       observer.observe(mountRef.current);
+      settleFit();
+      document.fonts?.ready.then(() => { if (!disposed) settleFit(); }).catch(() => undefined);
+      document.fonts?.addEventListener('loadingdone', settleFit);
       void resizeTerminal().finally(() => {
         if (!disposed) markOpenedAndFitted();
       });
@@ -281,6 +286,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       markOpenedAndFitted();
       window.cancelAnimationFrame(openFrame);
       observer?.disconnect();
+      document.fonts?.removeEventListener('loadingdone', settleFit);
       if (terminalWriteFrame != null) window.cancelAnimationFrame(terminalWriteFrame);
       terminalWriteQueue = [];
       disposeData();
