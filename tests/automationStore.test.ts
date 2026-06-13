@@ -16,4 +16,23 @@ describe('automation keybind normalization', () => {
     expect(normalized.commands[1].keybind).toBeUndefined();
     expect(normalized.workspaces.ws1.commands?.[0].keybind).toBe('Mod+K');
   });
+
+  it('deduplicates command ids so existing workspace commands edit independently', () => {
+    const normalized = normalizeAutomation({
+      commands: [
+        { label: 'Test', command: 'npm test' },
+        { label: 'Test', command: 'npm run test:watch' },
+      ],
+      workspaces: {
+        ws1: {
+          commands: [
+            { id: 'dev', label: 'Dev', command: 'npm run dev' },
+            { id: 'dev', label: 'Dev copy', command: 'npm run dev -- --host' },
+          ],
+        },
+      },
+    });
+    expect(normalized.commands.map((command) => command.id)).toEqual(['test', 'test-2']);
+    expect(normalized.workspaces.ws1.commands?.map((command) => command.id)).toEqual(['dev', 'dev-2']);
+  });
 });

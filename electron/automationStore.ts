@@ -32,7 +32,18 @@ function normalizeCommand(value: unknown): PaletteCommand | null {
 
 function normalizeCommands(value: unknown): PaletteCommand[] {
   if (!Array.isArray(value)) return [];
-  return value.map(normalizeCommand).filter((command): command is PaletteCommand => command !== null);
+  const usedIds = new Set<string>();
+  return value
+    .map(normalizeCommand)
+    .filter((command): command is PaletteCommand => command !== null)
+    .map((command) => {
+      const baseId = command.id;
+      let id = baseId;
+      let suffix = 2;
+      while (usedIds.has(id)) id = `${baseId}-${suffix++}`;
+      usedIds.add(id);
+      return id === command.id ? command : { ...command, id };
+    });
 }
 
 function normalizeSetup(value: unknown): WorkspaceSetup {
