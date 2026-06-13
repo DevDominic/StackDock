@@ -21,10 +21,12 @@ function normalizeCommand(value: unknown): PaletteCommand | null {
   const keybind = typeof record.keybind === 'string' ? normalizeKeybind(record.keybind) ?? undefined : undefined;
   const cwd = typeof record.cwd === 'string' && record.cwd.trim() ? record.cwd : undefined;
   const terminalName = typeof record.terminalName === 'string' && record.terminalName.trim() ? record.terminalName : undefined;
+  const headless = record.headless === true ? true : undefined;
   const autoStart = record.autoStart === true ? true : undefined;
   const result: PaletteCommand = { id, label, command };
   if (keybind) result.keybind = keybind;
   if (cwd) result.cwd = cwd;
+  if (headless) result.headless = headless;
   if (terminalName) result.terminalName = terminalName;
   if (autoStart) result.autoStart = autoStart;
   return result;

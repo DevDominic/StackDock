@@ -90,6 +90,10 @@ export function CommandsEditor({ commands, onChange, onRun, showSessionFields = 
                 <KeybindInput value={command.keybind} onChange={(keybind) => update(command.id, { keybind })} />
               </label>
             </div>
+            <label className="checkbox-field">
+              <input type="checkbox" checked={!!command.headless} onChange={(event) => update(command.id, { headless: event.target.checked ? true : undefined })} />
+              Run headlessly <span className="muted">— hide terminal, notify with final output, then close</span>
+            </label>
             {showSessionFields ? (
               <label className="checkbox-field">
                 <input type="checkbox" checked={!!command.autoStart} onChange={(event) => toggleAutoStart(command, event.target.checked)} />

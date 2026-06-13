@@ -2,13 +2,14 @@ import { create } from 'zustand';
 import { api } from '../lib/api';
 import type { WorkspaceTerminalSession } from '../shared/types';
 
-interface CreateInput { workspaceId: string; workspaceName: string; workspacePath: string; profileId: string; cwd?: string; name?: string; startupCommand?: string; restoreId?: string; }
+interface CreateInput { workspaceId: string; workspaceName: string; workspacePath: string; profileId: string; cwd?: string; name?: string; startupCommand?: string; restoreId?: string; headless?: boolean; commandLabel?: string; }
 interface SessionState {
   sessions: WorkspaceTerminalSession[];
   activeSessionId: string | null;
   activeWorkspaceId: string | null;
   createSession(input: CreateInput): Promise<WorkspaceTerminalSession>;
   closeSession(id: string): Promise<void>;
+  removeSessionLocal(id: string): void;
   renameSession(id: string, name: string): void;
   replaceSession(id: string, next: WorkspaceTerminalSession): void;
   setActiveSession(id: string): void;
@@ -21,8 +22,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   activeSessionId: null,
   activeWorkspaceId: null,
   async createSession(input) {
-    const terminal = await api.terminal.create(input.profileId, input.cwd ?? input.workspacePath, input.name, input.startupCommand, input.restoreId, { workspaceId: input.workspaceId, workspaceName: input.workspaceName, workspacePath: input.workspacePath });
+    const terminal = await api.terminal.create(input.profileId, input.cwd ?? input.workspacePath, input.name, input.startupCommand, input.restoreId, { workspaceId: input.workspaceId, workspaceName: input.workspaceName, workspacePath: input.workspacePath, headless: input.headless, commandLabel: input.commandLabel });
     const session: WorkspaceTerminalSession = { ...terminal, workspaceId: input.workspaceId, workspaceName: input.workspaceName, workspacePath: input.workspacePath };
+    if (input.headless) return session;
     set({ sessions: [...get().sessions, session], activeSessionId: session.id, activeWorkspaceId: session.workspaceId });
     void api.app.saveRestoreState({ lastWorkspaceId: session.workspaceId, lastTerminalRestoreId: session.restoreId, lastTerminalRuntimeId: session.id }).catch(() => undefined);
     return session;
@@ -31,6 +33,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const closing = get().sessions.find((session) => session.id === id);
     await api.terminal.kill(id);
     if (closing?.restoreId) await api.terminal.forgetSnapshot(closing.restoreId).catch(() => undefined);
+    const next = get().sessions.filter((session) => session.id !== id);
+    set({ sessions: next, activeSessionId: get().activeSessionId === id ? next[0]?.id ?? null : get().activeSessionId });
+  },
+  removeSessionLocal(id) {
     const next = get().sessions.filter((session) => session.id !== id);
     set({ sessions: next, activeSessionId: get().activeSessionId === id ? next[0]?.id ?? null : get().activeSessionId });
   },

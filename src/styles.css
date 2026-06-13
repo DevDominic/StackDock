@@ -718,7 +718,7 @@ html[data-window-controls="native"] .workspace-titlebar::after { right: 138px; }
 .launcher-item > small { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; line-height: 1.25; }
 .launcher-empty { padding: 12px; text-align: center; }
 .session-switcher-current { color: var(--primary); font-style: italic; }
-.toast-stack { position: fixed; right: 16px; bottom: 16px; z-index: 200; display: flex; flex-direction: column; gap: 8px; width: min(360px, calc(100vw - 32px)); }
+.toast-stack { position: fixed; right: 16px; bottom: 42px; z-index: 200; display: flex; flex-direction: column; gap: 8px; width: min(360px, calc(100vw - 32px)); }
 .toast { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: 0 10px 28px var(--shadow); }
 .toast.success { border-color: var(--success-border); }
 .toast.error { border-color: var(--error-border); }

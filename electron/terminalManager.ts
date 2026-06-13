@@ -32,6 +32,10 @@ interface RecordEntry {
   recentOutput: string;
   headlessDisposed: boolean;
   discardSnapshot: boolean;
+  headlessOutput: string;
+  headlessTimer: NodeJS.Timeout | null;
+  headlessTimedOut: boolean;
+  headlessResultSent: boolean;
 }
 
 const terminals = new Map<string, RecordEntry>();
@@ -47,6 +51,9 @@ const SPAWN_COLS = 120;
 const SPAWN_ROWS = 30;
 const VISIBLE_TERMINAL_OUTPUT_FLUSH_MS = 16;
 const HIDDEN_TERMINAL_OUTPUT_FLUSH_MS = 250;
+const HEADLESS_TIMEOUT_MS = 10 * 60 * 1000;
+const HEADLESS_OUTPUT_MAX_BYTES = 128 * 1024;
+const HEADLESS_TOAST_MAX_CHARS = 4000;
 function snapshotPath(restoreId: string) {
   return path.join(getTerminalSnapshotsDir(), `${restoreId.replace(/[^A-Za-z0-9_-]/g, '_')}.json`);
 }
@@ -252,6 +259,7 @@ function flushTerminalOutput(entry: RecordEntry) {
 }
 
 function queueTerminalOutput(entry: RecordEntry, data: string) {
+  if (entry.context?.headless) entry.headlessOutput = (entry.headlessOutput + data).slice(-HEADLESS_OUTPUT_MAX_BYTES);
   entry.pendingData.push(data);
   if (entry.flushTimer) return;
   const flushMs = isTerminalVisible(entry) ? VISIBLE_TERMINAL_OUTPUT_FLUSH_MS : HIDDEN_TERMINAL_OUTPUT_FLUSH_MS;
@@ -287,6 +295,43 @@ function resolveCwd(cwd: string) {
   } catch {
     return process.cwd();
   }
+}
+
+function stripAnsi(value: string) {
+  return value
+    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
+    .trim();
+}
+
+function truncateHeadlessOutput(value: string) {
+  if (value.length <= HEADLESS_TOAST_MAX_CHARS) return value;
+  return `${value.slice(0, HEADLESS_TOAST_MAX_CHARS - 1)}…`;
+}
+
+function wrapHeadlessStartupCommand(command: string) {
+  return `${command}\r\nexit\r\n`;
+}
+
+function sendHeadlessResult(entry: RecordEntry, exitCode: number | null) {
+  if (!entry.context?.headless || entry.headlessResultSent) return;
+  entry.headlessResultSent = true;
+  if (entry.headlessTimer) {
+    clearTimeout(entry.headlessTimer);
+    entry.headlessTimer = null;
+  }
+  const output = truncateHeadlessOutput(stripAnsi(entry.headlessOutput));
+  mainWindow?.webContents.send('terminal:headlessResult', {
+    id: entry.session.id,
+    label: entry.context.commandLabel ?? entry.session.name,
+    command: entry.session.startupCommand ?? '',
+    output,
+    exitCode,
+    timedOut: entry.headlessTimedOut || undefined,
+  });
 }
 
 export async function createTerminal(profileId: string, cwd: string, name?: string, startupCommand?: string, restoreId?: string, context?: TerminalSessionContext): Promise<TerminalSession> {
@@ -338,12 +383,13 @@ export async function createTerminal(profileId: string, cwd: string, name?: stri
     // repaint area.
     headless.write(`${priorSnapshot.output}\x1b[0m`);
   }
-  const entry: RecordEntry = { session, context, terminal, pendingData: [], flushTimer: null, pendingStartupCommand: null, pendingRestoreBarrier, terminalIntegrations, headless, serializeAddon, recentOutput: '', headlessDisposed: false, discardSnapshot: false };
+  const entry: RecordEntry = { session, context, terminal, pendingData: [], flushTimer: null, pendingStartupCommand: null, pendingRestoreBarrier, terminalIntegrations, headless, serializeAddon, recentOutput: '', headlessDisposed: false, discardSnapshot: context?.headless === true, headlessOutput: '', headlessTimer: null, headlessTimedOut: false, headlessResultSent: false };
   terminal.onData((data) => queueTerminalOutput(entry, data));
   terminal.onExit(({ exitCode }) => {
     cancelPendingStartupCommand(entry);
     flushTerminalOutput(entry);
-    mainWindow?.webContents.send('terminal:exit', { id: session.id, exitCode });
+    if (context?.headless) sendHeadlessResult(entry, exitCode);
+    else mainWindow?.webContents.send('terminal:exit', { id: session.id, exitCode });
     terminals.delete(session.id);
     runtimeToRestore.delete(session.id);
     void persistEntrySnapshot(entry).finally(() => {
@@ -353,7 +399,18 @@ export async function createTerminal(profileId: string, cwd: string, name?: stri
   });
 
   terminals.set(session.id, entry);
-  if (normalizedStartupCommand) {
+  if (context?.headless && normalizedStartupCommand) {
+    entry.headlessTimer = setTimeout(() => {
+      entry.headlessTimedOut = true;
+      entry.discardSnapshot = true;
+      sendHeadlessResult(entry, null);
+      terminal.kill();
+    }, HEADLESS_TIMEOUT_MS);
+    terminal.write(wrapHeadlessStartupCommand(normalizedStartupCommand));
+  } else if (context?.headless) {
+    sendHeadlessResult(entry, 0);
+    terminal.kill();
+  } else if (normalizedStartupCommand) {
     entry.pendingStartupCommand = {
       command: normalizedStartupCommand,
       timer: setTimeout(() => flushPendingStartupCommand(entry), 3000),
@@ -388,6 +445,10 @@ export async function killTerminal(id: string, preserveSnapshot = false) {
   const restoreId = entry?.session.restoreId ?? runtimeToRestore.get(id) ?? id;
   if (entry) {
     cancelPendingStartupCommand(entry);
+    if (entry.headlessTimer) {
+      clearTimeout(entry.headlessTimer);
+      entry.headlessTimer = null;
+    }
     if (preserveSnapshot) flushTerminalOutput(entry);
     else {
       entry.discardSnapshot = true;

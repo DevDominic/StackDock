@@ -17,6 +17,21 @@ describe('automation keybind normalization', () => {
     expect(normalized.workspaces.ws1.commands?.[0].keybind).toBe('Mod+K');
   });
 
+  it('preserves true headless flags and drops falsey headless flags', () => {
+    const normalized = normalizeAutomation({
+      commands: [
+        { id: 'headless', label: 'Headless', command: 'pi -p "hi"', headless: true },
+        { id: 'visible', label: 'Visible', command: 'echo hi', headless: false },
+      ],
+      workspaces: {
+        ws1: { commands: [{ id: 'workspace', label: 'Workspace', command: 'agent run', headless: true }] },
+      },
+    });
+    expect(normalized.commands[0].headless).toBe(true);
+    expect(normalized.commands[1].headless).toBeUndefined();
+    expect(normalized.workspaces.ws1.commands?.[0].headless).toBe(true);
+  });
+
   it('deduplicates command ids so existing workspace commands edit independently', () => {
     const normalized = normalizeAutomation({
       commands: [

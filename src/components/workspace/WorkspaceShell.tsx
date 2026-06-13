@@ -308,6 +308,16 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }, [workspace.id]);
 
   useEffect(() => {
+    const dispose = api.onTerminalHeadlessResult((payload) => {
+      sessionStore.removeSessionLocal(payload.id);
+      const output = payload.output.trim();
+      const message = `${payload.label ?? 'Command'}: ${output || (payload.timedOut ? 'Timed out' : 'Completed')}`;
+      showToast(message.length > 700 ? `${message.slice(0, 699)}…` : message, payload.exitCode === 0 && !payload.timedOut ? 'success' : 'error');
+    });
+    return dispose;
+  }, [showToast]);
+
+  useEffect(() => {
     if (!layoutHydrated) return;
     const nextLayout: WorkspaceLayout = {
       workspaceId: workspace.id,
@@ -737,21 +747,22 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   // Commands from automation.json (global or workspace-scoped). The optional
   // terminalName names the spawned terminal; cwd falls back to the workspace.
   async function runPaletteCommand(command: PaletteCommand) {
-    await createTerminal(undefined, command.terminalName || command.label || 'Command', command.command, command.cwd?.trim() ? command.cwd : workspace.path);
-    showToast(`Started ${command.label}`, 'success');
+    await createTerminal(undefined, command.terminalName || command.label || 'Command', command.command, command.cwd?.trim() ? command.cwd : workspace.path, { headless: command.headless === true, commandLabel: command.label });
+    if (command.headless) showToast(`Running ${command.label} headlessly`, 'info');
+    else showToast(`Started ${command.label}`, 'success');
   }
 
   // profileId omitted => fall back to this workspace's configured default
   // profile, then the global default. An empty startupCommand picks up the
   // workspace's "run on new session" command from automation.json.
-  async function createTerminal(profileId?: string, name = 'Terminal', startupCommand = '', cwd = workspace.path) {
+  async function createTerminal(profileId?: string, name = 'Terminal', startupCommand = '', cwd = workspace.path, options?: { headless?: boolean; commandLabel?: string }) {
     try {
       const requested = profileId ?? workspaceSetup?.defaultTerminalProfile ?? defaultProfile?.id ?? 'powershell';
       const effectiveProfile = profiles.some((profile) => profile.id === requested) ? requested : defaultProfile?.id ?? 'powershell';
       const selectedProfile = profiles.find((profile) => profile.id === effectiveProfile);
       const effectiveStartup = resolveTerminalStartupCommand({ explicitStartupCommand: startupCommand, profileStartupCommand: selectedProfile?.startupCommand, workspaceStartupCommand: workspaceSetup?.newSessionCommand });
       // A new session starts with just the terminal (no tabs) by default.
-      await sessionStore.createSession({ workspaceId: workspace.id, workspaceName: workspace.name, workspacePath: workspace.path, profileId: effectiveProfile, cwd, name, startupCommand: effectiveStartup });
+      await sessionStore.createSession({ workspaceId: workspace.id, workspaceName: workspace.name, workspacePath: workspace.path, profileId: effectiveProfile, cwd, name, startupCommand: effectiveStartup, headless: options?.headless, commandLabel: options?.commandLabel });
     } catch (error) { showToast(getErrorMessage(error, 'Could not create terminal'), 'error'); }
   }
 

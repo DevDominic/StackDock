@@ -80,6 +80,8 @@ export function assertTerminalSessionContext(value: unknown): TerminalSessionCon
     workspaceId: context.workspaceId == null ? undefined : assertNonEmptyString(context.workspaceId, 'context.workspaceId'),
     workspaceName: context.workspaceName == null ? undefined : assertNonEmptyString(context.workspaceName, 'context.workspaceName'),
     workspacePath: context.workspacePath == null ? undefined : assertAbsolutePath(context.workspacePath, 'context.workspacePath'),
+    headless: context.headless === true ? true : undefined,
+    commandLabel: context.commandLabel == null ? undefined : assertNonEmptyString(context.commandLabel, 'context.commandLabel'),
   };
 }
 export function assertTerminalAttachmentSource(value: unknown, name: string): TerminalAttachmentSource {

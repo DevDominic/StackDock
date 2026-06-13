@@ -79,6 +79,8 @@ export interface PaletteCommand {
   command: string;
   keybind?: string;
   cwd?: string;
+  /** Run hidden, notify with final output, then close. */
+  headless?: boolean;
   /** Per-workspace: name given to the terminal the command spawns. */
   terminalName?: string;
   /** Per-workspace: run automatically when the workspace opens. */
@@ -172,6 +174,8 @@ export interface TerminalSessionContext {
   workspaceId?: string;
   workspaceName?: string;
   workspacePath?: string;
+  headless?: boolean;
+  commandLabel?: string;
 }
 
 export interface TerminalPersistedTab extends TerminalSession {
@@ -374,6 +378,7 @@ export interface StackDockApi {
   };
   onTerminalData(callback: (payload: { id: string; data: string }) => void): () => void;
   onTerminalExit(callback: (payload: { id: string; exitCode: number | null }) => void): () => void;
+  onTerminalHeadlessResult(callback: (payload: { id: string; label?: string; command: string; output: string; exitCode: number | null; timedOut?: boolean }) => void): () => void;
   onWorkspaceChanged(callback: () => void): () => void;
   onFileSystemChanged(callback: (payload: { rootPath: string }) => void): () => void;
   onOpenUrlRequest(callback: (payload: { url: string; sessionId?: string }) => void): () => void;

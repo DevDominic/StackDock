@@ -120,6 +120,11 @@ const api: StackDockApi = {
     ipcRenderer.on('terminal:exit', listener);
     return () => ipcRenderer.off('terminal:exit', listener);
   },
+  onTerminalHeadlessResult(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { id: string; label?: string; command: string; output: string; exitCode: number | null; timedOut?: boolean }) => callback(payload);
+    ipcRenderer.on('terminal:headlessResult', listener);
+    return () => ipcRenderer.off('terminal:headlessResult', listener);
+  },
   onWorkspaceChanged(callback) {
     const listener = () => callback();
     ipcRenderer.on('workspace:changed', listener);
