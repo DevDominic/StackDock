@@ -308,6 +308,20 @@ function stripAnsi(value: string) {
     .trim();
 }
 
+function cleanHeadlessOutput(value: string, command: string) {
+  let output = value;
+  if (command) {
+    const commandIndex = output.indexOf(command);
+    if (commandIndex >= 0) output = output.slice(commandIndex + command.length);
+  }
+  return output
+    .split('\n')
+    .filter((line, index) => !(index === 0 && !line.trim()))
+    .filter((line, index) => !(index === 0 && line.trim() === 'exit'))
+    .join('\n')
+    .trim();
+}
+
 function truncateHeadlessOutput(value: string) {
   if (value.length <= HEADLESS_TOAST_MAX_CHARS) return value;
   return `${value.slice(0, HEADLESS_TOAST_MAX_CHARS - 1)}…`;
@@ -324,7 +338,7 @@ function sendHeadlessResult(entry: RecordEntry, exitCode: number | null) {
     clearTimeout(entry.headlessTimer);
     entry.headlessTimer = null;
   }
-  const output = truncateHeadlessOutput(stripAnsi(entry.headlessOutput));
+  const output = truncateHeadlessOutput(cleanHeadlessOutput(stripAnsi(entry.headlessOutput), entry.session.startupCommand ?? ''));
   mainWindow?.webContents.send('terminal:headlessResult', {
     id: entry.session.id,
     label: entry.context.commandLabel ?? entry.session.name,

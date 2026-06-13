@@ -4,6 +4,16 @@ import type { HeadlessCommandRun, WorkspaceTerminalSession } from '../shared/typ
 
 const HEADLESS_OUTPUT_MAX_CHARS = 128 * 1024;
 
+function cleanHeadlessOutput(output: string, command: string) {
+  const commandIndex = command ? output.indexOf(command) : -1;
+  const trimmed = commandIndex >= 0 ? output.slice(commandIndex + command.length) : output;
+  return trimmed
+    .split('\n')
+    .filter((line, index) => !(index === 0 && !line.trim()))
+    .filter((line, index) => !(index === 0 && line.trim() === 'exit'))
+    .join('\n');
+}
+
 interface CreateInput { workspaceId: string; workspaceName: string; workspacePath: string; profileId: string; cwd?: string; name?: string; startupCommand?: string; restoreId?: string; headless?: boolean; commandLabel?: string; }
 interface SessionState {
   sessions: WorkspaceTerminalSession[];
@@ -79,7 +89,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     persistActiveSession(picked, fallbackWorkspaceId);
   },
   appendHeadlessOutput(id, data) {
-    set({ headlessRuns: get().headlessRuns.map((run) => run.id === id ? { ...run, output: (run.output + data).slice(-HEADLESS_OUTPUT_MAX_CHARS) } : run) });
+    set({ headlessRuns: get().headlessRuns.map((run) => run.id === id ? { ...run, output: cleanHeadlessOutput((run.output + data).slice(-HEADLESS_OUTPUT_MAX_CHARS), run.command) } : run) });
   },
   removeHeadlessRun(id) { set({ headlessRuns: get().headlessRuns.filter((run) => run.id !== id) }); },
   removeSessionLocal(id) {
