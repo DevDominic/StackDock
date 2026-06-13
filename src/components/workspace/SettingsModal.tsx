@@ -266,6 +266,14 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
     }
   }
 
+  async function addLocalExtensionPackage() {
+    const folder = await api.app.pickWorkspaceFolder();
+    if (!folder) return;
+    const result = await api.extensions.addLocalPackage(folder);
+    setExtensionResult(result);
+    setDraft((current) => ({ ...current, extensions: { ...current.extensions, localPackagePaths: [...new Set([...current.extensions.localPackagePaths, folder])] } }));
+  }
+
   useEffect(() => { void loadExtensions(); }, []);
 
   useEffect(() => {
@@ -534,7 +542,7 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
 
   function renderConfigField(extensionId: string, field: ExtensionConfigField, value: ExtensionConfigPrimitive | undefined) {
     const setValue = (next: unknown) => patchExtensionConfig(extensionId, { [field.key]: coerceConfigValue(field, next) });
-    if (field.type === 'boolean') return <label className="checkbox-field" key={field.key}><input type="checkbox" checked={value === true} onChange={(event) => setValue(event.target.checked)} /> {field.label}</label>;
+    if (field.type === 'boolean') return <label className="settings-toggle-row extension-config-toggle" key={field.key}><span><b>{field.label}</b>{field.description ? <span className="muted code-font-note">{field.description}</span> : null}</span><input type="checkbox" checked={value === true} onChange={(event) => setValue(event.target.checked)} /></label>;
     if (field.type === 'select') return <label key={field.key}>{field.label}<select value={String(value ?? field.default ?? '')} onChange={(event) => setValue(event.target.value)}>{(field.options ?? []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{field.description ? <span className="muted code-font-note">{field.description}</span> : null}</label>;
     if (field.type === 'number') return <label key={field.key}>{field.label}<input type="number" min={field.min} max={field.max} step={field.step} value={Number(value ?? field.default ?? 0)} onChange={(event) => setValue(event.target.value)} />{field.description ? <span className="muted code-font-note">{field.description}</span> : null}</label>;
     return <label key={field.key}>{field.label}<input value={String(value ?? field.default ?? '')} onChange={(event) => setValue(event.target.value)} />{field.description ? <span className="muted code-font-note">{field.description}</span> : null}</label>;
@@ -638,7 +646,7 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
           <div className="settings-tab-body">
             <label>Default profile<select value={draft.defaultTerminalProfileId ?? ''} onChange={(event) => setDraft({ ...draft, defaultTerminalProfileId: event.target.value })}>{draft.terminalProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
             <h3>Terminal profiles</h3>
-            <p className="muted config-hint">Optional startup command runs after the shell opens; e.g. Pi uses <code>cmd.exe</code> + <code>pi</code>.</p>
+            <p className="muted config-hint">Optional startup command runs after the shell opens. Extension-provided profiles can add tool-specific startup commands.</p>
             <div className="command-list">
               {draft.terminalProfiles.map((profile) => (
                 <div className="command-row profile-row" key={profile.id}>
@@ -672,28 +680,19 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
                 <span><b>{localExtensionCount}</b> local</span>
               </div>
             </div>
-            <div className="row gap extension-actions">
-              <button className="ghost" disabled={extensionsLoading} onClick={loadExtensions}>{extensionsLoading ? 'Loading…' : 'Reload extensions'}</button>
-              <button className="primary" onClick={async () => {
-                const folder = await api.app.pickWorkspaceFolder();
-                if (!folder) return;
-                const result = await api.extensions.addLocalPackage(folder);
-                setExtensionResult(result);
-                setDraft({ ...draft, extensions: { ...draft.extensions, localPackagePaths: [...new Set([...draft.extensions.localPackagePaths, folder])] } });
-              }}>Add local package</button>
-            </div>
             {extensionError ? <div className="banner error settings-warning">{extensionError}</div> : null}
             {extensionResult.errors.length ? (
               <div className="banner error settings-warning">
                 {extensionResult.errors.map((error, index) => <div key={`${error.packagePath ?? error.extensionId ?? 'extension'}:${index}`}>{error.packagePath ?? error.extensionId ?? 'Extension'}: {error.message}</div>)}
               </div>
             ) : null}
-            <div className="extension-grid">
+            <div className="extension-list">
               {extensionResult.extensions.map((extension) => {
                 const enabled = extensionEnabled(extension, draft);
                 const views = extension.contributes?.views?.length ?? 0;
                 const statusItems = extension.contributes?.statusBar?.length ?? 0;
                 const source = extension.source === 'local' ? 'local' : 'bundled';
+                const capabilities = extension.capabilities ?? [];
                 const configurable = !!extension.contributes?.configuration || !!extensionRegistry.nativeExtensions.get(extension.id)?.renderSettings;
                 return (
                   <div className={`extension-card ${enabled ? 'is-enabled' : 'is-disabled'}`} key={extension.id}>
@@ -708,20 +707,23 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
                       <div className="extension-meta">
                         <span>{views} view{views === 1 ? '' : 's'}</span>
                         <span>{statusItems} status item{statusItems === 1 ? '' : 's'}</span>
+                        {capabilities.map((capability) => <span key={capability}>{capability.replace(/[-_]/g, ' ')}</span>)}
                         {extension.packagePath ? <span className="extension-path" title={extension.packagePath}>{extension.packagePath}</span> : null}
                       </div>
                     </div>
                     <div className="extension-card-actions">
-                      <label className="extension-switch checkbox-field" title={enabled ? 'Enabled' : 'Disabled'}>
+                      <label className="extension-enable-toggle checkbox-field" title={enabled ? 'Enabled' : 'Disabled'}>
+                        <span>{enabled ? 'Enabled' : 'Disabled'}</span>
                         <input type="checkbox" checked={enabled} onChange={(event) => setDraft(setExtensionEnabled(draft, extension.id, event.target.checked))} />
-                        <span>{enabled ? 'On' : 'Off'}</span>
                       </label>
-                      {configurable ? <button className="ghost" onClick={() => setSelectedExtensionConfigId(extension.id)}>Configure</button> : null}
-                      {extension.source === 'local' && extension.packagePath ? <button className="ghost danger" onClick={async () => {
-                        const result = await api.extensions.removeLocalPackage(extension.packagePath!);
-                        setExtensionResult(result);
-                        setDraft({ ...draft, extensions: { ...draft.extensions, localPackagePaths: draft.extensions.localPackagePaths.filter((item) => item !== extension.packagePath), enabled: draft.extensions.enabled.filter((id) => id !== extension.id), disabled: draft.extensions.disabled.filter((id) => id !== extension.id) } });
-                      }}>Remove</button> : null}
+                      <div className="extension-action-buttons">
+                        {configurable ? <button className="ghost" onClick={() => setSelectedExtensionConfigId(extension.id)}>Configure</button> : null}
+                        {extension.source === 'local' && extension.packagePath ? <button className="ghost danger" onClick={async () => {
+                          const result = await api.extensions.removeLocalPackage(extension.packagePath!);
+                          setExtensionResult(result);
+                          setDraft({ ...draft, extensions: { ...draft.extensions, localPackagePaths: draft.extensions.localPackagePaths.filter((item) => item !== extension.packagePath), enabled: draft.extensions.enabled.filter((id) => id !== extension.id), disabled: draft.extensions.disabled.filter((id) => id !== extension.id) } });
+                        }}>Remove</button> : null}
+                      </div>
                     </div>
                   </div>
                 );
@@ -829,6 +831,17 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
           <div className="modal-actions">
             <button className="ghost" onClick={closeWithoutSave}>Cancel</button>
             <button className="primary" disabled={saving || wsSaving} onClick={async () => { await saveKeybindSettings(); onClose(); }}>{saving || wsSaving ? 'Saving...' : 'Save'}</button>
+          </div>
+        ) : tab === 'extensions' ? (
+          <div className="modal-actions extension-modal-actions">
+            <div className="extension-footer-actions">
+              <button className="ghost" disabled={extensionsLoading} onClick={loadExtensions}>{extensionsLoading ? 'Loading…' : 'Reload extensions'}</button>
+              <button className="ghost" onClick={addLocalExtensionPackage}>Add local package</button>
+            </div>
+            <div className="extension-save-actions">
+              <button className="ghost" onClick={closeWithoutSave}>Cancel</button>
+              <button className="primary" disabled={!valid || saving} onClick={async () => { setSaving(true); await onSave(draft); setSaving(false); onClose(); }}>{saving ? 'Saving...' : 'Save'}</button>
+            </div>
           </div>
         ) : (
           <div className="modal-actions">
