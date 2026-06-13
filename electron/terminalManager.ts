@@ -254,6 +254,7 @@ function flushTerminalOutput(entry: RecordEntry) {
   const data = entry.pendingData.join('');
   entry.pendingData = [];
   updateSnapshot(entry, data);
+  if (entry.context?.headless) mainWindow?.webContents.send('terminal:headlessData', { id: entry.session.id, data });
   if (!isTerminalVisible(entry)) return;
   mainWindow?.webContents.send('terminal:data', { id: entry.session.id, data });
 }

@@ -1,14 +1,19 @@
 import { create } from 'zustand';
 import { api } from '../lib/api';
-import type { WorkspaceTerminalSession } from '../shared/types';
+import type { HeadlessCommandRun, WorkspaceTerminalSession } from '../shared/types';
+
+const HEADLESS_OUTPUT_MAX_CHARS = 128 * 1024;
 
 interface CreateInput { workspaceId: string; workspaceName: string; workspacePath: string; profileId: string; cwd?: string; name?: string; startupCommand?: string; restoreId?: string; headless?: boolean; commandLabel?: string; }
 interface SessionState {
   sessions: WorkspaceTerminalSession[];
+  headlessRuns: HeadlessCommandRun[];
   activeSessionId: string | null;
   activeWorkspaceId: string | null;
   createSession(input: CreateInput): Promise<WorkspaceTerminalSession>;
   closeSession(id: string): Promise<void>;
+  appendHeadlessOutput(id: string, data: string): void;
+  removeHeadlessRun(id: string): void;
   removeSessionLocal(id: string): void;
   renameSession(id: string, name: string): void;
   replaceSession(id: string, next: WorkspaceTerminalSession): void;
@@ -19,12 +24,28 @@ interface SessionState {
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
+  headlessRuns: [],
   activeSessionId: null,
   activeWorkspaceId: null,
   async createSession(input) {
     const terminal = await api.terminal.create(input.profileId, input.cwd ?? input.workspacePath, input.name, input.startupCommand, input.restoreId, { workspaceId: input.workspaceId, workspaceName: input.workspaceName, workspacePath: input.workspacePath, headless: input.headless, commandLabel: input.commandLabel });
     const session: WorkspaceTerminalSession = { ...terminal, workspaceId: input.workspaceId, workspaceName: input.workspaceName, workspacePath: input.workspacePath };
-    if (input.headless) return session;
+    if (input.headless) {
+      const run: HeadlessCommandRun = {
+        id: session.id,
+        restoreId: session.restoreId,
+        workspaceId: input.workspaceId,
+        workspaceName: input.workspaceName,
+        workspacePath: input.workspacePath,
+        label: input.commandLabel ?? input.name ?? session.name,
+        command: session.startupCommand ?? input.startupCommand ?? '',
+        cwd: input.cwd ?? input.workspacePath,
+        startedAt: Date.now(),
+        output: '',
+      };
+      set({ headlessRuns: [...get().headlessRuns.filter((item) => item.id !== run.id), run] });
+      return session;
+    }
     set({ sessions: [...get().sessions, session], activeSessionId: session.id, activeWorkspaceId: session.workspaceId });
     void api.app.saveRestoreState({ lastWorkspaceId: session.workspaceId, lastTerminalRestoreId: session.restoreId, lastTerminalRuntimeId: session.id }).catch(() => undefined);
     return session;
@@ -36,6 +57,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const next = get().sessions.filter((session) => session.id !== id);
     set({ sessions: next, activeSessionId: get().activeSessionId === id ? next[0]?.id ?? null : get().activeSessionId });
   },
+  appendHeadlessOutput(id, data) {
+    set({ headlessRuns: get().headlessRuns.map((run) => run.id === id ? { ...run, output: (run.output + data).slice(-HEADLESS_OUTPUT_MAX_CHARS) } : run) });
+  },
+  removeHeadlessRun(id) { set({ headlessRuns: get().headlessRuns.filter((run) => run.id !== id) }); },
   removeSessionLocal(id) {
     const next = get().sessions.filter((session) => session.id !== id);
     set({ sessions: next, activeSessionId: get().activeSessionId === id ? next[0]?.id ?? null : get().activeSessionId });

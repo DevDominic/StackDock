@@ -1,5 +1,5 @@
 import type { MouseEvent, ReactNode } from 'react';
-import type { ExtensionConfigPrimitive, ExtensionManifest, ExtensionStatusBarContribution, ExtensionViewContribution, GitFileStatus, GitStatus, StackDockSettings, TerminalProfile, Workspace, WorkspaceTerminalSession } from '../shared/types';
+import type { ExtensionConfigPrimitive, ExtensionManifest, ExtensionStatusBarContribution, ExtensionViewContribution, GitFileStatus, GitStatus, HeadlessCommandRun, StackDockSettings, TerminalProfile, Workspace, WorkspaceTerminalSession } from '../shared/types';
 
 export interface ExtensionCommand {
   id: string;
@@ -16,6 +16,7 @@ export interface WorkspaceExtensionContext {
   sessions: WorkspaceTerminalSession[];
   allSessions: WorkspaceTerminalSession[];
   activeSessionId: string | null;
+  headlessRuns: HeadlessCommandRun[];
   isRepo: boolean;
   refreshToken: number;
   actions: {
@@ -53,6 +54,9 @@ export interface WorkspaceExtensionContext {
     fetch(): void | Promise<void>;
     pull(): void | Promise<void>;
     push(): void | Promise<void>;
+  };
+  headlessActions: {
+    terminate(id: string): void | Promise<void>;
   };
   sessionActions: {
     create(target: Workspace, profileId: string): Promise<void>;

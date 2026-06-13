@@ -115,6 +115,11 @@ const api: StackDockApi = {
     ipcRenderer.on('terminal:data', listener);
     return () => ipcRenderer.off('terminal:data', listener);
   },
+  onTerminalHeadlessData(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { id: string; data: string }) => callback(payload);
+    ipcRenderer.on('terminal:headlessData', listener);
+    return () => ipcRenderer.off('terminal:headlessData', listener);
+  },
   onTerminalExit(callback) {
     const listener = (_event: Electron.IpcRendererEvent, payload: { id: string; exitCode: number | null }) => callback(payload);
     ipcRenderer.on('terminal:exit', listener);

@@ -12,7 +12,9 @@ export function resolveEnabledExtensions(manifests: ExtensionManifest[], setting
   });
 }
 
-function matchesWhen(when: 'always' | 'gitRepo' | undefined, ctx: WorkspaceExtensionContext) { return !when || when === 'always' || (when === 'gitRepo' && ctx.isRepo); }
+function matchesWhen(when: 'always' | 'gitRepo' | 'headlessActive' | undefined, ctx: WorkspaceExtensionContext) {
+  return !when || when === 'always' || (when === 'gitRepo' && ctx.isRepo) || (when === 'headlessActive' && ctx.headlessRuns.length > 0);
+}
 
 export function getEnabledViewContributions(manifests: ExtensionManifest[], location: ExtensionViewContribution['location'], ctx: WorkspaceExtensionContext): ExtensionViewContribution[] {
   return manifests.flatMap((manifest) => manifest.contributes?.views ?? []).filter((view) => view.location === location && matchesWhen(view.when, ctx)).sort((a, b) => (a.order ?? 100) - (b.order ?? 100));

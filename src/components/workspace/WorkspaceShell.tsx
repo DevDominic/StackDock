@@ -125,6 +125,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const [automation, setAutomation] = useState<AutomationConfig | null>(null);
   const sessionStore = useSessionStore();
   const allSessions = sessionStore.sessions;
+  const headlessRuns = sessionStore.headlessRuns;
   const sessions = allSessions.filter((session) => session.workspaceId === workspace.id);
   const activeTerminalId = sessions.some((session) => session.id === sessionStore.activeSessionId) ? sessionStore.activeSessionId : sessions[0]?.id ?? null;
   const [htmlPreviewBySession, setHtmlPreviewBySession] = useState<Record<string, string | null>>({});
@@ -308,13 +309,17 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }, [workspace.id]);
 
   useEffect(() => {
-    const dispose = api.onTerminalHeadlessResult((payload) => {
+    const disposeData = api.onTerminalHeadlessData((payload) => {
+      sessionStore.appendHeadlessOutput(payload.id, payload.data);
+    });
+    const disposeResult = api.onTerminalHeadlessResult((payload) => {
       sessionStore.removeSessionLocal(payload.id);
+      sessionStore.removeHeadlessRun(payload.id);
       const output = payload.output.trim();
       const message = `${payload.label ?? 'Command'}: ${output || (payload.timedOut ? 'Timed out' : 'Completed')}`;
       showToast(message.length > 700 ? `${message.slice(0, 699)}…` : message, payload.exitCode === 0 && !payload.timedOut ? 'success' : 'error');
     });
-    return dispose;
+    return () => { disposeData(); disposeResult(); };
   }, [showToast]);
 
   useEffect(() => {
@@ -1027,6 +1032,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     sessions,
     allSessions,
     activeSessionId: activeTerminalId,
+    headlessRuns,
     isRepo,
     refreshToken,
     actions: {
@@ -1044,6 +1050,12 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     workspaces,
     profiles,
     defaultProfileId: workspaceSetup?.defaultTerminalProfile ?? settings?.defaultTerminalProfileId,
+    headlessActions: {
+      terminate: async (id) => {
+        try { await api.terminal.kill(id); }
+        catch (error) { showToast(getErrorMessage(error, 'Could not terminate headless command'), 'error'); }
+      },
+    },
     gitActions: {
       error: gitError,
       selectedFile: selectedGitFile,
@@ -1079,15 +1091,15 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const enabledExtensions = resolveEnabledExtensions(extensionRegistry.extensions, settings, mergedLayout.extensions);
   const statusBarContributions = getEnabledStatusBarContributions(enabledExtensions, extensionCtx);
   const sessionContributions = getEnabledViewContributions(enabledExtensions, 'sessions', extensionCtx);
-  const activityContributions = getEnabledViewContributions(enabledExtensions, 'activity', extensionCtx);
   const sessionContribution = sessionContributions[0] ?? null;
-  const renderExtensionView = (contribution: typeof activityContributions[number]) => extensionRegistry.nativeExtensions.get(contribution.extensionId)?.renderView?.(contribution, extensionCtx) ?? null;
+  const activityContributions = getEnabledViewContributions(enabledExtensions, 'activity', extensionCtx);
+  const renderExtensionView = (contribution: (typeof activityContributions)[number] | (typeof sessionContributions)[number]) => extensionRegistry.nativeExtensions.get(contribution.extensionId)?.renderView?.(contribution, extensionCtx) ?? null;
   const legacyActivityViewIds = activityContributions.filter((_, index) => index === 0 ? mergedLayout.panels.fileTreeVisible : index === 1 ? mergedLayout.panels.gitPanelVisible : false).map((view) => view.id);
   const configuredActivityViewIds = mergedLayout.extensions?.visibleViewIds;
   const visibleActivityViewIds = (configuredActivityViewIds ?? legacyActivityViewIds).filter((id) => activityContributions.some((view) => view.id === id));
   const visibleActivityContributions = activityContributions.filter((view) => visibleActivityViewIds.includes(view.id));
   const sidebarVisible = visibleActivityContributions.length > 0;
-  const sessionsVisible = !!sessionContribution && mergedLayout.panels.sessionsVisible !== false;
+  const sessionsVisible = sessionContributions.length > 0 && mergedLayout.panels.sessionsVisible !== false;
   const panelSizes = mergedLayout.panels.panelSizes ?? { sessions: 14, explorer: 18, main: 68, editor: 72, git: 28, upper: 62, terminal: 38 };
   const safePanelSizes = getSafePanelSizes(panelSizes, sidebarVisible, sessionsVisible);
   const extensionCommands = enabledExtensions.flatMap((manifest) => extensionRegistry.nativeExtensions.get(manifest.id)?.getCommands?.(extensionCtx) ?? []);
@@ -1181,7 +1193,17 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         {sessionsVisible ? (
           <>
             <Panel id="sessions" order={1} defaultSize={safePanelSizes.sessions} minSize={10} className="global-sessions-panel">
-              {sessionContribution ? renderExtensionView(sessionContribution) : null}
+              {sessionContributions.length > 1 ? (
+                <PanelGroup direction="vertical" className="sidebar-stack sessions-stack" onLayout={([upper, lower]) => updatePanelSizes({ sessionsUpper: upper, headless: lower })}>
+                  <Panel id="sessions-primary" defaultSize={panelSizes.sessionsUpper ?? 78} minSize={35}>
+                    {renderExtensionView(sessionContributions[0])}
+                  </Panel>
+                  <PanelResizeHandle id="sessions-stack-resize" className="resize-handle horizontal" />
+                  <Panel id="sessions-secondary" defaultSize={panelSizes.headless ?? 22} minSize={12}>
+                    {sessionContributions.slice(1).map((contribution) => <div key={contribution.id} className="extension-sidebar-view">{renderExtensionView(contribution)}</div>)}
+                  </Panel>
+                </PanelGroup>
+              ) : renderExtensionView(sessionContributions[0])}
             </Panel>
             <PanelResizeHandle id="sessions-resize" className="resize-handle vertical" />
           </>
