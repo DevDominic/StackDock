@@ -47,7 +47,7 @@ describe('terminal snapshot sanitation', () => {
   it('builds a restored scrollback barrier with resume notice and viewport padding', () => {
     const barrier = buildRestoredScrollbackBarrier(3, 'pi -r');
     expect(barrier).toContain('──── restored scrollback; live output follows ────');
-    expect(barrier).toContain('[resuming Pi session with: pi -r]');
+    expect(barrier).toContain('[resuming session with: pi -r]');
     expect(barrier).toMatch(/(?:\r\n){3}\x1b\[H$/);
     expect(barrier.endsWith('\x1b[H')).toBe(true);
   });

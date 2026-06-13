@@ -61,6 +61,6 @@ export function trimSnapshotOutput(raw: string, maxBytes: number) {
 
 export function buildRestoredScrollbackBarrier(rows: number, resumeCommand?: string) {
   const safeRows = Number.isFinite(rows) ? Math.max(0, Math.floor(rows)) : 0;
-  const resumeNotice = resumeCommand?.trim() ? `\x1b[2m[resuming Pi session with: ${resumeCommand.trim()}]\x1b[0m\r\n` : '';
+  const resumeNotice = resumeCommand?.trim() ? `\x1b[2m[resuming session with: ${resumeCommand.trim()}]\x1b[0m\r\n` : '';
   return `\x1b[0m\r\n\x1b[2m──── restored scrollback; live output follows ────\x1b[0m\r\n${resumeNotice}${'\r\n'.repeat(safeRows)}\x1b[H`;
 }

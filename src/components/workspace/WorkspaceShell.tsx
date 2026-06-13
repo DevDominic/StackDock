@@ -103,16 +103,6 @@ function isHtmlFile(targetPath: string) {
   return /\.html?$/i.test(targetPath);
 }
 
-function stripAnsi(value: string) {
-  return value.replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '').replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
-}
-
-function isPiSnapshotOutput(output?: string) {
-  if (!output) return false;
-  const text = stripAnsi(output);
-  return /\bpi\s+v\d+\.\d+\.\d+/i.test(text) && /(Model scope:|caveman level:|OpenAI cache|\bMCP:\s*\d+\/\d+)/i.test(text);
-}
-
 interface Props {
   workspace: Workspace;
   onBack(): void;
@@ -243,10 +233,10 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
           let restoredActiveRuntimeId: string | null = null;
           for (const session of terminalsToRestore) {
             const snapshot = session.restoreId ? await api.terminal.snapshot(session.restoreId).catch(() => null) : null;
-            const piResumeCommand = session.piResumeCommand ?? snapshot?.piResumeCommand;
-            const startupCommand = 'resumeStartupCommand' in session && session.resumeStartupCommand ? session.resumeStartupCommand : piResumeCommand || session.startupCommand || (isPiSnapshotOutput(snapshot?.output) ? 'pi -r' : undefined);
+            const resumeCommand = 'resumeStartupCommand' in session && session.resumeStartupCommand ? session.resumeStartupCommand : session.resumeState?.resumeCommand ?? snapshot?.resumeState?.resumeCommand;
+            const startupCommand = resumeCommand || session.startupCommand;
             const created = await sessionStore.createSession({ workspaceId: workspace.id, workspaceName: workspace.name, workspacePath: workspace.path, profileId: session.profileId, cwd: session.cwd, name: session.name, startupCommand, restoreId: session.restoreId });
-            const restoredSession = { ...created, originalStartupCommand: session.originalStartupCommand ?? session.startupCommand, piSessionId: session.piSessionId ?? snapshot?.piSessionId, piResumeCommand, restoredFromSnapshot: true, splitGroupId: session.splitGroupId, splitDirection: session.splitDirection };
+            const restoredSession = { ...created, originalStartupCommand: session.originalStartupCommand ?? session.startupCommand, resumeState: session.resumeState ?? snapshot?.resumeState, restoredFromSnapshot: true, splitGroupId: session.splitGroupId, splitDirection: session.splitDirection };
             sessionStore.replaceSession(created.id, restoredSession);
             if (session.restoreId && (session.restoreId === loadedLayout?.activeTerminalRestoreId || session.restoreId === persistedActiveRestoreId)) restoredActiveRuntimeId = restoredSession.id;
             if (session.id === loadedLayout?.activeTerminalRuntimeId) restoredActiveRuntimeId = restoredSession.id;
@@ -777,8 +767,8 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     const old = allSessions.find((session) => session.id === id);
     if (!old) return;
     await api.terminal.kill(old.id);
-    const next = await api.terminal.create(old.profileId, cwd ?? old.cwd, old.name, old.piResumeCommand || old.startupCommand, old.restoreId, { workspaceId: old.workspaceId, workspaceName: old.workspaceName, workspacePath: old.workspacePath });
-    const replacement: WorkspaceTerminalSession = { ...next, workspaceId: old.workspaceId, workspaceName: old.workspaceName, workspacePath: old.workspacePath, originalStartupCommand: old.originalStartupCommand ?? old.startupCommand, piSessionId: old.piSessionId, piResumeCommand: old.piResumeCommand, splitGroupId: old.splitGroupId, splitDirection: old.splitDirection };
+    const next = await api.terminal.create(old.profileId, cwd ?? old.cwd, old.name, old.resumeState?.resumeCommand || old.startupCommand, old.restoreId, { workspaceId: old.workspaceId, workspaceName: old.workspaceName, workspacePath: old.workspacePath });
+    const replacement: WorkspaceTerminalSession = { ...next, workspaceId: old.workspaceId, workspaceName: old.workspaceName, workspacePath: old.workspacePath, originalStartupCommand: old.originalStartupCommand ?? old.startupCommand, resumeState: next.resumeState ?? old.resumeState, splitGroupId: old.splitGroupId, splitDirection: old.splitDirection };
     sessionStore.replaceSession(id, replacement);
   }
 

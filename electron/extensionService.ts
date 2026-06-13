@@ -5,12 +5,13 @@ import { explorerExtensionManifest } from '../extensions/builtin/explorer/manife
 import { gitExtensionManifest } from '../extensions/builtin/git/manifest';
 import { sessionsExtensionManifest } from '../extensions/builtin/sessions/manifest';
 import { workspaceStatusExtensionManifest } from '../extensions/builtin/workspace-status/manifest';
+import { piExtensionManifest } from '../extensions/builtin/pi/manifest';
 
 const MANIFEST_FILE = 'stackdock.extension.json';
 const packageRoots = new Map<string, string>();
 
 export function getBundledExtensionManifests(): ExtensionManifest[] {
-  return [explorerExtensionManifest, gitExtensionManifest, sessionsExtensionManifest, workspaceStatusExtensionManifest];
+  return [explorerExtensionManifest, gitExtensionManifest, sessionsExtensionManifest, workspaceStatusExtensionManifest, piExtensionManifest];
 }
 
 function validId(id: string) { return /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id); }

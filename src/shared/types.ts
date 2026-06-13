@@ -155,6 +155,13 @@ export interface TerminalProfile {
   startupCommand?: string;
 }
 
+export interface TerminalResumeState {
+  integrationId: string;
+  sessionId?: string;
+  resumeCommand?: string;
+  storagePath?: string;
+}
+
 export interface WorkspaceTerminalSession extends TerminalSession {
   workspaceId: string;
   workspaceName: string;
@@ -189,8 +196,7 @@ export interface TerminalSession {
   cwd: string;
   startupCommand?: string;
   originalStartupCommand?: string;
-  piSessionId?: string;
-  piResumeCommand?: string;
+  resumeState?: TerminalResumeState;
   restoredFromSnapshot?: boolean;
   splitGroupId?: string;
   splitDirection?: 'row' | 'column';
@@ -202,8 +208,7 @@ export interface TerminalSnapshot {
   restoreId?: string;
   output: string;
   updatedAt?: string;
-  piSessionId?: string;
-  piResumeCommand?: string;
+  resumeState?: TerminalResumeState;
 }
 
 export interface GitFileStatus {

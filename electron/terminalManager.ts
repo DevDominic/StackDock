@@ -6,10 +6,12 @@ import { Terminal as HeadlessTerminal, type ITerminalAddon as HeadlessTerminalAd
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { buildRestoredScrollbackBarrier, sanitizeSnapshotReplay, trimSnapshotOutput } from '../src/shared/terminalSnapshot';
 import { resolveTerminalStartupCommand } from '../src/shared/terminalProfiles';
-import type { TerminalPersistedState, TerminalPersistedTab, TerminalProfile, TerminalSession, TerminalSessionContext, TerminalSnapshot } from '../src/shared/types';
+import type { TerminalPersistedState, TerminalPersistedTab, TerminalProfile, TerminalResumeState, TerminalSession, TerminalSessionContext, TerminalSnapshot } from '../src/shared/types';
 import { getDefaultSettings, loadSettings } from './configStore';
 import { ensureDataDirs, getTerminalSnapshotsDir, getTerminalStatePath } from './storage';
 import { getBridgeEnv } from './browserBridge';
+import type { TerminalCommandIntegration } from './terminalIntegration';
+import { getEnabledTerminalIntegrations } from '../extensions/mainRegistry';
 
 interface RecordEntry {
   session: TerminalSession;
@@ -19,8 +21,9 @@ interface RecordEntry {
   flushTimer: NodeJS.Timeout | null;
   pendingStartupCommand: { command: string; timer: NodeJS.Timeout } | null;
   pendingRestoreBarrier: { resumeCommand?: string } | null;
+  terminalIntegrations: TerminalCommandIntegration[];
   // Shadow terminal that interprets every pty byte so snapshots can persist the
-  // *rendered* buffer instead of the raw stream. TUI apps (pi, claude, codex)
+  // *rendered* buffer instead of the raw stream. Full-screen terminal apps
   // emit absolute-cursor repaint frames that only replay correctly into a
   // terminal with identical geometry and parser state; the serialized buffer
   // renders cleanly anywhere.
@@ -44,11 +47,6 @@ const SPAWN_COLS = 120;
 const SPAWN_ROWS = 30;
 const VISIBLE_TERMINAL_OUTPUT_FLUSH_MS = 16;
 const HIDDEN_TERMINAL_OUTPUT_FLUSH_MS = 250;
-const PI_RESUME_PATTERN = /To resume this session:\s*(pi\s+--session\s+([A-Za-z0-9_-]{8,128}))/i;
-const PI_COMMAND_PATTERN = /^\s*pi(?:\s|$)/i;
-const PI_TRACKED_ARG_PATTERN = /(?:^|\s)(?:--name\b|--session\b|-r\b|--resume\b|--continue\b)/i;
-const SHELL_META_PATTERN = /[|&;<>]/;
-
 function snapshotPath(restoreId: string) {
   return path.join(getTerminalSnapshotsDir(), `${restoreId.replace(/[^A-Za-z0-9_-]/g, '_')}.json`);
 }
@@ -76,8 +74,9 @@ function serializeEntrySnapshot(entry: RecordEntry): Promise<string> {
 function ensureSnapshotRecord(entry: RecordEntry): TerminalSnapshot {
   const session = entry.session;
   const restoreId = session.restoreId ?? session.id;
-  const snapshot = snapshots.get(restoreId) ?? { id: session.id, restoreId, output: '', updatedAt: new Date().toISOString(), piSessionId: session.piSessionId, piResumeCommand: session.piResumeCommand };
+  const snapshot = snapshots.get(restoreId) ?? { id: session.id, restoreId, output: '', updatedAt: new Date().toISOString(), resumeState: session.resumeState };
   snapshot.id = session.id;
+  snapshot.resumeState = session.resumeState ?? snapshot.resumeState;
   snapshots.set(restoreId, snapshot);
   snapshots.set(session.id, snapshot);
   return snapshot;
@@ -114,58 +113,60 @@ export async function flushTerminalSnapshots() {
   await Promise.all([...terminals.values()].map((entry) => persistEntrySnapshot(entry)));
 }
 
-function quoteArg(value: string) {
-  return `"${value.replace(/(["\\$`])/g, '\\$1')}"`;
+function mergeResumeState(current: TerminalResumeState | undefined, next: TerminalResumeState | undefined): TerminalResumeState | undefined {
+  if (!next) return current;
+  if (!current || current.integrationId !== next.integrationId) return next;
+  return { ...current, ...next };
 }
 
-function stackDockPiSessionName(restoreId: string) {
-  return `stackdock-${restoreId.replace(/[^A-Za-z0-9_-]/g, '_')}`;
+function applyResumeState(session: TerminalSession, snapshot: TerminalSnapshot, resumeState: TerminalResumeState | undefined) {
+  if (!resumeState) return;
+  session.resumeState = mergeResumeState(session.resumeState, resumeState);
+  snapshot.resumeState = mergeResumeState(snapshot.resumeState, session.resumeState);
 }
 
-function piCommandHasStableTarget(command: string) {
-  return PI_TRACKED_ARG_PATTERN.test(command);
-}
-
-function normalizePiStartupCommand(command: string | undefined, restoreId: string) {
-  const trimmed = command?.trim();
-  if (!trimmed || !PI_COMMAND_PATTERN.test(trimmed) || SHELL_META_PATTERN.test(trimmed) || piCommandHasStableTarget(trimmed)) return command;
-  return `${trimmed} --name ${quoteArg(stackDockPiSessionName(restoreId))}`;
-}
-
-function getPiNamedSessionTarget(command: string) {
-  const match = command.match(/(?:^|\s)--name(?:=|\s+)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\S+)/i);
-  const raw = match?.[1];
-  if (!raw) return null;
-  if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) return raw.slice(1, -1).replace(/\\(["'\\$`])/g, '$1');
-  return raw;
-}
-
-function buildPiResumeCommand(session: TerminalSession, snapshot?: TerminalSnapshot | null) {
-  const piResumeCommand = session.piResumeCommand ?? snapshot?.piResumeCommand;
-  if (piResumeCommand) {
-    const namedTarget = getPiNamedSessionTarget(piResumeCommand);
-    return namedTarget ? `pi -r ${quoteArg(namedTarget)}` : piResumeCommand;
+function hydrateSnapshotResumeState(snapshot: TerminalSnapshot, terminalIntegrations: TerminalCommandIntegration[]) {
+  if (snapshot.resumeState) return;
+  for (const integration of terminalIntegrations) {
+    const resumeState = integration.detectSnapshotResumeState?.({ snapshot });
+    if (resumeState) {
+      snapshot.resumeState = resumeState;
+      return;
+    }
   }
-  const piSessionId = session.piSessionId ?? snapshot?.piSessionId;
-  if (piSessionId) return `pi --session ${piSessionId}`;
-  if (session.startupCommand && PI_COMMAND_PATTERN.test(session.startupCommand)) {
-    const namedTarget = getPiNamedSessionTarget(session.startupCommand);
-    if (namedTarget) return `pi -r ${quoteArg(namedTarget)}`;
-    if (piCommandHasStableTarget(session.startupCommand)) return session.startupCommand;
-    return 'pi -r';
+}
+
+function resolveIntegratedStartupCommand(command: string | undefined, restoreId: string, cwd: string, name: string | undefined, terminalIntegrations: TerminalCommandIntegration[]) {
+  if (!command) return { command: undefined as string | undefined, resumeState: undefined as TerminalResumeState | undefined };
+  for (const integration of terminalIntegrations) {
+    const result = integration.resolveStartupCommand?.(command, { restoreId, cwd, name });
+    if (result) return { command: result.command, resumeState: result.resumeState };
   }
-  return undefined;
+  return { command, resumeState: undefined as TerminalResumeState | undefined };
+}
+
+function buildResumeCommand(session: TerminalSession, snapshot: TerminalSnapshot | null | undefined, terminalIntegrations: TerminalCommandIntegration[]) {
+  for (const integration of terminalIntegrations) {
+    const command = integration.buildResumeCommand?.({ session, snapshot });
+    if (command) return command;
+  }
+  return session.resumeState?.resumeCommand ?? snapshot?.resumeState?.resumeCommand;
+}
+
+function integrationOwnsCommand(command: string | undefined, terminalIntegrations: TerminalCommandIntegration[]) {
+  return !!command && terminalIntegrations.some((integration) => integration.ownsCommand?.(command));
 }
 
 function terminalPersistedTab(entry: RecordEntry): TerminalPersistedTab {
   const restoreId = entry.session.restoreId ?? entry.session.id;
   const snapshot = snapshots.get(restoreId);
-  const resumeStartupCommand = buildPiResumeCommand(entry.session, snapshot);
+  if (snapshot) hydrateSnapshotResumeState(snapshot, entry.terminalIntegrations);
+  const resumeState = entry.session.resumeState ?? snapshot?.resumeState;
+  const resumeStartupCommand = buildResumeCommand(entry.session, snapshot, entry.terminalIntegrations);
   return {
     ...entry.session,
     ...entry.context,
-    piSessionId: entry.session.piSessionId ?? snapshot?.piSessionId,
-    piResumeCommand: entry.session.piResumeCommand ?? snapshot?.piResumeCommand,
+    resumeState,
     resumeStartupCommand,
     lastActiveAt: new Date().toISOString(),
   };
@@ -195,16 +196,12 @@ export async function loadOpenTerminalState(): Promise<TerminalPersistedState | 
 function updateSnapshot(entry: RecordEntry, data: string) {
   const session = entry.session;
   if (!entry.headlessDisposed) entry.headless.write(data);
-  // Rolling raw tail so the resume-hint pattern still matches across chunk
-  // boundaries even though the snapshot itself is now the serialized buffer.
+  // Rolling raw tail lets extensions match resume hints across chunk boundaries
+  // even though the snapshot itself is now the serialized buffer.
   entry.recentOutput = (entry.recentOutput + data).slice(-4096);
   const snapshot = ensureSnapshotRecord(entry);
-  const match = data.match(PI_RESUME_PATTERN) ?? entry.recentOutput.match(PI_RESUME_PATTERN);
-  if (match?.[1] && match[2]) {
-    session.piSessionId = match[2];
-    session.piResumeCommand = match[1].replace(/\s+/g, ' ').trim();
-    snapshot.piSessionId = session.piSessionId;
-    snapshot.piResumeCommand = session.piResumeCommand;
+  for (const integration of entry.terminalIntegrations) {
+    applyResumeState(session, snapshot, integration.captureResumeState?.({ data, recentOutput: entry.recentOutput, session, snapshot }));
   }
   snapshot.updatedAt = new Date().toISOString();
   scheduleSnapshotWrite(entry);
@@ -216,7 +213,7 @@ function isTerminalVisible(entry: RecordEntry) {
 
 // Startup commands are held until the renderer has replayed the restored
 // snapshot and calls terminal.ready (or a fallback timeout for tabs restored in
-// the background). TUI apps like pi paint their first frame immediately;
+// the background). Full-screen terminal apps paint their first frame immediately;
 // launching them before the real-geometry restore barrier is serialized lets
 // absolute cursor repaints overwrite restored history.
 function applyPendingRestoreBarrier(entry: RecordEntry) {
@@ -293,11 +290,14 @@ function resolveCwd(cwd: string) {
 }
 
 export async function createTerminal(profileId: string, cwd: string, name?: string, startupCommand?: string, restoreId?: string, context?: TerminalSessionContext): Promise<TerminalSession> {
-  const profile = await resolveShell(profileId);
+  const settings = await loadSettings().catch(() => getDefaultSettings());
+  const profile = settings.terminalProfiles.find((item) => item.id === profileId) ?? settings.terminalProfiles[0] ?? getDefaultSettings().terminalProfiles[0];
+  const terminalIntegrations = getEnabledTerminalIntegrations(settings);
   const resolvedCwd = resolveCwd(cwd);
   const stableRestoreId = restoreId || `restore_${crypto.randomUUID()}`;
   const effectiveStartupCommand = resolveTerminalStartupCommand({ explicitStartupCommand: startupCommand, profileStartupCommand: profile.startupCommand });
-  const normalizedStartupCommand = normalizePiStartupCommand(effectiveStartupCommand, stableRestoreId);
+  const resolvedStartupCommand = resolveIntegratedStartupCommand(effectiveStartupCommand, stableRestoreId, resolvedCwd, name || profile.name, terminalIntegrations);
+  const normalizedStartupCommand = resolvedStartupCommand.command;
   const session: TerminalSession = {
     id: `term_${crypto.randomUUID()}`,
     restoreId: stableRestoreId,
@@ -305,12 +305,11 @@ export async function createTerminal(profileId: string, cwd: string, name?: stri
     profileId: profile.id,
     cwd: resolvedCwd,
     startupCommand: normalizedStartupCommand,
-    piResumeCommand: normalizedStartupCommand && PI_COMMAND_PATTERN.test(normalizedStartupCommand) && piCommandHasStableTarget(normalizedStartupCommand) ? normalizedStartupCommand : undefined,
+    resumeState: resolvedStartupCommand.resumeState,
     restoredFromSnapshot: Boolean(restoreId),
     createdAt: new Date().toISOString(),
   };
 
-  const settings = await loadSettings().catch(() => getDefaultSettings());
   const bridgeEnv = settings.captureTerminalBrowserOpens ? getBridgeEnv(session.id) : {};
 
   const terminal = pty.spawn(profile.shell, profile.args, {
@@ -330,7 +329,7 @@ export async function createTerminal(profileId: string, cwd: string, name?: stri
   const serializeAddon = new SerializeAddon();
   headless.loadAddon(serializeAddon as unknown as HeadlessTerminalAddon);
   const pendingRestoreBarrier = session.restoredFromSnapshot && priorSnapshot?.output
-    ? { resumeCommand: normalizedStartupCommand && PI_COMMAND_PATTERN.test(normalizedStartupCommand) ? normalizedStartupCommand : undefined }
+    ? { resumeCommand: buildResumeCommand(session, priorSnapshot, terminalIntegrations) ?? (integrationOwnsCommand(normalizedStartupCommand, terminalIntegrations) ? normalizedStartupCommand : undefined) }
     : null;
   if (session.restoredFromSnapshot && priorSnapshot?.output) {
     // Seed only the previous session's rendered buffer at spawn geometry. The
@@ -339,7 +338,7 @@ export async function createTerminal(profileId: string, cwd: string, name?: stri
     // repaint area.
     headless.write(`${priorSnapshot.output}\x1b[0m`);
   }
-  const entry: RecordEntry = { session, context, terminal, pendingData: [], flushTimer: null, pendingStartupCommand: null, pendingRestoreBarrier, headless, serializeAddon, recentOutput: '', headlessDisposed: false, discardSnapshot: false };
+  const entry: RecordEntry = { session, context, terminal, pendingData: [], flushTimer: null, pendingStartupCommand: null, pendingRestoreBarrier, terminalIntegrations, headless, serializeAddon, recentOutput: '', headlessDisposed: false, discardSnapshot: false };
   terminal.onData((data) => queueTerminalOutput(entry, data));
   terminal.onExit(({ exitCode }) => {
     cancelPendingStartupCommand(entry);
@@ -416,16 +415,21 @@ export async function getTerminalSnapshot(idOrRestoreId: string): Promise<Termin
       snapshot.output = trimSnapshotOutput(output, MAX_SNAPSHOT_BYTES);
       snapshot.updatedAt = new Date().toISOString();
     }
+    hydrateSnapshotResumeState(snapshot, entry.terminalIntegrations);
     return snapshot;
   }
+  const settings = await loadSettings().catch(() => getDefaultSettings());
+  const terminalIntegrations = getEnabledTerminalIntegrations(settings);
   const existing = snapshots.get(idOrRestoreId) ?? snapshots.get(restoreId);
   if (existing) {
     existing.output = sanitizeSnapshotReplay(existing.output ?? '');
+    hydrateSnapshotResumeState(existing, terminalIntegrations);
     return existing;
   }
   try {
     const parsed = JSON.parse(await fsp.readFile(snapshotPath(restoreId), 'utf8')) as TerminalSnapshot;
     parsed.output = sanitizeSnapshotReplay(parsed.output ?? '');
+    hydrateSnapshotResumeState(parsed, terminalIntegrations);
     snapshots.set(restoreId, parsed);
     if (parsed.id) snapshots.set(parsed.id, parsed);
     return parsed;

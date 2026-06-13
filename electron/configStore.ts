@@ -3,6 +3,8 @@ import type { ExtensionConfigPrimitive, StackDockSettings, TerminalProfile } fro
 import { DEFAULT_KEYBINDS } from '../src/shared/defaultKeybinds';
 import { normalizeKeybind } from '../src/shared/keybinds';
 import { ensureDataDirs, getConfigPath } from './storage';
+import { getBundledTerminalProfiles } from '../extensions/mainRegistry';
+import { getBundledExtensionManifests } from './extensionService';
 
 const UI_FONT_FAMILY = '"Inter Variable", "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif';
 const CODE_FONT_FAMILY = '"Monaspace Neon", "Cascadia Code", Consolas, monospace';
@@ -53,6 +55,17 @@ function normalizeExtensionConfig(rawConfig: unknown): Record<string, Record<str
   return normalized;
 }
 
+function getBundledExtensionConfigDefaults(): Record<string, Record<string, ExtensionConfigPrimitive>> {
+  const defaults: Record<string, Record<string, ExtensionConfigPrimitive>> = {};
+  for (const manifest of getBundledExtensionManifests()) {
+    const fields = manifest.contributes?.configuration?.fields ?? [];
+    const config: Record<string, ExtensionConfigPrimitive> = {};
+    for (const field of fields) if (field.default !== undefined) config[field.key] = field.default;
+    if (Object.keys(config).length) defaults[manifest.id] = config;
+  }
+  return defaults;
+}
+
 export function getDefaultSettings(): StackDockSettings {
   const programFiles = process.env['ProgramFiles'] ?? 'C:\\Program Files';
   return {
@@ -79,6 +92,7 @@ export function getDefaultSettings(): StackDockSettings {
       disabled: [],
       enabled: [],
       config: {
+        ...getBundledExtensionConfigDefaults(),
         'stackdock.sessions': { emptySessionsVisible: false, showSessionCwdForAll: false },
         'stackdock.git': { confirmBeforeDiscard: true, refreshIntervalSeconds: 1 },
         'stackdock.workspaceStatus': { showPath: true },
@@ -87,7 +101,7 @@ export function getDefaultSettings(): StackDockSettings {
     terminalProfiles: [
       { id: 'powershell', name: 'PowerShell', shell: 'powershell.exe', args: ['-NoLogo', '-NoExit'] },
       { id: 'cmd', name: 'Command Prompt', shell: 'cmd.exe', args: [] },
-      { id: 'pi', name: 'Pi', shell: 'cmd.exe', args: [], startupCommand: 'pi' },
+      ...getBundledTerminalProfiles(),
       { id: 'git-bash', name: 'Git Bash', shell: `${programFiles}\\Git\\bin\\bash.exe`, args: ['--login', '-i'] },
       { id: 'wsl', name: 'WSL', shell: 'wsl.exe', args: [] },
     ],
