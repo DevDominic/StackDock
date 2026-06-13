@@ -31,6 +31,8 @@ export interface ExtensionListResult { extensions: ExtensionManifest[]; errors: 
 export interface ExtensionSettings { localPackagePaths: string[]; disabled: string[]; enabled: string[]; config: Record<string, Record<string, ExtensionConfigPrimitive>>; }
 export interface WorkspaceExtensionState { enabled?: string[]; disabled?: string[]; activeActivityViewId?: string; activeBottomViewId?: string; panelSizesByViewId?: Record<string, number>; visibleViewIds?: string[]; }
 
+export type KeybindMap = Record<string, string>;
+
 export interface StackDockSettings {
   /** Unified app + Monaco theme id. */
   themeId: string;
@@ -57,6 +59,7 @@ export interface StackDockSettings {
   terminal: { fontSize: number; fontFamily: string; cursorBlink: boolean; startAtBottom: boolean };
   terminalProfiles: TerminalProfile[];
   extensions: ExtensionSettings;
+  keybinds: KeybindMap;
 }
 
 /** @deprecated Superseded by PaletteCommand (stored in automation.json). Kept so old workspaces.json still type-checks; no longer written or surfaced. */
@@ -74,6 +77,7 @@ export interface PaletteCommand {
   id: string;
   label: string;
   command: string;
+  keybind?: string;
   cwd?: string;
   /** Per-workspace: name given to the terminal the command spawns. */
   terminalName?: string;

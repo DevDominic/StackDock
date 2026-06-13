@@ -209,6 +209,7 @@ html[data-window-controls="native"] .window-titlebar { height: 43px; border-bott
 html[data-window-controls="native"] .window-titlebar::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; height: 1px; background: var(--border); pointer-events: none; }
 html[data-window-controls="native"] .window-titlebar-drag { padding-right: 150px; }
 html[data-window-controls="native"] .topbar-right { padding-right: 138px; }
+html[data-window-controls="native"] .workspace-titlebar::after { right: 138px; }
 .hero, .topbar, .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .hero h1, .topbar h2 { margin: 0; }
 .hero p, .muted { color: var(--muted); }
@@ -707,6 +708,10 @@ html[data-window-controls="native"] .topbar-right { padding-right: 138px; }
 .launcher-item:not(:has(> small)) { min-height: 32px; grid-template-rows: auto; }
 .launcher-item.active, .launcher-item:hover { background: var(--accent-soft); }
 .launcher-item > span { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.25; }
+.launcher-item-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.keybind-chip, .keybind-recorder { font-family: var(--code-font); font-size: 11px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-panel); color: var(--text); padding: 3px 7px; white-space: nowrap; }
+.keybind-editor { display: flex; align-items: center; gap: 6px; }
+.keybind-recorder { min-height: 30px; cursor: text; }
 .launcher-item > small { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; line-height: 1.25; }
 .launcher-empty { padding: 12px; text-align: center; }
 .session-switcher-current { color: var(--primary); font-style: italic; }
@@ -739,7 +744,7 @@ html[data-window-controls="native"] .topbar-right { padding-right: 138px; }
 .settings-modal > .panel-title.row button { width: 34px; height: 34px; min-height: 34px; padding: 0; border-radius: 10px; font-size: 18px; line-height: 1; }
 .settings-tabs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   align-self: stretch;
   gap: 3px;
   height: auto;
@@ -966,6 +971,10 @@ html[data-window-controls="native"] .topbar-right { padding-right: 138px; }
 .checkbox-field { flex-direction: row !important; align-items: center; gap: 8px; font-size: 12px; }
 .checkbox-field input { width: auto; }
 .add-command { align-self: flex-start; }
+.keybind-list { display: flex; flex-direction: column; gap: 8px; }
+.keybind-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 10px 12px; background: color-mix(in srgb, var(--bg-panel) 78%, transparent); border: 1px solid var(--border); border-radius: 10px; }
+.keybind-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.keybind-field { min-width: 170px; }
 
 /* ---- Bottom status bar (widget-based, VSCode-style) ---- */
 .statusbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 26px; flex-shrink: 0; padding: 0 6px; background: var(--statusbar-bg); border-top: 1px solid var(--statusbar-border); font-size: 11px; line-height: 1; color: var(--statusbar-fg); }

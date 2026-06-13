@@ -1,10 +1,23 @@
 import fs from 'fs/promises';
 import type { ExtensionConfigPrimitive, StackDockSettings, TerminalProfile } from '../src/shared/types';
+import { DEFAULT_KEYBINDS } from '../src/shared/defaultKeybinds';
+import { normalizeKeybind } from '../src/shared/keybinds';
 import { ensureDataDirs, getConfigPath } from './storage';
 
 const UI_FONT_FAMILY = '"Inter Variable", "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif';
 const CODE_FONT_FAMILY = '"Monaspace Neon", "Cascadia Code", Consolas, monospace';
 const LEGACY_DEFAULT_CODE_FONTS = new Set(['Consolas, monospace', '"Consolas", monospace']);
+
+function normalizeKeybindSettings(raw: unknown, defaults: Record<string, string>) {
+  const result: Record<string, string> = { ...defaults };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return result;
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value !== 'string') continue;
+    const normalized = normalizeKeybind(value);
+    result[key] = normalized ?? '';
+  }
+  return result;
+}
 
 function migrateCodeFont(fontFamily?: string) {
   const value = fontFamily?.trim();
@@ -60,6 +73,7 @@ export function getDefaultSettings(): StackDockSettings {
     code: { ligatures: true },
     editor: { fontSize: 13, fontFamily: CODE_FONT_FAMILY, tabSize: 2, wordWrap: 'off' },
     terminal: { fontSize: 14, fontFamily: CODE_FONT_FAMILY, cursorBlink: true, startAtBottom: false },
+    keybinds: DEFAULT_KEYBINDS,
     extensions: {
       localPackagePaths: [],
       disabled: [],
@@ -143,6 +157,7 @@ export async function loadSettings(): Promise<StackDockSettings> {
       showSessionCwdForAll: extensionsConfig['stackdock.sessions'].showSessionCwdForAll === true,
       gitRefreshIntervalSeconds: Math.max(1, Number(extensionsConfig['stackdock.git'].refreshIntervalSeconds) || defaults.gitRefreshIntervalSeconds),
       terminalProfiles: normalizeTerminalProfiles(raw.terminalProfiles, defaults.terminalProfiles),
+      keybinds: normalizeKeybindSettings(raw.keybinds, defaults.keybinds),
       extensions: {
         localPackagePaths: Array.isArray(raw.extensions?.localPackagePaths) ? raw.extensions.localPackagePaths.filter((item): item is string => typeof item === 'string') : defaults.extensions.localPackagePaths,
         disabled: Array.isArray(raw.extensions?.disabled) ? raw.extensions.disabled.filter((item): item is string => typeof item === 'string') : defaults.extensions.disabled,
@@ -167,6 +182,7 @@ export async function saveSettings(settings: StackDockSettings): Promise<StackDo
     emptySessionsVisible: sessionsConfig.emptySessionsVisible === true,
     showSessionCwdForAll: sessionsConfig.showSessionCwdForAll === true,
     extensions: { ...settings.extensions, config: normalizeExtensionConfig(settings.extensions.config) },
+    keybinds: normalizeKeybindSettings(settings.keybinds, DEFAULT_KEYBINDS),
     terminalProfiles: normalizeTerminalProfiles(settings.terminalProfiles, []),
   };
   await fs.writeFile(getConfigPath(), JSON.stringify(persisted, null, 2), 'utf8');

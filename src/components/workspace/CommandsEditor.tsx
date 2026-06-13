@@ -1,4 +1,5 @@
 import type { PaletteCommand } from '../../shared/types';
+import { formatKeybind, normalizeKeybind } from '../../shared/keybinds';
 
 interface Props {
   commands: PaletteCommand[];
@@ -13,6 +14,25 @@ interface Props {
 
 function blankCommand(): PaletteCommand {
   return { id: crypto.randomUUID(), label: 'New command', command: '' };
+}
+
+function KeybindInput({ value, onChange }: { value?: string; onChange(value?: string): void }) {
+  return (
+    <div className="keybind-editor">
+      <button
+        type="button"
+        className="keybind-recorder"
+        title="Focus, then press a key combination"
+        onKeyDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const next = normalizeKeybind([event.ctrlKey || event.metaKey ? 'Mod' : '', event.altKey ? 'Alt' : '', event.shiftKey ? 'Shift' : '', event.key].filter(Boolean).join('+'));
+          if (next) onChange(next);
+        }}
+      >{value ? formatKeybind(value) : 'Record shortcut'}</button>
+      {value ? <button type="button" className="ghost" onClick={() => onChange(undefined)}>Clear</button> : null}
+    </div>
+  );
 }
 
 // Roomy, multi-field editor for global and per-workspace commands. Replaces the
@@ -65,6 +85,10 @@ export function CommandsEditor({ commands, onChange, onRun, showSessionFields = 
                   <input value={command.terminalName ?? ''} onChange={(event) => update(command.id, { terminalName: event.target.value || undefined })} placeholder="Defaults to label" />
                 </label>
               ) : null}
+              <label className="field keybind-field">
+                <span>Keybind <span className="muted">(optional)</span></span>
+                <KeybindInput value={command.keybind} onChange={(keybind) => update(command.id, { keybind })} />
+              </label>
             </div>
             {showSessionFields ? (
               <label className="checkbox-field">

@@ -3,12 +3,14 @@ import { api } from '../../lib/api';
 import { getErrorMessage } from '../../lib/errors';
 import { DEFAULT_THEME_ID, applyTheme, getThemes, parseVsCodeThemeJson, registerThemes } from '../../lib/themeSupport';
 import type { AutomationConfig, ExtensionConfigField, ExtensionConfigPrimitive, ExtensionListResult, ExtensionManifest, PaletteCommand, StackDockSettings, Workspace, WorkspaceSetup } from '../../shared/types';
+import { BUILTIN_KEYBIND_COMMANDS, DEFAULT_KEYBINDS, EXTENSION_KEYBIND_COMMANDS } from '../../shared/defaultKeybinds';
+import { findKeybindConflicts, formatKeybind, normalizeKeybind } from '../../shared/keybinds';
 import { CommandsEditor } from './CommandsEditor';
 import { JsonCodeEditor } from './JsonCodeEditor';
 import { useExtensions } from '../../extensions/ExtensionProvider';
 import { coerceConfigValue, defaultsFromFields, getExtensionConfig, setExtensionConfig } from '../../extensions/configuration';
 
-export type SettingsTab = 'general' | 'appearance' | 'terminal' | 'extensions' | 'workspace';
+export type SettingsTab = 'general' | 'appearance' | 'terminal' | 'extensions' | 'workspace' | 'keybinds';
 
 interface Props {
   settings: StackDockSettings;
@@ -189,6 +191,19 @@ function extensionInitials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return 'EX';
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
+}
+
+function KeybindRecorder({ value, onChange }: { value?: string; onChange(value: string): void }) {
+  return (
+    <div className="keybind-editor">
+      <button className="keybind-recorder" onKeyDown={(event) => {
+        event.preventDefault(); event.stopPropagation();
+        const next = normalizeKeybind([event.ctrlKey || event.metaKey ? 'Mod' : '', event.altKey ? 'Alt' : '', event.shiftKey ? 'Shift' : '', event.key].filter(Boolean).join('+'));
+        if (next) onChange(next);
+      }}>{value ? formatKeybind(value) : 'Unbound — press keys'}</button>
+      {value ? <button className="ghost" onClick={() => onChange('')}>Clear</button> : null}
+    </div>
+  );
 }
 
 function setWindowOverlayDimmed(dimmed: boolean) {
@@ -394,6 +409,27 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
     }
   }
 
+  async function saveKeybindSettings() {
+    setSaving(true);
+    setWsSaving(true);
+    setWsError(null);
+    try {
+      const savedSettings = await onSave(draft);
+      if (config) {
+        const savedAutomation = await api.automation.saveRaw(JSON.stringify(buildPersistableAutomation(config, originalKeys), null, 2));
+        setConfig(savedAutomation);
+        onAutomationSaved(savedAutomation);
+      }
+      setWsSaved(true);
+      return savedSettings;
+    } catch (err) {
+      setWsError(getErrorMessage(err, 'Could not save keybinds'));
+    } finally {
+      setSaving(false);
+      setWsSaving(false);
+    }
+  }
+
   const orderedKeys = [GLOBAL_KEY, ...keyOrder];
 
   async function importEditorTheme() {
@@ -469,6 +505,33 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
     setDraft((current) => setExtensionConfig(current, extensionId, patch));
   }
 
+  const currentWorkspaceCommands = selectedKey !== GLOBAL_KEY ? (config?.workspaces[selectedKey]?.commands ?? []) : [];
+  const extensionKeybindSections = extensionResult.extensions
+    .filter((extension) => extensionEnabled(extension, draft) && EXTENSION_KEYBIND_COMMANDS[extension.id]?.length)
+    .map((extension) => ({ extension, commands: EXTENSION_KEYBIND_COMMANDS[extension.id] }));
+  const keybindEntries = [
+    ...BUILTIN_KEYBIND_COMMANDS.map(([id, label]) => ({ id, label, keybind: draft.keybinds[id] })),
+    ...extensionKeybindSections.flatMap(({ extension, commands }) => commands.map(([id, label]) => ({ id, label: `${extension.name}: ${label}`, keybind: draft.keybinds[id] }))),
+    ...(config?.commands ?? []).map((command) => ({ id: `global:${command.id}`, label: `Global: ${command.label}`, keybind: command.keybind })),
+    ...currentWorkspaceCommands.map((command) => ({ id: `ws:${command.id}`, label: `Workspace: ${command.label}`, keybind: command.keybind })),
+  ];
+  const keybindConflicts = findKeybindConflicts(keybindEntries);
+
+  function setBuiltinKeybind(id: string, keybind: string) {
+    setDraft((current) => ({ ...current, keybinds: { ...current.keybinds, [id]: normalizeKeybind(keybind) ?? '' } }));
+  }
+
+  function setCommandKeybind(scope: 'global' | 'workspace', id: string, keybind: string) {
+    const normalized = normalizeKeybind(keybind) ?? undefined;
+    setWsSaved(false);
+    setConfig((prev) => {
+      if (!prev) return prev;
+      if (scope === 'global') return { ...prev, commands: prev.commands.map((command) => command.id === id ? { ...command, keybind: normalized } : command) };
+      const current = prev.workspaces[selectedKey] ?? {};
+      return { ...prev, workspaces: { ...prev.workspaces, [selectedKey]: { ...current, commands: (current.commands ?? []).map((command) => command.id === id ? { ...command, keybind: normalized } : command) } } };
+    });
+  }
+
   function renderConfigField(extensionId: string, field: ExtensionConfigField, value: ExtensionConfigPrimitive | undefined) {
     const setValue = (next: unknown) => patchExtensionConfig(extensionId, { [field.key]: coerceConfigValue(field, next) });
     if (field.type === 'boolean') return <label className="checkbox-field" key={field.key}><input type="checkbox" checked={value === true} onChange={(event) => setValue(event.target.checked)} /> {field.label}</label>;
@@ -494,6 +557,7 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
           <button className={tab === 'terminal' ? 'active-toggle' : ''} onClick={() => setTab('terminal')}>Terminal profiles</button>
           <button className={tab === 'extensions' ? 'active-toggle' : ''} onClick={() => setTab('extensions')}>Extensions</button>
           <button className={tab === 'workspace' ? 'active-toggle' : ''} onClick={() => setTab('workspace')}>Workspace</button>
+          <button className={tab === 'keybinds' ? 'active-toggle' : ''} onClick={() => setTab('keybinds')}>Keybinds</button>
         </div>
 
         {tab === 'general' ? (
@@ -668,6 +732,44 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
           </div>
         ) : null}
 
+        {tab === 'keybinds' ? (
+          <div className="settings-tab-body keybinds-settings-body">
+            <p className="muted config-hint">Click a shortcut button, then press the desired key combination. Custom command keybinds are saved to automation.json.</p>
+            <h3>Built-in commands</h3>
+            <div className="keybind-list">
+              {BUILTIN_KEYBIND_COMMANDS.map(([id, label]) => (
+                <div className="keybind-row" key={id}>
+                  <span>{label}</span>
+                  <KeybindRecorder value={draft.keybinds[id]} onChange={(value) => setBuiltinKeybind(id, value)} />
+                  <button className="ghost" onClick={() => setBuiltinKeybind(id, DEFAULT_KEYBINDS[id] ?? '')}>Reset</button>
+                </div>
+              ))}
+            </div>
+            {extensionKeybindSections.length ? <h3>Extension commands</h3> : null}
+            {extensionKeybindSections.map(({ extension, commands }) => (
+              <div className="keybind-list" key={extension.id}>
+                <p className="muted config-hint">{extension.name}</p>
+                {commands.map(([id, label]) => (
+                  <div className="keybind-row" key={id}>
+                    <span>{label}</span>
+                    <KeybindRecorder value={draft.keybinds[id]} onChange={(value) => setBuiltinKeybind(id, value)} />
+                    <button className="ghost" onClick={() => setBuiltinKeybind(id, DEFAULT_KEYBINDS[id] ?? '')}>Reset</button>
+                  </div>
+                ))}
+              </div>
+            ))}
+            <h3>Custom commands</h3>
+            {!config ? <div className="empty-pad muted">Loading…</div> : (
+              <div className="keybind-list">
+                {config.commands.map((command) => <div className="keybind-row" key={`global:${command.id}`}><span>Global: {command.label}</span><KeybindRecorder value={command.keybind} onChange={(value) => setCommandKeybind('global', command.id, value)} /></div>)}
+                {currentWorkspaceCommands.map((command) => <div className="keybind-row" key={`ws:${command.id}`}><span>Workspace: {command.label}</span><KeybindRecorder value={command.keybind} onChange={(value) => setCommandKeybind('workspace', command.id, value)} /></div>)}
+                {!config.commands.length && !currentWorkspaceCommands.length ? <p className="muted config-hint">No custom commands yet. Add them in the Workspace tab.</p> : null}
+              </div>
+            )}
+            {keybindConflicts.length ? <div className="banner error settings-warning">{keybindConflicts.map((conflict) => <div key={conflict.keybind}><b>{formatKeybind(conflict.keybind)}</b>: {conflict.items.map((item) => item.label).join(', ')}</div>)}</div> : null}
+          </div>
+        ) : null}
+
         {tab === 'workspace' ? (
           <div className="settings-tab-body">
             <p className="muted config-hint">
@@ -722,6 +824,11 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
               {workspaceViewMode === 'json' && workspaceJsonDirty && !wsSaved && !wsSaving ? <span className="muted workspace-save-status">Unsaved JSON changes</span> : null}
               <button className="primary" disabled={wsLoading || wsSaving || !config} onClick={saveWorkspace}>{wsSaving ? 'Saving…' : 'Save'}</button>
             </div>
+          </div>
+        ) : tab === 'keybinds' ? (
+          <div className="modal-actions">
+            <button className="ghost" onClick={closeWithoutSave}>Cancel</button>
+            <button className="primary" disabled={saving || wsSaving} onClick={async () => { await saveKeybindSettings(); onClose(); }}>{saving || wsSaving ? 'Saving...' : 'Save'}</button>
           </div>
         ) : (
           <div className="modal-actions">

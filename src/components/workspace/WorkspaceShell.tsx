@@ -20,6 +20,7 @@ import type { WorkspaceExtensionContext } from '../../extensions/extensionTypes'
 import { WindowControls } from '../TitleBar';
 import { FolderIcon, FolderOpenIcon, GitBranchIcon, HomeIcon, PanelLeftIcon, SettingsIcon } from '../icons';
 import { resolveTerminalStartupCommand } from '../../shared/terminalProfiles';
+import { keybindMatchesEvent, isEditableTarget } from '../../shared/keybinds';
 
 const EditorPanel = lazy(() => import('./EditorPanel.js').then((module) => ({ default: module.EditorPanel })));
 
@@ -1095,40 +1096,45 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const panelSizes = mergedLayout.panels.panelSizes ?? { sessions: 14, explorer: 18, main: 68, editor: 72, git: 28, upper: 62, terminal: 38 };
   const safePanelSizes = getSafePanelSizes(panelSizes, sidebarVisible, sessionsVisible);
   const extensionCommands = enabledExtensions.flatMap((manifest) => extensionRegistry.nativeExtensions.get(manifest.id)?.getCommands?.(extensionCtx) ?? []);
+  function openSettings(tab: SettingsTab = 'general') { setSettingsInitialTab(tab); setSettingsOpen(true); }
+  const settingsActions: CommandAction[] = [
+    { id: 'stackdock.settings.open', label: 'Open Settings', keybind: settings?.keybinds['stackdock.settings.open'], run: () => openSettings('general') },
+    { id: 'stackdock.settings.open.general', label: 'Open Settings: General', keybind: settings?.keybinds['stackdock.settings.open.general'], run: () => openSettings('general') },
+    { id: 'stackdock.settings.open.appearance', label: 'Open Settings: Appearance', keybind: settings?.keybinds['stackdock.settings.open.appearance'], run: () => openSettings('appearance') },
+    { id: 'stackdock.settings.open.terminal', label: 'Open Settings: Terminal profiles', keybind: settings?.keybinds['stackdock.settings.open.terminal'], run: () => openSettings('terminal') },
+    { id: 'stackdock.settings.open.extensions', label: 'Open Settings: Extensions', keybind: settings?.keybinds['stackdock.settings.open.extensions'], run: () => openSettings('extensions') },
+    { id: 'stackdock.settings.open.workspace', label: 'Open Settings: Workspace', keybind: settings?.keybinds['stackdock.settings.open.workspace'], run: () => openSettings('workspace') },
+    { id: 'stackdock.settings.open.keybinds', label: 'Open Settings: Keybinds', keybind: settings?.keybinds['stackdock.settings.open.keybinds'], run: () => openSettings('keybinds') },
+  ];
   const launcherActions: CommandAction[] = [
     // User-defined commands first so they're front-and-center in the palette.
-    ...(workspaceSetup?.commands ?? []).map((command) => ({ id: `ws:${command.id}`, label: command.label, description: command.command, run: () => runPaletteCommand(command) })),
-    ...(automation?.commands ?? []).map((command) => ({ id: `global:${command.id}`, label: command.label, description: command.command, run: () => runPaletteCommand(command) })),
-    { id: 'new-terminal', label: 'New Terminal', run: () => createTerminal(undefined, 'Terminal', '') },
-    ...extensionCommands,
-    { id: 'show-terminal', label: 'Show Terminal', run: showTerminal },
+    ...(workspaceSetup?.commands ?? []).map((command) => ({ id: `ws:${command.id}`, label: command.label, description: command.command, keybind: command.keybind, run: () => runPaletteCommand(command) })),
+    ...(automation?.commands ?? []).map((command) => ({ id: `global:${command.id}`, label: command.label, description: command.command, keybind: command.keybind, run: () => runPaletteCommand(command) })),
+    { id: 'stackdock.terminal.new', label: 'New Terminal', keybind: settings?.keybinds['stackdock.terminal.new'], run: () => createTerminal(undefined, 'Terminal', '') },
+    ...extensionCommands.map((command) => ({ ...command, keybind: settings?.keybinds[command.id] })),
+    { id: 'stackdock.view.toggleTerminal', label: 'Show/Toggle Terminal', keybind: settings?.keybinds['stackdock.view.toggleTerminal'], run: toggleMainView },
+    { id: 'stackdock.view.toggleSidebar', label: 'Toggle Sidebar', keybind: settings?.keybinds['stackdock.view.toggleSidebar'], run: toggleActivitySidebar },
+    { id: 'stackdock.tab.closeActive', label: 'Close Active Tab', keybind: settings?.keybinds['stackdock.tab.closeActive'], run: () => { if (mainView === 'web' && activeWebId) closeLink(activeWebId); else if (activeFilePath) void closeFile(activeFilePath, activeEditors.activeEditorGroup); } },
     ...(activeTerminalId ? [
       { id: 'restart-terminal', label: 'Restart Terminal', run: () => restartTerminal(activeTerminalId) },
       { id: 'close-terminal', label: 'Close Terminal', run: () => closeTerminal(activeTerminalId) },
     ] : []),
-    { id: 'edit-config', label: 'Edit Workspace Config (JSON)', run: () => { setSettingsInitialTab('workspace'); setSettingsOpen(true); } },
+    ...settingsActions,
     { id: 'open-folder', label: 'Open Workspace Folder', run: () => api.fs.revealInExplorer(workspace.path) },
   ];
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const inField = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT' || target?.isContentEditable;
-      const key = event.key.toLowerCase();
-      if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 'p') { event.preventDefault(); setLauncherOpen(true); return; }
-      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && key === 'p') { event.preventDefault(); setSessionSwitcherOpen(true); return; }
-      if (inField) return;
-      if ((event.ctrlKey || event.metaKey) && event.key === '`') { event.preventDefault(); toggleMainView(); }
-      if ((event.ctrlKey || event.metaKey) && key === 'b') { event.preventDefault(); toggleActivitySidebar(); }
-      if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 't') { event.preventDefault(); void createTerminal(undefined, 'Terminal', ''); }
-      if ((event.ctrlKey || event.metaKey) && key === 'w') {
-        if (mainView === 'web' && activeWebId) { event.preventDefault(); closeLink(activeWebId); }
-        else if (activeFilePath) { event.preventDefault(); closeFile(activeFilePath, activeEditors.activeEditorGroup); }
-      }
+      if (launcherOpen) return;
+      if (keybindMatchesEvent(settings?.keybinds['stackdock.commandPalette.open'], event)) { event.preventDefault(); setLauncherOpen(true); return; }
+      if (keybindMatchesEvent(settings?.keybinds['stackdock.sessions.switcher.open'], event)) { event.preventDefault(); setSessionSwitcherOpen(true); return; }
+      if (isEditableTarget(event.target)) return;
+      const action = launcherActions.find((item) => item.keybind && keybindMatchesEvent(item.keybind, event));
+      if (action) { event.preventDefault(); void action.run(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [activeFilePath, activeWebId, mainView, activeTerminalId, defaultProfile?.id, visibleActivityViewIds.length, activityContributions, openFiles.length, openLinks.length, workspaceSetup, profiles]);
+  }, [launcherOpen, launcherActions, settings?.keybinds]);
 
   const webPane = webSplit ? (
     <>

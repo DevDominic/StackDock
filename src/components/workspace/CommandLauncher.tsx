@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { formatKeybind } from '../../shared/keybinds';
 
-export interface CommandAction { id: string; label: string; description?: string; run(): void | Promise<void>; }
+export interface CommandAction { id: string; label: string; description?: string; keybind?: string; run(): void | Promise<void>; }
 interface Props { open: boolean; actions: CommandAction[]; onClose(): void; }
 
 export function CommandLauncher({ open, actions, onClose }: Props) {
@@ -28,7 +29,7 @@ export function CommandLauncher({ open, actions, onClose }: Props) {
         <div className="launcher-list">
           {filtered.map((action, itemIndex) => (
             <button key={action.id} className={itemIndex === index ? 'launcher-item active' : 'launcher-item'} onMouseEnter={() => setIndex(itemIndex)} onClick={() => { void action.run(); onClose(); }}>
-              <span>{action.label}</span>{action.description ? <small>{action.description}</small> : null}
+              <span className="launcher-item-title"><span>{action.label}</span>{action.keybind ? <kbd className="keybind-chip">{formatKeybind(action.keybind)}</kbd> : null}</span>{action.description ? <small>{action.description}</small> : null}
             </button>
           ))}
           {!filtered.length ? <div className="launcher-empty muted">No commands found.</div> : null}
