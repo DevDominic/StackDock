@@ -121,8 +121,12 @@ export function WorkspaceDashboard({ workspaces, onAdd, onCreate, onOpen, onRemo
       ) : (
         <div className="workspace-grid">
           {filtered.map((workspace) => {
+            const statusLoaded = workspace.id in statuses;
             const status = statuses[workspace.id];
-            const changeCount = status?.files.length ?? 0;
+            const isRepo = status?.isRepo === true;
+            const changeCount = isRepo ? status.files.length : 0;
+            const branchLabel = statusLoaded ? (isRepo ? status.branch ?? 'No branch' : 'Not a repo') : 'Checking…';
+            const changesLabel = isRepo ? (changeCount ? `${changeCount} ${changeCount === 1 ? 'change' : 'changes'}` : 'Clean') : '—';
             const when = workspace.lastOpenedAt ? `Opened ${new Date(workspace.lastOpenedAt).toLocaleDateString()}` : `Created ${new Date(workspace.createdAt).toLocaleDateString()}`;
             return (
               <article key={workspace.id} className={`ws-card${workspace.pinned ? ' pinned' : ''}`} onDoubleClick={() => onOpen(workspace.id)}>
@@ -137,8 +141,8 @@ export function WorkspaceDashboard({ workspaces, onAdd, onCreate, onOpen, onRemo
                   </button>
                 </div>
                 <div className="ws-chips">
-                  <span className="chip"><Icon path={mdiSourceBranch} /> {status?.branch ?? '—'}</span>
-                  <span className={`chip${changeCount ? ' dirty' : ''}`}>{changeCount ? `${changeCount} ${changeCount === 1 ? 'change' : 'changes'}` : 'Clean'}</span>
+                  <span className="chip"><Icon path={mdiSourceBranch} /> {branchLabel}</span>
+                  <span className={`chip${changeCount ? ' dirty' : ''}`}>{changesLabel}</span>
                   <span className="chip subtle">{when}</span>
                 </div>
                 <div className="ws-actions">
