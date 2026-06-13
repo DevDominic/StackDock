@@ -538,7 +538,9 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       onKeyDownCapture={handleKeyDownCapture}
       onContextMenu={handleContextMenu}
     >
-      <div ref={mountRef} className="terminal-mount" />
+      <div className="terminal-mount">
+        <div ref={mountRef} className="terminal-xterm-inner" />
+      </div>
       {attachmentStatus ? <div className="terminal-attachment-status">{attachmentStatus}</div> : null}
       {terminalMenu ? (
         <div className="context-menu terminal-context-menu" style={{ top: terminalMenu.y, left: terminalMenu.x }} onMouseDown={(event) => event.stopPropagation()}>
