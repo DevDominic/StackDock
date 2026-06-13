@@ -912,25 +912,19 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     try { setGitError(null); await api.git.commit(workspace.path, message); await refreshGit(); showToast('Commit created', 'success'); } catch (error) { showGitError(error); showToast(getErrorMessage(error, 'Commit failed'), 'error'); }
   }
 
-  function promptCommitMessage() {
-    const message = window.prompt('Commit message');
-    const trimmed = message?.trim() ?? '';
-    return trimmed || null;
+  async function commitStaged(message: string) {
+    const trimmed = message.trim();
+    if (!trimmed) return;
+    await commit(trimmed);
   }
 
-  async function commitWithPrompt() {
-    const message = promptCommitMessage();
-    if (!message) return;
-    await commit(message);
-  }
-
-  async function stageAllAndCommit() {
-    const message = promptCommitMessage();
-    if (!message) return;
+  async function stageAllAndCommit(message: string) {
+    const trimmed = message.trim();
+    if (!trimmed) return;
     try {
       setGitError(null);
       await api.git.addAll(workspace.path);
-      await api.git.commit(workspace.path, message);
+      await api.git.commit(workspace.path, trimmed);
       await refreshGit();
       showToast('Commit created', 'success');
     } catch (error) {
@@ -1063,7 +1057,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       discard,
       discardSelected: discardPaths,
       commit,
-      commitWithPrompt,
+      commitStaged,
       stageAllAndCommit,
       switchBranch: switchGitBranch,
       fetch: () => runGitRemoteAction('fetch'),

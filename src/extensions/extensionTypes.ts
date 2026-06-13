@@ -6,6 +6,7 @@ export interface ExtensionCommand {
   label: string;
   description?: string;
   run(): void | Promise<void>;
+  prompt?: { placeholder: string; run(value: string): void | Promise<void>; };
 }
 
 export interface WorkspaceExtensionContext {
@@ -46,8 +47,8 @@ export interface WorkspaceExtensionContext {
     discard(path: string): void | Promise<void>;
     discardSelected(paths: string[]): void | Promise<void>;
     commit(message: string): void | Promise<void>;
-    commitWithPrompt(): void | Promise<void>;
-    stageAllAndCommit(): void | Promise<void>;
+    commitStaged(message: string): void | Promise<void>;
+    stageAllAndCommit(message: string): void | Promise<void>;
     switchBranch(branch: string): void | Promise<void>;
     fetch(): void | Promise<void>;
     pull(): void | Promise<void>;

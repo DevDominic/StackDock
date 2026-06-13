@@ -38,8 +38,8 @@ export const gitExtension: NativeExtension = {
     return [
       { id: 'show-git', label: 'Show Source Control', run: actions.openGit },
       ...(unstaged ? [{ id: 'git-stage-all', label: 'Git: Stage All', description: 'Stage all changed files', run: gitActions.stageAll }] : []),
-      ...(staged ? [{ id: 'git-commit-staged', label: 'Git: Commit Staged...', description: `${staged} staged ${staged === 1 ? 'file' : 'files'}`, run: gitActions.commitWithPrompt }] : []),
-      ...(git.files.length ? [{ id: 'git-stage-all-commit', label: 'Git: Stage All and Commit...', description: 'Stage all changes, then commit', run: gitActions.stageAllAndCommit }] : []),
+      { id: 'git-commit', label: 'Git: Commit...', description: git.files.length ? 'Stage all changes, then commit' : 'Commit current index', run: () => undefined, prompt: { placeholder: 'Commit message', run: gitActions.stageAllAndCommit } },
+      { id: 'git-commit-staged', label: 'Git: Commit Staged...', description: staged ? `${staged} staged ${staged === 1 ? 'file' : 'files'}` : 'Commit current index', run: () => undefined, prompt: { placeholder: 'Commit message', run: gitActions.commitStaged } },
       { id: 'git-fetch', label: 'Git: Fetch', description: 'Fetch from remote', run: gitActions.fetch },
       { id: 'git-pull', label: 'Git: Pull', description: 'Pull current branch with --ff-only', run: gitActions.pull },
       { id: 'git-push', label: 'Git: Push', description: 'Push current branch', run: gitActions.push },
