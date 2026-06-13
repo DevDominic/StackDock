@@ -1148,7 +1148,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       {webSplit === 'right' || webSplit === 'down' ? <PanelResizeHandle className={`resize-handle ${webSplit === 'down' ? 'horizontal' : 'vertical'}`} /> : null}
       <Panel key="web-split" id="main-web-split" order={webSplit === 'left' || webSplit === 'up' ? 1 : 2} defaultSize={45} minSize={15}>
         <div className="main-tab-pane web-split-pane" style={{ display: 'flex' }}>
-          <WebTabPanel tabs={openLinks} activeId={activeWebId} onTitle={setWebTitle} />
+          <WebTabPanel tabs={openLinks} activeId={activeWebId} onTitle={setWebTitle} onClose={closeLink} />
         </div>
       </Panel>
       {webSplit === 'left' || webSplit === 'up' ? <PanelResizeHandle className={`resize-handle ${webSplit === 'up' ? 'horizontal' : 'vertical'}`} /> : null}
@@ -1335,7 +1335,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
                   </div>
                   {!webSplit ? (
                     <div className="main-tab-pane" style={{ display: mainView === 'web' ? 'flex' : 'none' }}>
-                      <WebTabPanel tabs={openLinks} activeId={activeWebId} onTitle={setWebTitle} />
+                      <WebTabPanel tabs={openLinks} activeId={activeWebId} onTitle={setWebTitle} onClose={closeLink} />
                     </div>
                   ) : null}
                 </Panel>

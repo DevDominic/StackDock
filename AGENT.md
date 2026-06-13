@@ -108,7 +108,7 @@ extensions/                 Built-in extension packages
     renderer/index.tsx
     renderer/workspaceStatus.css
 
-tests/                      Vitest coverage for services, extensions, git, terminals
+tests/                      Vitest coverage for services, extensions, git, terminals, renderer stores
 docs/                       Extension authoring and folder-format docs
 release/                    electron-builder output dir for packaged .exe/installers (generated, not source)
 dist/                       Vite renderer build output (generated; packaging input)
@@ -136,6 +136,7 @@ dist-electron/              Electron main/preload build output (generated; packa
 - New backend capability = add channel in `main.ts` + arg guards in `validation.ts` + bridge method in `preload.ts` + type in `shared/types.ts` `StackDockApi`. Keep all four in sync.
 - Renderer never imports Node/`electron`; go through `api`.
 - Global terminal active-session fallback prefers another session in the same workspace before falling back to other workspaces, so session highlighting and restore state stay aligned.
+- Windows browser-capture helpers should avoid visible console windows; Plannotator/browser opens route through the hidden bridge helper into StackDock web tabs.
 - Theming is unified: a single `themeId` drives both Monaco and the app via CSS variables in `themeSupport.ts`. VS Code `*-color-theme.json` files can be imported by users.
 - IPC channel naming: `domain:action`. Renderer→main events listened via `onTerminalData` / `onTerminalExit` / `onTerminalStatus` / `onWorkspaceChanged`.
 - Packaging size notes: renderer-only libraries live in `devDependencies` because Vite bundles them into `dist/`; keep only true main-process runtime modules (currently `node-pty`) in `dependencies`. Electron Builder outputs to `release/` to avoid recursively packaging `dist/win-unpacked`; keep generated package artifacts out of `dist/` or explicitly excluded in `build.files`.

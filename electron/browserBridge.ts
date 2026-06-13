@@ -20,19 +20,34 @@ function bridgeDir() {
   return path.join(getDataDir(), 'bridge');
 }
 
-function helperScriptPath() {
-  return path.join(bridgeDir(), process.platform === 'win32' ? 'open-url.cmd' : 'open-url.sh');
+function cmdHelperScriptPath() {
+  return path.join(bridgeDir(), 'open-url.cmd');
+}
+
+function shHelperScriptPath() {
+  return path.join(bridgeDir(), 'open-url.sh');
+}
+
+function vbsHelperScriptPath() {
+  return path.join(bridgeDir(), 'open-url.vbs');
+}
+
+function quoteWindowsArg(value: string) {
+  return `"${value.replace(/"/g, '""')}"`;
 }
 
 /** Env injected into terminals so CLI tools route browser opens back into StackDock. */
 export function getBridgeEnv(sessionId: string): Record<string, string> {
   if (!server) return {};
-  const helper = helperScriptPath();
+  const helper = process.platform === 'win32' ? cmdHelperScriptPath() : shHelperScriptPath();
+  const hiddenHelper = process.platform === 'win32'
+    ? `wscript.exe //B //Nologo ${quoteWindowsArg(vbsHelperScriptPath())}`
+    : helper;
   return {
     STACKDOCK_BRIDGE_PORT: String(port),
     STACKDOCK_BRIDGE_TOKEN: token,
     STACKDOCK_SESSION_ID: sessionId,
-    PLANNOTATOR_BROWSER: helper,
+    PLANNOTATOR_BROWSER: hiddenHelper,
     BROWSER: helper,
   };
 }
@@ -61,10 +76,38 @@ fi
 if command -v xdg-open >/dev/null 2>&1; then xdg-open "$url"; elif command -v open >/dev/null 2>&1; then open "$url"; fi
 `;
 
+const VBS_SCRIPT = `Option Explicit
+Dim args, url, shell, env, port, token, sessionId, http, target
+Set args = WScript.Arguments
+If args.Count = 0 Then WScript.Quit 1
+url = args(0)
+Set shell = CreateObject("WScript.Shell")
+Set env = shell.Environment("PROCESS")
+port = env("STACKDOCK_BRIDGE_PORT")
+token = env("STACKDOCK_BRIDGE_TOKEN")
+sessionId = env("STACKDOCK_SESSION_ID")
+If Len(port) > 0 Then
+  On Error Resume Next
+  target = "http://127.0.0.1:" & port & "/open-url"
+  Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+  http.open "POST", target, False
+  http.setTimeouts 1000, 1000, 3000, 3000
+  http.setRequestHeader "X-StackDock-Token", token
+  http.setRequestHeader "X-StackDock-Session", sessionId
+  http.setRequestHeader "Content-Type", "text/plain"
+  http.send url
+  If Err.Number = 0 And http.status >= 200 And http.status < 300 Then WScript.Quit 0
+  On Error GoTo 0
+End If
+shell.Run "rundll32 url.dll,FileProtocolHandler " & Chr(34) & url & Chr(34), 0, False
+WScript.Quit 0
+`;
+
 async function writeHelperScripts() {
   await fs.mkdir(bridgeDir(), { recursive: true });
-  await fs.writeFile(path.join(bridgeDir(), 'open-url.cmd'), CMD_SCRIPT, 'utf8');
-  const shPath = path.join(bridgeDir(), 'open-url.sh');
+  await fs.writeFile(cmdHelperScriptPath(), CMD_SCRIPT, 'utf8');
+  await fs.writeFile(vbsHelperScriptPath(), VBS_SCRIPT, 'utf8');
+  const shPath = shHelperScriptPath();
   await fs.writeFile(shPath, SH_SCRIPT, 'utf8');
   await fs.chmod(shPath, 0o755).catch(() => undefined);
 }
