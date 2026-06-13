@@ -22,6 +22,19 @@ interface SessionState {
   getWorkspaceSessions(workspaceId: string): WorkspaceTerminalSession[];
 }
 
+function pickNextActiveSession(sessions: WorkspaceTerminalSession[], preferredWorkspaceId?: string | null, previousActiveSessionId?: string | null) {
+  const sameWorkspace = preferredWorkspaceId ? sessions.find((session) => session.workspaceId === preferredWorkspaceId && session.id !== previousActiveSessionId) : null;
+  return sameWorkspace ?? sessions.find((session) => session.id !== previousActiveSessionId) ?? sessions[0] ?? null;
+}
+
+function persistActiveSession(session: WorkspaceTerminalSession | null, workspaceIdFallback?: string | null) {
+  if (session) {
+    void api.app.saveRestoreState({ lastWorkspaceId: session.workspaceId, lastTerminalRestoreId: session.restoreId, lastTerminalRuntimeId: session.id }).catch(() => undefined);
+  } else if (workspaceIdFallback) {
+    void api.app.saveRestoreState({ lastWorkspaceId: workspaceIdFallback }).catch(() => undefined);
+  }
+}
+
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
   headlessRuns: [],
@@ -47,34 +60,55 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       return session;
     }
     set({ sessions: [...get().sessions, session], activeSessionId: session.id, activeWorkspaceId: session.workspaceId });
-    void api.app.saveRestoreState({ lastWorkspaceId: session.workspaceId, lastTerminalRestoreId: session.restoreId, lastTerminalRuntimeId: session.id }).catch(() => undefined);
+    persistActiveSession(session);
     return session;
   },
   async closeSession(id) {
-    const closing = get().sessions.find((session) => session.id === id);
+    const current = get();
+    const closing = current.sessions.find((session) => session.id === id);
     await api.terminal.kill(id);
     if (closing?.restoreId) await api.terminal.forgetSnapshot(closing.restoreId).catch(() => undefined);
     const next = get().sessions.filter((session) => session.id !== id);
-    set({ sessions: next, activeSessionId: get().activeSessionId === id ? next[0]?.id ?? null : get().activeSessionId });
+    if (get().activeSessionId !== id) {
+      set({ sessions: next });
+      return;
+    }
+    const picked = pickNextActiveSession(next, closing?.workspaceId ?? current.activeWorkspaceId, id);
+    const fallbackWorkspaceId = picked?.workspaceId ?? closing?.workspaceId ?? current.activeWorkspaceId;
+    set({ sessions: next, activeSessionId: picked?.id ?? null, activeWorkspaceId: fallbackWorkspaceId ?? null });
+    persistActiveSession(picked, fallbackWorkspaceId);
   },
   appendHeadlessOutput(id, data) {
     set({ headlessRuns: get().headlessRuns.map((run) => run.id === id ? { ...run, output: (run.output + data).slice(-HEADLESS_OUTPUT_MAX_CHARS) } : run) });
   },
   removeHeadlessRun(id) { set({ headlessRuns: get().headlessRuns.filter((run) => run.id !== id) }); },
   removeSessionLocal(id) {
-    const next = get().sessions.filter((session) => session.id !== id);
-    set({ sessions: next, activeSessionId: get().activeSessionId === id ? next[0]?.id ?? null : get().activeSessionId });
+    const current = get();
+    const removing = current.sessions.find((session) => session.id === id);
+    const next = current.sessions.filter((session) => session.id !== id);
+    if (current.activeSessionId !== id) {
+      set({ sessions: next });
+      return;
+    }
+    const picked = pickNextActiveSession(next, removing?.workspaceId ?? current.activeWorkspaceId, id);
+    const fallbackWorkspaceId = picked?.workspaceId ?? removing?.workspaceId ?? current.activeWorkspaceId;
+    set({ sessions: next, activeSessionId: picked?.id ?? null, activeWorkspaceId: fallbackWorkspaceId ?? null });
+    persistActiveSession(picked, fallbackWorkspaceId);
   },
   renameSession(id, name) { set({ sessions: get().sessions.map((session) => session.id === id ? { ...session, name } : session) }); },
   replaceSession(id, next) {
     set({ sessions: get().sessions.map((session) => session.id === id ? next : session), activeSessionId: next.id, activeWorkspaceId: next.workspaceId });
-    void api.app.saveRestoreState({ lastWorkspaceId: next.workspaceId, lastTerminalRestoreId: next.restoreId, lastTerminalRuntimeId: next.id }).catch(() => undefined);
+    persistActiveSession(next);
   },
   setActiveSession(id) {
     const session = get().sessions.find((item) => item.id === id);
     set({ activeSessionId: id, activeWorkspaceId: session?.workspaceId ?? get().activeWorkspaceId });
-    if (session) void api.app.saveRestoreState({ lastWorkspaceId: session.workspaceId, lastTerminalRestoreId: session.restoreId, lastTerminalRuntimeId: session.id }).catch(() => undefined);
+    if (session) persistActiveSession(session);
   },
-  setActiveWorkspace(id) { set({ activeWorkspaceId: id }); if (id) void api.app.saveRestoreState({ lastWorkspaceId: id, lastTerminalRestoreId: get().sessions.find((session) => session.id === get().activeSessionId)?.restoreId, lastTerminalRuntimeId: get().activeSessionId ?? undefined }).catch(() => undefined); },
+  setActiveWorkspace(id) {
+    const activeSession = get().sessions.find((session) => session.id === get().activeSessionId && session.workspaceId === id) ?? null;
+    set({ activeWorkspaceId: id });
+    if (id) persistActiveSession(activeSession, id);
+  },
   getWorkspaceSessions(workspaceId) { return get().sessions.filter((session) => session.workspaceId === workspaceId); },
 }));

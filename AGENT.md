@@ -135,6 +135,7 @@ dist-electron/              Electron main/preload build output (generated; packa
 - When asked to interact with or test the running Electron app, use the native `agent_browser` tool against the `npm run dev` app launched with `--agent-browser`; do not use manual browser-driving scripts unless explicitly requested.
 - New backend capability = add channel in `main.ts` + arg guards in `validation.ts` + bridge method in `preload.ts` + type in `shared/types.ts` `StackDockApi`. Keep all four in sync.
 - Renderer never imports Node/`electron`; go through `api`.
+- Global terminal active-session fallback prefers another session in the same workspace before falling back to other workspaces, so session highlighting and restore state stay aligned.
 - Theming is unified: a single `themeId` drives both Monaco and the app via CSS variables in `themeSupport.ts`. VS Code `*-color-theme.json` files can be imported by users.
 - IPC channel naming: `domain:action`. Renderer→main events listened via `onTerminalData` / `onTerminalExit` / `onTerminalStatus` / `onWorkspaceChanged`.
 - Packaging size notes: renderer-only libraries live in `devDependencies` because Vite bundles them into `dist/`; keep only true main-process runtime modules (currently `node-pty`) in `dependencies`. Electron Builder outputs to `release/` to avoid recursively packaging `dist/win-unpacked`; keep generated package artifacts out of `dist/` or explicitly excluded in `build.files`.
