@@ -48,12 +48,12 @@ describe('terminal snapshot sanitation', () => {
     const barrier = buildRestoredScrollbackBarrier(3, 'pi -r');
     expect(barrier).toContain('──── restored scrollback; live output follows ────');
     expect(barrier).toContain('[resuming session with: pi -r]');
-    expect(barrier).toMatch(/(?:\r\n){3}\x1b\[H$/);
-    expect(barrier.endsWith('\x1b[H')).toBe(true);
+    expect(barrier).toMatch(/(?:\r\n){3}\x1b\[H\x1b\[J$/);
+    expect(barrier.endsWith('\x1b[H\x1b[J')).toBe(true);
   });
 
   it('clamps invalid restored scrollback barrier row counts', () => {
-    expect(buildRestoredScrollbackBarrier(-2)).not.toMatch(/(?:\r\n){3}\x1b\[H$/);
-    expect(buildRestoredScrollbackBarrier(Number.NaN)).not.toMatch(/(?:\r\n){3}\x1b\[H$/);
+    expect(buildRestoredScrollbackBarrier(-2)).not.toMatch(/(?:\r\n){3}\x1b\[H\x1b\[J$/);
+    expect(buildRestoredScrollbackBarrier(Number.NaN)).not.toMatch(/(?:\r\n){3}\x1b\[H\x1b\[J$/);
   });
 });
