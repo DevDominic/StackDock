@@ -311,8 +311,10 @@ function stripAnsi(value: string) {
 function cleanHeadlessOutput(value: string, command: string) {
   let output = value;
   if (command) {
-    const commandIndex = output.indexOf(command);
-    if (commandIndex >= 0) output = output.slice(commandIndex + command.length);
+    const exactIndex = output.lastIndexOf(command);
+    const prefixIndex = exactIndex < 0 ? output.lastIndexOf(command.slice(0, Math.min(command.length, 80))) : -1;
+    const commandIndex = exactIndex >= 0 ? exactIndex : prefixIndex;
+    if (commandIndex >= 0) output = output.slice(commandIndex + (exactIndex >= 0 ? command.length : 0));
   }
   return output
     .split('\n')
@@ -327,8 +329,10 @@ function truncateHeadlessOutput(value: string) {
   return `${value.slice(0, HEADLESS_TOAST_MAX_CHARS - 1)}…`;
 }
 
-function wrapHeadlessStartupCommand(command: string) {
-  return `${command}\r\nexit\r\n`;
+function wrapHeadlessStartupCommand(command: string, shell: string) {
+  const shellName = path.basename(shell).toLowerCase();
+  const suppressEcho = shellName === 'cmd.exe' || shellName === 'cmd' ? '@echo off\r\n' : '';
+  return `${suppressEcho}${command}\r\nexit\r\n`;
 }
 
 function sendHeadlessResult(entry: RecordEntry, exitCode: number | null) {
@@ -421,7 +425,7 @@ export async function createTerminal(profileId: string, cwd: string, name?: stri
       sendHeadlessResult(entry, null);
       terminal.kill();
     }, HEADLESS_TIMEOUT_MS);
-    terminal.write(wrapHeadlessStartupCommand(normalizedStartupCommand));
+    terminal.write(wrapHeadlessStartupCommand(normalizedStartupCommand, profile.shell));
   } else if (context?.headless) {
     sendHeadlessResult(entry, 0);
     terminal.kill();

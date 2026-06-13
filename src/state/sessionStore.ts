@@ -4,9 +4,23 @@ import type { HeadlessCommandRun, WorkspaceTerminalSession } from '../shared/typ
 
 const HEADLESS_OUTPUT_MAX_CHARS = 128 * 1024;
 
+function stripAnsi(value: string) {
+  return value
+    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
+}
+
 function cleanHeadlessOutput(output: string, command: string) {
-  const commandIndex = command ? output.indexOf(command) : -1;
-  const trimmed = commandIndex >= 0 ? output.slice(commandIndex + command.length) : output;
+  let trimmed = stripAnsi(output);
+  if (command) {
+    const exactIndex = trimmed.lastIndexOf(command);
+    const prefixIndex = exactIndex < 0 ? trimmed.lastIndexOf(command.slice(0, Math.min(command.length, 80))) : -1;
+    const commandIndex = exactIndex >= 0 ? exactIndex : prefixIndex;
+    if (commandIndex >= 0) trimmed = trimmed.slice(commandIndex + (exactIndex >= 0 ? command.length : 0));
+  }
   return trimmed
     .split('\n')
     .filter((line, index) => !(index === 0 && !line.trim()))
