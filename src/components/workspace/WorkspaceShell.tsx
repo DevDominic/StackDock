@@ -313,9 +313,10 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       sessionStore.appendHeadlessOutput(payload.id, payload.data);
     });
     const disposeResult = api.onTerminalHeadlessResult((payload) => {
+      const liveRunOutput = useSessionStore.getState().headlessRuns.find((run) => run.id === payload.id)?.output.trim();
       sessionStore.removeSessionLocal(payload.id);
       sessionStore.removeHeadlessRun(payload.id);
-      const output = payload.output.trim();
+      const output = liveRunOutput || payload.output.trim();
       const message = `${payload.label ?? 'Command'}: ${output || (payload.timedOut ? 'Timed out' : 'Completed')}`;
       showToast(message.length > 700 ? `${message.slice(0, 699)}…` : message, payload.exitCode === 0 && !payload.timedOut ? 'success' : 'error');
     });
@@ -507,11 +508,21 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       const existingGroup = current.editorGroups.find((group) => group.openFiles.some((file) => file.path === path));
       const targetGroupId = groupId ?? existingGroup?.id ?? current.activeEditorGroup;
       if (existingGroup && !groupId) {
+        const existingFile = existingGroup.openFiles.find((file) => file.path === path);
+        const refreshedFile = existingFile && !existingFile.dirty
+          ? existingFile.mediaKind
+            ? await api.fs.readFileDataUrl(path).then((media) => ({ ...existingFile, dataUrl: media.dataUrl, mimeType: media.mimeType }))
+            : await api.fs.readFile(path).then((file) => ({ ...existingFile, content: file.content }))
+          : null;
         patchSession(sessionId, (prev) => ({
           ...prev,
           activeKind: 'editor',
           activeEditorGroup: existingGroup.id,
-          editorGroups: prev.editorGroups.map((group) => (group.id === existingGroup.id ? { ...group, activeFile: path } : group)),
+          editorGroups: prev.editorGroups.map((group) => (group.id === existingGroup.id ? {
+            ...group,
+            activeFile: path,
+            openFiles: group.openFiles.map((file) => (file.path === path && refreshedFile && !file.dirty ? refreshedFile : file)),
+          } : group)),
         }));
         return;
       }
