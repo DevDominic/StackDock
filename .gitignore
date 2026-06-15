@@ -1,32 +1,42 @@
-node_modules
-/dist
-/dist-electron
-/release
-.DS_Store
-*.log
-.claude
-.lean-ctx
-nul
-# Plans — files containing plan/plans in name, or inside plan/plans folders
-*[Pp][Ll][Aa][Nn]*.md
-*[Pp][Ll][Aa][Nn][Ss]*.md
-plans/
-plan/
-# Claude Code local settings (machine-specific permissions)
-.claude/settings.local.json
+# Dependencies
+node_modules/
 
-# Agent/automation session artifacts
-.pi-agent-browser-artifacts/
-pi-session-*.html
-
-# Temporary and debug working files
-tmp-*.txt
-tmp-*.json
-diff-children.json
-side-layout.json
-compare-only-gap.png
-side-by-side-gap.png
-side-by-side-gap-fixed.png
-stackdock-source-control.png
-
+# Build outputs
+dist/
+dist-electron/
+release/
 .buildstamp
+
+# Runtime/log artifacts
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment/local config
+.env
+.env.*
+!.env.example
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test/coverage artifacts
+coverage/
+.nyc_output/
+
+# Electron/package temp output
+*.asar
+*.blockmap
+*.dmg
+*.AppImage
+*.exe
+*.msi

@@ -1,0 +1,45 @@
+name: Bug report
+description: Report a reproducible StackDock bug
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping improve StackDock.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide exact steps and relevant workspace/app settings.
+      placeholder: |
+        1. Open ...
+        2. Click ...
+        3. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: StackDock version or commit
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Drag in screenshots or paste relevant logs. Do not include secrets.
