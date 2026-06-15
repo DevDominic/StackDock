@@ -593,6 +593,10 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
             <div className="banner settings-warning">
               <strong>Workspace trust:</strong> terminals, automation, git mutations, webviews, and local extensions can affect your machine. Read <code>docs/security-model.md</code> before opening unfamiliar projects.
             </div>
+            <div className="extension-config-reset">
+              {renderResetSettingsButton()}
+              <span className="muted code-font-note">Restores app settings, themes, keybinds, terminal profiles, local extension paths, and extension config defaults.</span>
+            </div>
           </div>
         ) : null}
 
@@ -827,7 +831,6 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
         {tab === 'workspace' ? (
           <div className="modal-actions workspace-modal-actions">
             <div className="settings-reset-actions">
-              {renderResetSettingsButton()}
               <button className="ghost" disabled={wsLoading || !config} onClick={workspaceViewMode === 'ui' ? showWorkspaceJsonMode : showWorkspaceUiMode}>
                 {workspaceViewMode === 'ui' ? 'View JSON Mode' : 'View UI Mode'}
               </button>
@@ -840,7 +843,6 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
           </div>
         ) : tab === 'keybinds' ? (
           <div className="modal-actions settings-modal-actions">
-            {renderResetSettingsButton()}
             <div className="settings-save-actions">
               <button className="ghost" onClick={closeWithoutSave}>Cancel</button>
               <button className="primary" disabled={saving || wsSaving} onClick={async () => { await saveKeybindSettings(); onClose(); }}>{saving || wsSaving ? 'Saving...' : 'Save'}</button>
@@ -849,7 +851,6 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
         ) : tab === 'extensions' ? (
           <div className="modal-actions extension-modal-actions">
             <div className="extension-footer-actions">
-              {renderResetSettingsButton()}
               <button className="ghost" disabled={extensionsLoading} onClick={loadExtensions}>{extensionsLoading ? 'Loading…' : 'Reload extensions'}</button>
               <button className="ghost" onClick={addLocalExtensionPackage}>Add local package</button>
             </div>
@@ -860,7 +861,6 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
           </div>
         ) : (
           <div className="modal-actions settings-modal-actions">
-            {renderResetSettingsButton()}
             <div className="settings-save-actions">
               <button className="ghost" onClick={closeWithoutSave}>Cancel</button>
               <button className="primary" disabled={!valid || saving} onClick={async () => { setSaving(true); await onSave(draft); setSaving(false); onClose(); }}>{saving ? 'Saving...' : 'Save'}</button>
