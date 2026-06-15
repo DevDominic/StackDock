@@ -342,6 +342,7 @@ html[data-window-controls="native"] .workspace-titlebar::after { right: 138px; }
 .new-terminal-popover, .session-create-menu { position: absolute; z-index: 60; top: calc(100% + 6px); left: 0; width: 380px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px; padding: 10px; box-shadow: 0 12px 36px var(--shadow); }
 .sessions-title .new-session { position: static; }
 .session-create-menu { left: 0; right: 0; width: auto; min-width: 0; text-transform: none; letter-spacing: 0; }
+.profile-pick-list { display: flex; flex-direction: column; gap: 4px; }
 .new-terminal-popover input, .session-create-menu input { width: 100%; background: var(--bg-panel); color: inherit; border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
 .profile-pills { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
 .profile-pills button { min-height: 26px; padding: 3px 8px; font-size: 12px; }
@@ -515,7 +516,7 @@ html[data-window-controls="native"] .workspace-titlebar::after { right: 138px; }
 
 /* ---- New-session split button ---- */
 .new-session { position: relative; display: inline-flex; }
-.sessions-title .new-session { border: 1px solid var(--border-strong); border-radius: 7px; background: var(--bg-elevated); overflow: hidden; }
+.sessions-title .new-session { border: 1px solid var(--border-strong); border-radius: 7px; background: var(--bg-elevated); overflow: visible; }
 .new-session-main {
   display: inline-flex; align-items: center;
   border-radius: 6px 0 0 6px;

@@ -37,7 +37,8 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
   const visibleWorkspaces = useMemo(() => workspaces.filter((workspace) => emptySessionsVisible || sessions.some((session) => session.workspaceId === workspace.id)), [emptySessionsVisible, sessions, workspaces]);
   const flatWorkspace = visibleWorkspaces.length <= 1 ? visibleWorkspaces[0] ?? workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces[0] ?? null : null;
   const defaultProfile = profiles.find((profile) => profile.id === profileId) ?? profiles.find((profile) => profile.id === defaultProfileId) ?? profiles[0] ?? null;
-  const filteredWorkspaces = useMemo(() => workspaces.filter((workspace) => `${workspace.name} ${workspace.path}`.toLowerCase().includes(query.toLowerCase())), [query, workspaces]);
+  const loadedWorkspaces = visibleWorkspaces.length > 1 ? visibleWorkspaces : [];
+  const filteredWorkspaces = useMemo(() => loadedWorkspaces.filter((workspace) => `${workspace.name} ${workspace.path}`.toLowerCase().includes(query.toLowerCase())), [query, loadedWorkspaces]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -155,11 +156,21 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
           <button className="new-session-caret" aria-label="Choose terminal target" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>▾</button>
           {menuOpen ? (
             <div className="new-session-menu session-create-menu" role="menu">
-              <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Workspace" />
-              {profiles.length ? <div className="profile-pills">{profiles.map((profile) => <button key={profile.id} className={profile.id === (defaultProfile?.id ?? profileId) ? 'ghost active-toggle' : 'ghost'} onClick={() => setProfileId(profile.id)}>{profile.name}</button>)}</div> : null}
-              <div className="workspace-pick-list">
-                {filteredWorkspaces.map((workspace) => <button key={workspace.id} className="workspace-pick" onClick={() => void createWith(workspace, defaultProfile?.id ?? profileId)}><strong>{workspace.name}</strong><small>{workspace.path}</small></button>)}
-              </div>
+              {flatWorkspace ? (
+                <div className="profile-pick-list">
+                  {(profiles.length ? profiles : [{ id: profileId, name: defaultProfile?.name ?? profileId } as TerminalProfile]).map((profile) => (
+                    <button key={profile.id} className="new-session-item" onClick={() => void createWith(flatWorkspace, profile.id)}>{profile.name}</button>
+                  ))}
+                </div>
+              ) : (
+                <>
+                  <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Workspace" />
+                  {profiles.length ? <div className="profile-pills">{profiles.map((profile) => <button key={profile.id} className={profile.id === (defaultProfile?.id ?? profileId) ? 'ghost active-toggle' : 'ghost'} onClick={() => setProfileId(profile.id)}>{profile.name}</button>)}</div> : null}
+                  <div className="workspace-pick-list">
+                    {filteredWorkspaces.map((workspace) => <button key={workspace.id} className="workspace-pick" onClick={() => void createWith(workspace, defaultProfile?.id ?? profileId)}><strong>{workspace.name}</strong><small>{workspace.path}</small></button>)}
+                  </div>
+                </>
+              )}
             </div>
           ) : null}
         </div>
