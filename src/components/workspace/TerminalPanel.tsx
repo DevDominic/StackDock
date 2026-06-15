@@ -542,6 +542,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       onPaste={handlePaste}
       onKeyDownCapture={handleKeyDownCapture}
       onContextMenu={handleContextMenu}
+      onMouseDown={() => terminalRef.current?.focus()}
     >
       <div className="terminal-mount">
         <div ref={mountRef} className="terminal-xterm-inner" />

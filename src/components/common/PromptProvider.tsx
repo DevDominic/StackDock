@@ -52,8 +52,11 @@ export function PromptProvider({ children }: { children: ReactNode }) {
   const [queue, setQueue] = useState<PromptRequest<boolean | string | null>[]>([]);
   const active = queue[0] ?? null;
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
 
   const enqueue = useCallback(<T,>(kind: PromptKind, options: ConfirmPromptOptions | InputPromptOptions) => new Promise<T>((resolve) => {
+    const activeElement = document.activeElement;
+    restoreFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null;
     setQueue((current) => [...current, { id: crypto.randomUUID(), kind, options, resolve: resolve as PromptRequest<boolean | string | null>['resolve'] }]);
   }), []);
 
@@ -61,10 +64,16 @@ export function PromptProvider({ children }: { children: ReactNode }) {
   const input = useCallback((options: InputPromptOptions | string, defaultValue?: string) => enqueue<string | null>('input', normalizeInput(options, defaultValue)), [enqueue]);
 
   const close = useCallback((value: boolean | string | null) => {
+    const focusedControl = document.activeElement;
+    if (focusedControl instanceof HTMLElement) focusedControl.blur();
+    const restoreFocus = restoreFocusRef.current;
     setQueue((current) => {
       const [request, ...rest] = current;
       request?.resolve(value);
       return rest;
+    });
+    window.requestAnimationFrame(() => {
+      if (restoreFocus?.isConnected) restoreFocus.focus();
     });
   }, []);
 
