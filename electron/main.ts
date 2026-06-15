@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } from 'electron';
+import fsSync from 'fs';
 import fs from 'fs/promises';
 import { watch, type FSWatcher } from 'fs';
 import os from 'os';
@@ -29,6 +30,14 @@ const nativeWindowControls = isWindows11();
 const remoteDebuggingPort = process.env.STACKDOCK_REMOTE_DEBUGGING_PORT ?? (!app.isPackaged ? '9222' : '');
 if (remoteDebuggingPort) app.commandLine.appendSwitch('remote-debugging-port', remoteDebuggingPort);
 const automationMode = process.env.STACKDOCK_AGENT_BROWSER === '1' || process.argv.includes('--agent-browser');
+const chromiumDiskCacheDir = path.join(os.tmpdir(), 'StackDock', 'chromium-cache', String(process.pid));
+try {
+  fsSync.mkdirSync(chromiumDiskCacheDir, { recursive: true });
+  app.commandLine.appendSwitch('disk-cache-dir', chromiumDiskCacheDir);
+  app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+} catch {
+  // If temp cache setup fails, Electron falls back to its default cache path.
+}
 
 function isWindows11() {
   if (process.platform !== 'win32') return false;
