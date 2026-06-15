@@ -53,7 +53,7 @@
     },
     "npmRebuild": false,
     "asarUnpack": [
-      "node_modules/node-pty/prebuilds/win32-x64/**/*"
+      "node_modules/node-pty/prebuilds/**/*"
     ],
     "files": [
       "dist/**/*",
@@ -61,8 +61,6 @@
       "!dist/win-unpacked.tmp{,/**}",
       "!dist/*.exe",
       "!dist/builder-effective-config.yaml",
-      "!node_modules/node-pty/prebuilds/darwin-*{,/**}",
-      "!node_modules/node-pty/prebuilds/linux-*{,/**}",
       "!node_modules/node-pty/prebuilds/win32-arm64{,/**}",
       "!node_modules/node-pty/prebuilds/win32-ia32{,/**}",
       "!node_modules/node-pty/prebuilds/**/*.pdb",
@@ -80,6 +78,19 @@
     ],
     "win": {
       "target": "portable"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development"
     }
   },
   "devDependencies": {
