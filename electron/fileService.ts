@@ -80,7 +80,11 @@ export async function renamePath(oldPath: string, newPath: string) {
 }
 
 export async function deletePath(targetPath: string) {
-  await fs.rm(targetPath, { recursive: true, force: true });
+  try {
+    await shell.trashItem(targetPath);
+  } catch {
+    await fs.rm(targetPath, { recursive: true, force: false });
+  }
 }
 
 export async function revealInExplorer(targetPath: string) {

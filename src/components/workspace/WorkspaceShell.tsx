@@ -191,7 +191,8 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     setSettings(appSettings);
     applyTheme(appSettings.themeId, appSettings.importedThemes);
   }, [appSettings]);
-  const workspaceSetup = automation?.workspaces[workspace.id];
+  const workspaceTrusted = workspace.trusted !== false;
+  const workspaceSetup = workspaceTrusted ? automation?.workspaces[workspace.id] : undefined;
   const isRepo = !!git?.isRepo;
   const gitExtensionId = extensionRegistry.extensions.find((manifest) => manifest.capabilities?.includes('git'))?.id;
   const gitConfig = getExtensionConfig(settings, gitExtensionId ?? '', { confirmBeforeDiscard: true, refreshIntervalSeconds: 1 });
@@ -199,6 +200,21 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   useEffect(() => {
     sessionsRef.current = sessions;
   }, [sessions]);
+
+  function requireTrusted(action: string) {
+    if (workspaceTrusted) return true;
+    showToast(`Trust this workspace before ${action}.`, 'info');
+    return false;
+  }
+
+  async function trustWorkspace() {
+    try {
+      await onUpdateWorkspace({ ...workspace, trusted: true });
+      showToast('Workspace trusted', 'success');
+    } catch (error) {
+      showToast(getErrorMessage(error, 'Could not trust workspace'), 'error');
+    }
+  }
 
   function updatePanels(next: Partial<WorkspaceLayout['panels']>) {
     setLayout((current) => {
@@ -885,6 +901,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   // Commands from automation.json (global or workspace-scoped). The optional
   // terminalName names the spawned terminal; cwd falls back to the workspace.
   async function runPaletteCommand(command: PaletteCommand) {
+    if (!requireTrusted('running automation commands')) return;
     await createTerminal(undefined, command.terminalName || command.label || 'Command', command.command, command.cwd?.trim() ? command.cwd : workspace.path, { headless: command.headless === true, commandLabel: command.label });
     if (command.headless) showToast(`Running ${command.label} headlessly`, 'info');
     else showToast(`Started ${command.label}`, 'success');
@@ -894,6 +911,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   // profile, then the global default. An empty startupCommand picks up the
   // workspace's "run on new session" command from automation.json.
   async function createTerminal(profileId?: string, name = 'Terminal', startupCommand = '', cwd = workspace.path, options?: { headless?: boolean; commandLabel?: string }) {
+    if (!requireTrusted('creating terminals')) return;
     try {
       const requested = profileId ?? workspaceSetup?.defaultTerminalProfile ?? defaultProfile?.id ?? 'powershell';
       const effectiveProfile = profiles.some((profile) => profile.id === requested) ? requested : defaultProfile?.id ?? 'powershell';
@@ -914,6 +932,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }
 
   async function restartTerminal(id: string, cwd?: string) {
+    if (!requireTrusted('restarting terminals')) return;
     const old = allSessions.find((session) => session.id === id);
     if (!old) return;
     await api.terminal.kill(old.id);
@@ -923,6 +942,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }
 
   async function duplicateTerminal(id: string) {
+    if (!requireTrusted('duplicating terminals')) return;
     const source = allSessions.find((session) => session.id === id);
     if (!source) return;
     await sessionStore.createSession({ workspaceId: source.workspaceId, workspaceName: source.workspaceName, workspacePath: source.workspacePath, profileId: source.profileId, cwd: source.cwd, name: `${source.name} Copy`, startupCommand: source.startupCommand ?? '' });
@@ -935,6 +955,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }
 
   async function splitTerminal(id: string, side: TerminalSplitSide) {
+    if (!requireTrusted('splitting terminals')) return;
     const target = allSessions.find((session) => session.id === id);
     if (!target) return;
     if (target.workspaceId !== workspace.id) { showToast('Open that workspace before splitting its session.', 'info'); return; }
@@ -1017,22 +1038,27 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }
 
   async function stage(path: string) {
+    if (!requireTrusted('staging git changes')) return;
     try { setGitError(null); await api.git.stage(workspace.path, path); await refreshGit(); } catch (error) { showGitError(error); }
   }
 
   async function stagePaths(paths: string[]) {
+    if (!requireTrusted('staging git changes')) return;
     try { setGitError(null); for (const path of paths) await api.git.stage(workspace.path, path); await refreshGit(); } catch (error) { showGitError(error); }
   }
 
   async function stageAll() {
+    if (!requireTrusted('staging git changes')) return;
     try { setGitError(null); await api.git.addAll(workspace.path); await refreshGit(); } catch (error) { showGitError(error); }
   }
 
   async function unstage(path: string) {
+    if (!requireTrusted('unstaging git changes')) return;
     try { setGitError(null); await api.git.unstage(workspace.path, path); await refreshGit(); } catch (error) { showGitError(error); }
   }
 
   async function unstagePaths(paths: string[]) {
+    if (!requireTrusted('unstaging git changes')) return;
     try { setGitError(null); for (const path of paths) await api.git.unstage(workspace.path, path); await refreshGit(); } catch (error) { showGitError(error); }
   }
 
@@ -1043,6 +1069,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }
 
   async function discard(path: string) {
+    if (!requireTrusted('discarding git changes')) return;
     if (gitConfig.confirmBeforeDiscard !== false && !window.confirm(`Discard changes in ${path}? This cannot be undone.`)) return;
     try {
       setGitError(null);
@@ -1053,6 +1080,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }
 
   async function discardPaths(paths: string[]) {
+    if (!requireTrusted('discarding git changes')) return;
     if (!paths.length) return;
     if (gitConfig.confirmBeforeDiscard !== false && !window.confirm(`Discard changes in ${paths.length} selected ${paths.length === 1 ? 'file' : 'files'}? This cannot be undone.`)) return;
     try {
@@ -1064,6 +1092,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }
 
   async function commit(message: string) {
+    if (!requireTrusted('committing git changes')) return;
     try { setGitError(null); await api.git.commit(workspace.path, message); await refreshGit(); showToast('Commit created', 'success'); } catch (error) { showGitError(error); showToast(getErrorMessage(error, 'Commit failed'), 'error'); }
   }
 
@@ -1074,6 +1103,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }
 
   async function stageAllAndCommit(message: string) {
+    if (!requireTrusted('committing git changes')) return;
     const trimmed = message.trim();
     if (!trimmed) return;
     try {
@@ -1089,6 +1119,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }
 
   async function performGitBranchSwitch(branch: string) {
+    if (!requireTrusted('switching git branches')) return;
     try {
       setGitError(null);
       await api.git.switchBranch(workspace.path, branch);
@@ -1122,6 +1153,8 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }
 
   async function runGitRemoteAction(kind: 'fetch' | 'pull' | 'push') {
+    if (!requireTrusted(`running git ${kind}`)) return;
+    if ((kind === 'pull' || kind === 'push') && !window.confirm(`Run git ${kind} in ${workspace.name}? This may ${kind === 'push' ? 'update the remote repository' : 'modify local files'}.`)) return;
     try {
       setGitError(null);
       await api.git[kind](workspace.path);
@@ -1447,6 +1480,16 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
           <WindowControls />
         </div>
       </header>
+
+      {!workspaceTrusted ? (
+        <div className="workspace-trust-banner" role="status">
+          <div>
+            <strong>Untrusted workspace</strong>
+            <span>Terminals, automation, git mutations, and workspace startup commands are blocked until you trust this folder.</span>
+          </div>
+          <button className="primary" onClick={() => void trustWorkspace()}>Trust workspace</button>
+        </div>
+      ) : null}
 
       <PanelGroup key={`${sessionsVisible ? 'sessions' : 'no-sessions'}-${sidebarVisible ? 'with-sidebar' : 'without-sidebar'}`} direction="horizontal" className="workspace-body with-global-sessions" onLayout={(sizes) => { let i = 0; const next: NonNullable<WorkspaceLayout['panels']['panelSizes']> = {}; if (sessionsVisible) next.sessions = sizes[i++]; if (sidebarVisible) next.explorer = sizes[i++]; next.main = sizes[i++]; updatePanelSizes(next); }}>
         {sessionsVisible ? (

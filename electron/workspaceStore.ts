@@ -24,17 +24,19 @@ async function writeJson(filePath: string, value: unknown) {
 export async function listWorkspaces(): Promise<Workspace[]> {
   await ensureDataDirs();
   const workspaces = await readJson<Workspace[]>(getWorkspacesPath(), []);
-  return workspaces.sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || a.name.localeCompare(b.name));
+  return workspaces
+    .map((workspace) => ({ ...workspace, trusted: workspace.trusted !== false }))
+    .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || a.name.localeCompare(b.name));
 }
 
 export async function createWorkspace(parentPath: string, name: string): Promise<Workspace> {
   if (!name.trim() || name.includes('/') || name.includes('\\')) throw new Error('Workspace name cannot contain path separators');
   const targetPath = path.join(parentPath, name.trim());
   await fs.mkdir(targetPath, { recursive: false });
-  return addWorkspace(targetPath);
+  return addWorkspace(targetPath, true);
 }
 
-export async function addWorkspace(folderPath: string): Promise<Workspace> {
+export async function addWorkspace(folderPath: string, trusted = false): Promise<Workspace> {
   const workspaces = await listWorkspaces();
   const name = path.basename(folderPath) || folderPath;
   const id = slugify(name);
@@ -44,6 +46,7 @@ export async function addWorkspace(folderPath: string): Promise<Workspace> {
     path: folderPath,
     createdAt: new Date().toISOString(),
     pinned: false,
+    trusted,
     commands: [],
   };
   workspaces.unshift(workspace);

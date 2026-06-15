@@ -8,8 +8,10 @@ export function ExtensionFrame({ contribution, ctx }: Props) {
   useEffect(() => {
     function onMessage(event: MessageEvent) {
       if (event.source !== ref.current?.contentWindow) return;
+      const expectedOrigin = `stackdock-extension://${contribution.extensionId}`;
+      if (event.origin !== expectedOrigin) return;
       const msg = event.data as { id?: string; type?: string; payload?: unknown };
-      const reply = (ok: boolean, payload?: unknown) => ref.current?.contentWindow?.postMessage({ id: msg.id, type: 'stackdock.response', ok, payload }, '*');
+      const reply = (ok: boolean, payload?: unknown) => ref.current?.contentWindow?.postMessage({ id: msg.id, type: 'stackdock.response', ok, payload }, expectedOrigin);
       try {
         switch (msg.type) {
           case 'stackdock.ready': reply(true); break;

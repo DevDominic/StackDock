@@ -585,6 +585,9 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
             ) : null}
             <label><input type="checkbox" checked={draft.autoSave} onChange={(event) => setDraft({ ...draft, autoSave: event.target.checked })} /> Auto save</label>
             <label>Auto save delay (ms)<input type="number" min={200} step={100} disabled={!draft.autoSave} value={draft.autoSaveDelayMs} onChange={(event) => setDraft({ ...draft, autoSaveDelayMs: Math.max(200, Number(event.target.value) || 0) })} /></label>
+            <div className="banner settings-warning">
+              <strong>Workspace trust:</strong> terminals, automation, git mutations, webviews, and local extensions can affect your machine. Read <code>docs/security-model.md</code> before opening unfamiliar projects.
+            </div>
           </div>
         ) : null}
 

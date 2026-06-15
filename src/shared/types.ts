@@ -107,6 +107,7 @@ export interface Workspace {
   createdAt: string;
   lastOpenedAt?: string;
   pinned?: boolean;
+  trusted?: boolean;
   commands?: WorkspaceCommand[];
 }
 

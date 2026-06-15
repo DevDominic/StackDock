@@ -60,6 +60,8 @@ async function createWindow() {
   });
 
   mainWindow.setMenuBarVisibility(false);
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
 
   setTerminalWindow(mainWindow);
   setBridgeWindow(mainWindow);
