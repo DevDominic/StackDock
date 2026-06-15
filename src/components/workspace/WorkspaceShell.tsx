@@ -1363,6 +1363,30 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const safePanelSizes = getSafePanelSizes(panelSizes, sidebarVisible, sessionsVisible);
   const extensionCommands = enabledExtensions.flatMap((manifest) => extensionRegistry.nativeExtensions.get(manifest.id)?.getCommands?.(extensionCtx) ?? []);
   function openSettings(tab: SettingsTab = 'general') { setSettingsInitialTab(tab); setSettingsOpen(true); }
+  const sortedWorkspaces = [...workspaces].sort((a, b) => {
+    if (a.id === workspace.id) return -1;
+    if (b.id === workspace.id) return 1;
+    return new Date(b.lastOpenedAt ?? b.createdAt).getTime() - new Date(a.lastOpenedAt ?? a.createdAt).getTime();
+  });
+
+  async function createTerminalInWorkspace(target: Workspace) {
+    if (!requireTrusted('creating terminals')) return;
+    const setup = automation?.workspaces[target.id];
+    const profileId = setup?.defaultTerminalProfile && profiles.some((profile) => profile.id === setup.defaultTerminalProfile) ? setup.defaultTerminalProfile : defaultProfile?.id ?? 'powershell';
+    const profile = profiles.find((item) => item.id === profileId);
+    const startupCommand = resolveTerminalStartupCommand({ profileStartupCommand: profile?.startupCommand, workspaceStartupCommand: setup?.newSessionCommand });
+    await sessionStore.createSession({ workspaceId: target.id, workspaceName: target.name, workspacePath: target.path, profileId, cwd: target.path, name: 'Terminal', startupCommand });
+    if (target.id !== workspace.id) await onOpenWorkspace(target.id);
+    showToast(`Opened terminal in ${target.name}`, 'success');
+  }
+
+  const workspaceLauncherActions: CommandAction[] = sortedWorkspaces.map((target) => ({
+    id: `stackdock.workspace.openTerminal.${target.id}`,
+    label: `Open Workspace: ${target.name}`,
+    description: target.id === workspace.id ? `Active • ${target.path}` : target.path,
+    run: () => createTerminalInWorkspace(target),
+  }));
+
   const settingsActions: CommandAction[] = [
     { id: 'stackdock.settings.open', label: 'Open Settings', keybind: settings?.keybinds['stackdock.settings.open'], run: () => openSettings('general') },
     { id: 'stackdock.settings.open.general', label: 'Open Settings: General', keybind: settings?.keybinds['stackdock.settings.open.general'], run: () => openSettings('general') },
@@ -1377,6 +1401,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     ...(workspaceSetup?.commands ?? []).map((command) => ({ id: `ws:${command.id}`, label: command.label, description: command.command, keybind: command.keybind, run: () => runPaletteCommand(command) })),
     ...(automation?.commands ?? []).map((command) => ({ id: `global:${command.id}`, label: command.label, description: command.command, keybind: command.keybind, run: () => runPaletteCommand(command) })),
     { id: 'stackdock.terminal.new', label: 'New Terminal', keybind: settings?.keybinds['stackdock.terminal.new'], run: () => createTerminal(undefined, 'Terminal', '') },
+    ...workspaceLauncherActions,
     ...extensionCommands.map((command) => ({ ...command, keybind: settings?.keybinds[command.id] })),
     { id: 'stackdock.view.toggleTerminal', label: 'Show/Toggle Terminal', keybind: settings?.keybinds['stackdock.view.toggleTerminal'], run: toggleMainView },
     { id: 'stackdock.view.toggleSidebar', label: 'Toggle Sidebar', keybind: settings?.keybinds['stackdock.view.toggleSidebar'], run: toggleActivitySidebar },
