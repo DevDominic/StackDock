@@ -19,6 +19,7 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
+.lean-ctx/
 
 # OS/editor files
 .DS_Store
