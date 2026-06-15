@@ -7,6 +7,7 @@ import { sanitizeSnapshotReplay } from '../../shared/terminalSnapshot';
 import type { StackDockSettings, TerminalAttachment, TerminalAttachmentSource, TerminalSession } from '../../shared/types';
 import { api } from '../../lib/api';
 import { serializeTerminalAttachments, summarizeTerminalAttachments } from '../../lib/terminalAttachments';
+import { createTerminalMarkdownState, flushTerminalMarkdownState, formatTerminalMarkdownChunk, shouldFormatTerminalMarkdown } from '../../lib/terminalMarkdown';
 import { useToast } from '../common/ToastProvider';
 
 import '@xterm/xterm/css/xterm.css';
@@ -160,6 +161,9 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     let restoredSnapshot = false;
     let replayingSnapshot = false;
     let terminalWriteFrame: number | null = null;
+    const markdownFormattingEnabled = shouldFormatTerminalMarkdown(session);
+    const markdownState = createTerminalMarkdownState();
+    const formatDisplayOutput = (data: string) => markdownFormattingEnabled ? formatTerminalMarkdownChunk(data, markdownState) + flushTerminalMarkdownState(markdownState) : data;
     let terminalWriteInProgress = false;
     let terminalWriteQueue: string[] = [];
     const queuedLiveOutput: string[] = [];
@@ -194,7 +198,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     const openedAndFitted = new Promise<void>((resolve) => { markOpenedAndFitted = resolve; });
     void openedAndFitted.then(() => api.terminal.snapshot(session.restoreId ?? session.id)).then((snapshot) => {
       if (disposed) return;
-      const snapshotOutput = snapshot?.output ? sanitizeSnapshotReplay(snapshot.output) : '';
+      const snapshotOutput = snapshot?.output ? formatDisplayOutput(sanitizeSnapshotReplay(snapshot.output)) : '';
       const finishReplay = () => {
         replayingSnapshot = false;
         if (disposed) return;
@@ -226,8 +230,9 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
 
     const disposeData = api.onTerminalData(({ id, data }) => {
       if (id !== session.id) return;
-      if (!restoredSnapshot) queuedLiveOutput.push(data);
-      else enqueueTerminalWrite(data);
+      const displayData = formatDisplayOutput(data);
+      if (!restoredSnapshot) queuedLiveOutput.push(displayData);
+      else enqueueTerminalWrite(displayData);
     });
     const disposeExit = api.onTerminalExit(({ id, exitCode }) => {
       if (id === session.id) enqueueTerminalWrite(`\r\n[process exited ${exitCode ?? 0}]`);
