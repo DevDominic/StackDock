@@ -146,7 +146,7 @@ function resolveStartupCommand(command: string, ctx: TerminalStartupCommandConte
   const commandSessionDir = getLongArg(trimmed, '--session-dir');
   const storagePath = commandSessionDir ?? (config.useStackDockSessionDir ? getStackDockPiSessionsDir() : undefined);
   const directState = stateFromCommand(trimmed, storagePath);
-  if (directState || isNonInteractivePiCommand(trimmed)) return { command: trimmed, resumeState: directState };
+  if (directState || hasDirectSessionArg(trimmed) || isNonInteractivePiCommand(trimmed)) return { command: trimmed, resumeState: directState };
   if (!config.stableSessionIds) return { command: trimmed };
 
   const sessionId = stackDockPiSessionId(ctx.restoreId);
@@ -196,6 +196,7 @@ export function createPiTerminalIntegration(settings: StackDockSettings): Termin
     id: PI_EXTENSION_ID,
     ownsCommand: ownsPiCommand,
     resolveStartupCommand: (command, ctx) => resolveStartupCommand(command, ctx, config),
+    resolveInteractiveCommand: (command, ctx) => resolveStartupCommand(command, ctx, config),
     captureResumeState,
     buildResumeCommand,
     detectSnapshotResumeState,

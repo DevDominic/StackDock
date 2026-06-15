@@ -6,10 +6,14 @@ export interface TerminalStartupCommandContext {
   name?: string;
 }
 
+export type TerminalInteractiveCommandContext = TerminalStartupCommandContext;
+
 export interface TerminalStartupCommandResult {
   command: string;
   resumeState?: TerminalResumeState;
 }
+
+export type TerminalInteractiveCommandResult = TerminalStartupCommandResult;
 
 export interface TerminalOutputContext {
   data: string;
@@ -30,6 +34,7 @@ export interface TerminalSnapshotContext {
 export interface TerminalCommandIntegration {
   id: string;
   resolveStartupCommand?(command: string, ctx: TerminalStartupCommandContext): TerminalStartupCommandResult | undefined;
+  resolveInteractiveCommand?(command: string, ctx: TerminalInteractiveCommandContext): TerminalInteractiveCommandResult | undefined;
   captureResumeState?(ctx: TerminalOutputContext): TerminalResumeState | undefined;
   buildResumeCommand?(ctx: TerminalResumeContext): string | undefined;
   detectSnapshotResumeState?(ctx: TerminalSnapshotContext): TerminalResumeState | undefined;

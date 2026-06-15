@@ -22,6 +22,7 @@ interface RecordEntry {
   pendingStartupCommand: { command: string; timer: NodeJS.Timeout } | null;
   pendingRestoreBarrier: { resumeCommand?: string } | null;
   terminalIntegrations: TerminalCommandIntegration[];
+  inputLine: string;
   // Shadow terminal that interprets every pty byte so snapshots can persist the
   // *rendered* buffer instead of the raw stream. Full-screen terminal apps
   // emit absolute-cursor repaint frames that only replay correctly into a
@@ -158,6 +159,43 @@ function buildResumeCommand(session: TerminalSession, snapshot: TerminalSnapshot
     if (command) return command;
   }
   return session.resumeState?.resumeCommand ?? snapshot?.resumeState?.resumeCommand;
+}
+
+function resolveInteractiveCommand(entry: RecordEntry, command: string) {
+  const restoreId = entry.session.restoreId ?? entry.session.id;
+  for (const integration of entry.terminalIntegrations) {
+    const result = integration.resolveInteractiveCommand?.(command, { restoreId, cwd: entry.session.cwd, name: entry.session.name });
+    if (result) {
+      const snapshot = ensureSnapshotRecord(entry);
+      applyResumeState(entry.session, snapshot, result.resumeState);
+      return result.command;
+    }
+  }
+  return command;
+}
+
+function transformTerminalInput(entry: RecordEntry, data: string) {
+  let output = '';
+  for (const char of data) {
+    if (char === '\r' || char === '\n') {
+      const typed = entry.inputLine;
+      const resolved = resolveInteractiveCommand(entry, typed);
+      output += `${resolved.startsWith(typed) ? resolved.slice(typed.length) : resolved}${char}`;
+      entry.inputLine = '';
+    } else if (char === '\u0003') {
+      entry.inputLine = '';
+      output += char;
+    } else if (char === '\b' || char === '\u007f') {
+      entry.inputLine = entry.inputLine.slice(0, -1);
+      output += char;
+    } else if (char >= ' ' && char !== '\u007f') {
+      entry.inputLine += char;
+      output += char;
+    } else {
+      output += char;
+    }
+  }
+  return output;
 }
 
 function integrationOwnsCommand(command: string | undefined, terminalIntegrations: TerminalCommandIntegration[]) {
@@ -404,7 +442,7 @@ export async function createTerminal(profileId: string, cwd: string, name?: stri
     // repaint area.
     headless.write(`${priorSnapshot.output}\x1b[0m`);
   }
-  const entry: RecordEntry = { session, context, terminal, pendingData: [], flushTimer: null, pendingStartupCommand: null, pendingRestoreBarrier, terminalIntegrations, headless, serializeAddon, recentOutput: '', headlessDisposed: false, discardSnapshot: context?.headless === true, headlessOutput: '', headlessTimer: null, headlessTimedOut: false, headlessResultSent: false };
+  const entry: RecordEntry = { session, context, terminal, pendingData: [], flushTimer: null, pendingStartupCommand: null, pendingRestoreBarrier, terminalIntegrations, inputLine: '', headless, serializeAddon, recentOutput: '', headlessDisposed: false, discardSnapshot: context?.headless === true, headlessOutput: '', headlessTimer: null, headlessTimedOut: false, headlessResultSent: false };
   terminal.onData((data) => queueTerminalOutput(entry, data));
   terminal.onExit(({ exitCode }) => {
     cancelPendingStartupCommand(entry);
@@ -441,7 +479,9 @@ export async function createTerminal(profileId: string, cwd: string, name?: stri
 }
 
 export async function writeTerminal(id: string, data: string) {
-  terminals.get(id)?.terminal.write(data);
+  const entry = terminals.get(id);
+  if (!entry) return;
+  entry.terminal.write(transformTerminalInput(entry, data));
 }
 
 export async function resizeTerminal(id: string, cols: number, rows: number) {
