@@ -186,6 +186,11 @@ function resolveInteractiveCommand(entry: RecordEntry, command: string) {
   return command;
 }
 
+async function refreshTerminalIntegrations(entry: RecordEntry) {
+  const settings = await loadSettings().catch(() => getDefaultSettings());
+  entry.terminalIntegrations = getEnabledTerminalIntegrations(settings);
+}
+
 function transformTerminalInput(entry: RecordEntry, data: string) {
   let output = '';
   for (const char of data) {
@@ -586,6 +591,7 @@ export function updateTerminalSession(id: string, patch: TerminalSessionUpdate):
 export async function writeTerminal(id: string, data: string) {
   const entry = terminals.get(id);
   if (!entry) return;
+  if (data.includes('\r') || data.includes('\n')) await refreshTerminalIntegrations(entry);
   entry.terminal.write(transformTerminalInput(entry, data));
 }
 
