@@ -359,7 +359,7 @@ function cleanHeadlessOutput(value: string, command: string) {
   return output
     .split('\n')
     .filter((line, index) => !(index === 0 && !line.trim()))
-    .filter((line, index) => !(index === 0 && line.trim() === 'exit'))
+    .filter((line) => line.trim() !== 'exit')
     .join('\n')
     .trim();
 }
@@ -369,10 +369,14 @@ function truncateHeadlessOutput(value: string) {
   return `${value.slice(0, HEADLESS_TOAST_MAX_CHARS - 1)}…`;
 }
 
+function commandExitsOnOwn(command: string) {
+  return /^\s*pi(?:\s|$)/i.test(command) && /(?:^|\s)(?:--print\b|-p\b|--mode\s+(?:text|json|rpc)\b)/i.test(command);
+}
+
 function wrapHeadlessStartupCommand(command: string, shell: string) {
   const shellName = path.basename(shell).toLowerCase();
   const suppressEcho = shellName === 'cmd.exe' || shellName === 'cmd' ? '@echo off\r\n' : '';
-  return `${suppressEcho}${command}\r\nexit\r\n`;
+  return `${suppressEcho}${command}\r\n${commandExitsOnOwn(command) ? '' : 'exit\r\n'}`;
 }
 
 function sendHeadlessResult(entry: RecordEntry, exitCode: number | null) {

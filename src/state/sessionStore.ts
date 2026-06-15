@@ -24,7 +24,7 @@ function cleanHeadlessOutput(output: string, command: string) {
   return trimmed
     .split('\n')
     .filter((line, index) => !(index === 0 && !line.trim()))
-    .filter((line, index) => !(index === 0 && line.trim() === 'exit'))
+    .filter((line) => line.trim() !== 'exit')
     .join('\n');
 }
 
