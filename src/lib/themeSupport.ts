@@ -186,6 +186,7 @@ export function themeToCssVars(theme: StackDockResolvedTheme): Record<string, st
   const gitAdded = pick(c, ['gitDecoration.addedResourceForeground', 'gitDecoration.untrackedResourceForeground', 'charts.green'], light ? '#1a7f37' : '#a6e3a1');
   const gitDeleted = pick(c, ['gitDecoration.deletedResourceForeground', 'charts.red'], danger);
   const border = pick(c, ['panel.border', 'sideBar.border', 'editorGroup.border', 'input.border', 'contrastBorder'], mix(bg, text, light ? 0.22 : 0.16));
+  const separator = pick(c, ['button.separator', 'textSeparator.foreground', 'menu.separatorBackground'], border);
   const strongBorder = pick(c, ['focusBorder', 'contrastActiveBorder'], mix(border, text, 0.35));
   const muted = pick(c, ['descriptionForeground', 'disabledForeground', 'sideBar.foreground'], mix(text, bg, light ? 0.38 : 0.42));
   const hover = pick(c, ['list.hoverBackground', 'toolbar.hoverBackground'], withAlpha(light ? '#000000' : '#ffffff', 0.065));
@@ -226,6 +227,7 @@ export function themeToCssVars(theme: StackDockResolvedTheme): Record<string, st
     '--hover': hover,
     '--active': active,
     '--border': border,
+    '--separator': separator,
     '--border-strong': strongBorder,
     '--text': ensureContrast(text, bg, light ? '#1f2328' : '#f8f8f2'),
     '--muted': ensureContrast(muted, bg, light ? '#57606a' : '#a6adc8', 3),

@@ -155,13 +155,13 @@ function KeybindRecorder({ value, onChange }: { value?: string; onChange(value: 
 function setWindowOverlayDimmed(dimmed: boolean) {
   const styles = getComputedStyle(document.documentElement);
   if (dimmed) {
-    void api.app.setTitleBarOverlay({ color: '#050507', symbolColor: '#6f7280', height: 43 });
+    void api.app.setTitleBarOverlay({ color: '#050507', symbolColor: '#6f7280', height: 42 });
     return;
   }
   void api.app.setTitleBarOverlay({
     color: styles.getPropertyValue('--titlebar-bg').trim() || '#08090d',
     symbolColor: styles.getPropertyValue('--titlebar-fg').trim() || '#e7e7e7',
-    height: 43,
+    height: 42,
   });
 }
 

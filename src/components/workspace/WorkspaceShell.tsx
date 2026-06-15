@@ -1593,14 +1593,14 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       <PanelGroup key={`${sessionsVisible ? 'sessions' : 'no-sessions'}-${sidebarVisible ? 'with-sidebar' : 'without-sidebar'}`} direction="horizontal" className="workspace-body with-global-sessions" onLayout={(sizes) => { let i = 0; const next: NonNullable<WorkspaceLayout['panels']['panelSizes']> = {}; if (sessionsVisible) next.sessions = sizes[i++]; if (sidebarVisible) next.explorer = sizes[i++]; next.main = sizes[i++]; updatePanelSizes(next); }}>
         {sessionsVisible ? (
           <>
-            <Panel id="sessions" order={1} defaultSize={safePanelSizes.sessions} minSize={16} className="global-sessions-panel">
+            <Panel id="sessions" order={1} defaultSize={safePanelSizes.sessions} minSize={4} className="global-sessions-panel">
               {sessionContributions.length > 1 ? (
                 <PanelGroup direction="vertical" className="sidebar-stack sessions-stack" onLayout={([upper, lower]) => updatePanelSizes({ sessionsUpper: upper, headless: lower })}>
-                  <Panel id="sessions-primary" defaultSize={panelSizes.sessionsUpper ?? 78} minSize={35}>
+                  <Panel id="sessions-primary" defaultSize={panelSizes.sessionsUpper ?? 78} minSize={8}>
                     {renderExtensionView(sessionContributions[0])}
                   </Panel>
                   <PanelResizeHandle id="sessions-stack-resize" className="resize-handle horizontal" />
-                  <Panel id="sessions-secondary" defaultSize={panelSizes.headless ?? 22} minSize={12}>
+                  <Panel id="sessions-secondary" defaultSize={panelSizes.headless ?? 22} minSize={6}>
                     {sessionContributions.slice(1).map((contribution) => <div key={contribution.id} className="extension-sidebar-view">{renderExtensionView(contribution)}</div>)}
                   </Panel>
                 </PanelGroup>
@@ -1611,14 +1611,14 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         ) : null}
         {sidebarVisible ? (
           <>
-            <Panel id="activity-sidebar" order={2} defaultSize={safePanelSizes.explorer} minSize={12} className="workspace-explorer">
+            <Panel id="activity-sidebar" order={2} defaultSize={safePanelSizes.explorer} minSize={4} className="workspace-explorer">
               {visibleActivityContributions.length > 1 ? (
                 <PanelGroup direction="vertical" className="sidebar-stack" onLayout={([upper, lower]) => updatePanelSizes({ upper, git: lower })}>
-                  <Panel id="activity-sidebar-primary" defaultSize={panelSizes.upper ?? 58} minSize={20}>
+                  <Panel id="activity-sidebar-primary" defaultSize={panelSizes.upper ?? 58} minSize={8}>
                     {renderExtensionView(visibleActivityContributions[0])}
                   </Panel>
                   <PanelResizeHandle id="sidebar-stack-resize" className="resize-handle horizontal" />
-                  <Panel id="activity-sidebar-secondary" defaultSize={panelSizes.git ?? 42} minSize={20}>
+                  <Panel id="activity-sidebar-secondary" defaultSize={panelSizes.git ?? 42} minSize={8}>
                     {visibleActivityContributions.slice(1).map((contribution) => <div key={contribution.id} className="extension-sidebar-view">{renderExtensionView(contribution)}</div>)}
                   </Panel>
                 </PanelGroup>
@@ -1699,11 +1699,11 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function getSafePanelSizes(panelSizes: NonNullable<WorkspaceLayout['panels']['panelSizes']>, sidebarVisible: boolean, sessionsVisible = true) {
-  const sessions = sessionsVisible ? clamp(panelSizes.sessions ?? 18, 16, 28) : 0;
+  const sessions = sessionsVisible ? clamp(panelSizes.sessions ?? 18, 4, 35) : 0;
   if (!sidebarVisible) return { sessions, explorer: panelSizes.explorer ?? 18, main: 100 - sessions };
 
-  const maxExplorer = Math.max(12, 100 - sessions - 30);
-  const explorer = clamp(panelSizes.explorer ?? 18, 12, maxExplorer);
+  const maxExplorer = Math.max(4, 100 - sessions - 30);
+  const explorer = clamp(panelSizes.explorer ?? 18, 4, maxExplorer);
   const main = Math.max(30, 100 - sessions - explorer);
   return { sessions, explorer, main };
 }
