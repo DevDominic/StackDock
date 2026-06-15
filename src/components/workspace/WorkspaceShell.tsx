@@ -101,6 +101,11 @@ function fileUrlFromPath(targetPath: string) {
   return `file://${encoded}`;
 }
 
+function quoteTerminalPath(targetPath: string) {
+  if (!/[\s"'`$&(){}\[\];<>|]/.test(targetPath)) return targetPath;
+  return `"${targetPath.replace(/(["\\$`])/g, '\\$1')}"`;
+}
+
 const mediaExtensions: Record<string, MediaKind> = {
   apng: 'image', avif: 'image', bmp: 'image', gif: 'image', ico: 'image', jpeg: 'image', jpg: 'image', png: 'image', svg: 'image', webp: 'image',
   aac: 'audio', flac: 'audio', m4a: 'audio', mp3: 'audio', oga: 'audio', ogg: 'audio', wav: 'audio',
@@ -306,7 +311,8 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
               tabByPath.set(filePath, { path: filePath, name: filePath.split(/[\\/]/).pop() ?? filePath, content: file.content, dirty: false });
             }
           } catch {
-            tabByPath.set(filePath, { path: filePath, name: filePath.split(/[\\/]/).pop() ?? filePath, content: '', dirty: false });
+            // File was deleted or moved while layout still referenced it. Skip it
+            // instead of restoring a blank zombie tab.
           }
         }
         if (!active) return;
@@ -643,6 +649,45 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       }).filter((group, _index, groups) => group.openFiles.length || groups.length === 1);
       return { ...prev, editorGroups, activeKind: anyOpenFiles ? prev.activeKind : prev.openLinks.length ? 'web' : 'terminal' };
     });
+  }
+
+  function closeDeletedPath(path: string) {
+    const normalizedPath = path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    setEditorsBySession((map) => {
+      let changed = false;
+      const next: Record<string, SessionEditors> = {};
+      for (const [sessionId, entry] of Object.entries(map)) {
+        const normalized = normalizeEditors(entry);
+        const editorGroups = normalized.editorGroups.map((group) => {
+          const openFiles = group.openFiles.filter((file) => {
+            const filePath = file.path.replace(/\\/g, '/').toLowerCase();
+            const deleted = filePath === normalizedPath || filePath.startsWith(`${normalizedPath}/`);
+            if (deleted) changed = true;
+            return !deleted;
+          });
+          const activeFile = openFiles.some((file) => file.path === group.activeFile) ? group.activeFile : openFiles[0]?.path ?? null;
+          return { ...group, openFiles, activeFile };
+        }).filter((group, _index, groups) => group.openFiles.length || groups.length === 1);
+        const hasFiles = editorGroups.some((group) => group.openFiles.length);
+        next[sessionId] = { ...normalized, editorGroups, activeEditorGroup: editorGroups.some((group) => group.id === normalized.activeEditorGroup) ? normalized.activeEditorGroup : editorGroups[0]?.id ?? normalized.activeEditorGroup, activeKind: hasFiles ? normalized.activeKind : normalized.openLinks.length ? 'web' : 'terminal' };
+      }
+      return changed ? next : map;
+    });
+    if (editorDiff?.path) {
+      const diffPath = editorDiff.path.replace(/\\/g, '/').toLowerCase();
+      if (diffPath === normalizedPath || diffPath.startsWith(`${normalizedPath}/`)) setEditorDiff(null);
+    }
+  }
+
+  async function addPathToContext(path: string) {
+    if (!activeTerminalId) return;
+    try {
+      const attachment = await api.attachments.inspectPath(path, 'drop');
+      await api.terminal.write(activeTerminalId, `${quoteTerminalPath(attachment.referencePath)} `);
+      showToast('Added folder to terminal context', 'success');
+    } catch (error) {
+      showToast(getErrorMessage(error, 'Could not add to context'), 'error');
+    }
   }
 
   // "Close Others" from the permanent Terminal tab: drop every file and web tab
@@ -1096,6 +1141,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     try {
       setGitError(null);
       await discardPath(path);
+      closeDeletedPath(joinPath(workspace.path, path));
       await refreshGit();
       setRefreshToken((token) => token + 1);
     } catch (error) { showGitError(error); }
@@ -1107,7 +1153,10 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     if (gitConfig.confirmBeforeDiscard !== false && !(await promptDialog.confirm({ title: `Discard ${paths.length} selected ${paths.length === 1 ? 'file' : 'files'}?`, message: 'This cannot be undone.', confirmLabel: 'Discard', danger: true }))) return;
     try {
       setGitError(null);
-      for (const path of paths) await discardPath(path);
+      for (const path of paths) {
+        await discardPath(path);
+        closeDeletedPath(joinPath(workspace.path, path));
+      }
       await refreshGit();
       setRefreshToken((token) => token + 1);
     } catch (error) { showGitError(error); }
@@ -1243,6 +1292,8 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       openFile,
       previewFile,
       openTerminalHere,
+      addPathToContext,
+      closeDeletedPath,
       openView,
       toggleView,
       openGit: () => { const gitView = activityContributions.find((view) => view.icon === 'git'); if (gitView) openView(gitView.id); },

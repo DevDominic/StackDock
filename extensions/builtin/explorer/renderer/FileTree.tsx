@@ -9,15 +9,21 @@ import { usePromptDialog } from '../../../../src/components/common/PromptProvide
 interface Props {
   rootPath: string;
   gitFiles: GitFileStatus[];
+  canAddToContext?: boolean;
   onOpenFile(path: string): void;
   onPreviewFile(path: string): void;
   onOpenTerminalHere(path: string): void;
+  onAddPathToContext(path: string): void | Promise<void>;
+  onDeletedPath(path: string): void | Promise<void>;
   refreshToken: number;
 }
 
 interface GitDecoration { letter: string; cls: string }
 type GitLookup = (entry: DirectoryEntry) => GitDecoration | null;
 type IgnoredLookup = (entry: DirectoryEntry) => boolean;
+
+const EXPLORER_PATH_MIME = 'application/x-stackdock-explorer-path';
+const MAX_SEARCH_RESULTS = 200;
 
 interface ContextTarget { entry: DirectoryEntry | null; x: number; y: number; }
 interface NodeProps {
@@ -35,6 +41,7 @@ function joinPath(base: string, name: string) { return `${base.replace(/[\\/]+$/
 function parentPath(path: string) { return path.replace(/[\\/][^\\/]+$/, ''); }
 function normalizePath(p: string) { return p.replace(/\\/g, '/').replace(/\/+$/, ''); }
 function isHtmlFile(path: string) { return /\.html?$/i.test(path); }
+function matchesSearch(entry: DirectoryEntry, query: string) { return `${entry.name} ${entry.path}`.toLowerCase().includes(query); }
 
 function decorateGit(file: GitFileStatus): GitDecoration {
   if (file.untracked) return { letter: 'U', cls: 'git-untracked' };
@@ -92,7 +99,7 @@ function FileNode({ entry, depth, version, gitLookup, ignoredLookup, onOpenFile,
 
   return (
     <div>
-      <button className={rowClass} style={{ paddingLeft: 6 + depth * 12 }} onClick={toggle} onContextMenu={handleContextMenu}>
+      <button className={rowClass} style={{ paddingLeft: 6 + depth * 12 }} onClick={toggle} onContextMenu={handleContextMenu} draggable onDragStart={(event) => { event.dataTransfer.setData(EXPLORER_PATH_MIME, JSON.stringify({ path: entry.path, isDirectory: entry.isDirectory })); event.dataTransfer.effectAllowed = 'copy'; }}>
         <span className="tree-twisty">{entry.isDirectory ? (expanded ? '▾' : '▸') : ''}</span>
         <FileIcon name={entry.name} isDirectory={entry.isDirectory} expanded={expanded} />
         <span className="tree-label">{entry.name}</span>
@@ -107,14 +114,19 @@ function FileNode({ entry, depth, version, gitLookup, ignoredLookup, onOpenFile,
   );
 }
 
-export function FileTree({ rootPath, gitFiles, onOpenFile, onPreviewFile, onOpenTerminalHere, refreshToken }: Props) {
+export function FileTree({ rootPath, gitFiles, canAddToContext, onOpenFile, onPreviewFile, onOpenTerminalHere, onAddPathToContext, onDeletedPath, refreshToken }: Props) {
   const gitLookup = useMemo(() => buildGitLookup(rootPath, gitFiles), [rootPath, gitFiles]);
   const [rootChildren, setRootChildren] = useState<DirectoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [menu, setMenu] = useState<ContextTarget | null>(null);
   const [treeVersion, setTreeVersion] = useState(0);
   const [ignoredPaths, setIgnoredPaths] = useState<Set<string>>(() => new Set());
+  const [search, setSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchResults, setSearchResults] = useState<DirectoryEntry[]>([]);
+  const [searching, setSearching] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const previousRootPathRef = useRef(rootPath);
   const ignoredLookup = useMemo<IgnoredLookup>(() => (entry) => ignoredPaths.has(normalizePath(entry.path).toLowerCase()), [ignoredPaths]);
@@ -134,6 +146,34 @@ export function FileTree({ rootPath, gitFiles, onOpenFile, onPreviewFile, onOpen
     void rememberIgnored(entries);
     return entries;
   }, [rootPath]);
+
+  useEffect(() => {
+    if (searchOpen) window.requestAnimationFrame(() => searchInputRef.current?.focus());
+  }, [searchOpen]);
+
+  useEffect(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) { setSearchResults([]); setSearching(false); return; }
+    let cancelled = false;
+    setSearching(true);
+    const timer = window.setTimeout(async () => {
+      const results: DirectoryEntry[] = [];
+      const visit = async (folder: string, depth = 0) => {
+        if (cancelled || results.length >= MAX_SEARCH_RESULTS || depth > 10) return;
+        let entries: DirectoryEntry[] = [];
+        try { entries = await api.fs.readDirectory(folder); } catch { return; }
+        void rememberIgnored(entries);
+        for (const entry of entries) {
+          if (matchesSearch(entry, needle)) results.push(entry);
+          if (entry.isDirectory) await visit(entry.path, depth + 1);
+          if (cancelled || results.length >= MAX_SEARCH_RESULTS) break;
+        }
+      };
+      await visit(rootPath);
+      if (!cancelled) { setSearchResults(results); setSearching(false); }
+    }, 180);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [rootPath, search, treeVersion, refreshToken]);
 
   useEffect(() => {
     let active = true;
@@ -203,22 +243,56 @@ export function FileTree({ rootPath, gitFiles, onOpenFile, onPreviewFile, onOpen
   async function remove(entry: DirectoryEntry) {
     if (!(await promptDialog.confirm({ title: `Delete ${entry.name}?`, message: 'This removes item from disk.', confirmLabel: 'Delete', danger: true }))) return;
     await api.fs.deletePath(entry.path);
+    await onDeletedPath(entry.path);
     await afterAction();
+  }
+
+  const searchActive = search.trim().length > 0;
+
+  function openSearch() {
+    setSearchOpen(true);
+  }
+
+  function closeSearch() {
+    setSearch('');
+    setSearchOpen(false);
   }
 
   return (
     <aside className="panel file-tree" onContextMenu={(event) => { event.preventDefault(); setMenu({ entry: null, x: event.clientX, y: event.clientY }); }}>
       <div className="panel-title row">
         <span>Files</span>
-        <button className="panel-icon-btn" title="New file" aria-label="New file" onClick={() => createFileIn(rootPath)}>＋</button>
+        <span className="panel-title-actions">
+          <button className={searchOpen ? 'panel-icon-btn active-toggle' : 'panel-icon-btn'} title="Search files" aria-label="Search files" onClick={openSearch}>⌕</button>
+          <button className="panel-icon-btn" title="New file" aria-label="New file" onClick={() => createFileIn(rootPath)}>＋</button>
+        </span>
       </div>
+      {searchOpen ? (
+        <div className="tree-search-wrap">
+          <input ref={searchInputRef} className="tree-search-input" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { if (search) setSearch(''); else setSearchOpen(false); } }} placeholder="Search files" />
+          <button className="tree-search-clear" title={search ? 'Clear search' : 'Close search'} onClick={search ? () => setSearch('') : closeSearch}>×</button>
+        </div>
+      ) : null}
       {loading ? <div className="muted pad">Loading...</div> : null}
       <div className="tree-list">
-        {rootChildren.map((entry) => <FileNode key={entry.path} entry={entry} depth={0} version={treeVersion} gitLookup={gitLookup} ignoredLookup={ignoredLookup} onOpenFile={onOpenFile} onContextMenu={setMenu} loadChildren={loadChildren} />)}
+        {searchActive ? (
+          <>
+            {searching ? <div className="muted pad">Searching...</div> : null}
+            {!searching && !searchResults.length ? <div className="muted pad">No matches.</div> : null}
+            {searchResults.map((entry) => (
+              <button key={entry.path} className="tree-row search-result" title={entry.path} onClick={() => entry.isDirectory ? onOpenTerminalHere(entry.path) : onOpenFile(entry.path)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setMenu({ entry, x: event.clientX, y: event.clientY }); }} draggable onDragStart={(event) => { event.dataTransfer.setData(EXPLORER_PATH_MIME, JSON.stringify({ path: entry.path, isDirectory: entry.isDirectory })); event.dataTransfer.effectAllowed = 'copy'; }}>
+                <FileIcon name={entry.name} isDirectory={entry.isDirectory} expanded={false} />
+                <span className="tree-label">{entry.name}</span>
+                <small className="tree-search-path">{entry.path.slice(rootPath.length).replace(/^[\\/]/, '')}</small>
+              </button>
+            ))}
+          </>
+        ) : rootChildren.map((entry) => <FileNode key={entry.path} entry={entry} depth={0} version={treeVersion} gitLookup={gitLookup} ignoredLookup={ignoredLookup} onOpenFile={onOpenFile} onContextMenu={setMenu} loadChildren={loadChildren} />)}
       </div>
       {menu ? (
         <div ref={menuRef} className="context-menu" style={{ top: menu.y, left: menu.x }} onMouseDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.stopPropagation()}>
           {menu.entry?.isDirectory ? <button className="context-menu-item" onClick={() => { onOpenTerminalHere(menu.entry!.path); setMenu(null); }}>Open terminal here</button> : null}
+          {menu.entry ? <button className="context-menu-item" disabled={!canAddToContext} onClick={() => { void onAddPathToContext(menu.entry!.isDirectory ? menu.entry!.path : parentPath(menu.entry!.path)); setMenu(null); }}>Add to context</button> : null}
           {menu.entry?.isDirectory || !menu.entry ? <button className="context-menu-item" onClick={() => createFileIn(menu.entry?.path ?? rootPath)}>New file</button> : null}
           {menu.entry?.isDirectory || !menu.entry ? <button className="context-menu-item" onClick={() => createFolderIn(menu.entry?.path ?? rootPath)}>New folder</button> : null}
           {menu.entry ? <button className="context-menu-item" onClick={() => rename(menu.entry!)}>Rename</button> : null}

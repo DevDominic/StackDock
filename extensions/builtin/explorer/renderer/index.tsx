@@ -6,7 +6,7 @@ import './explorer.css';
 export const explorerExtension: NativeExtension = {
   manifest: explorerExtensionManifest,
   renderView: (_contribution, ctx) => (
-    <FileTree rootPath={ctx.workspace.path} gitFiles={ctx.git?.files ?? []} onOpenFile={ctx.actions.openFile} onPreviewFile={ctx.actions.previewFile} onOpenTerminalHere={ctx.actions.openTerminalHere} refreshToken={ctx.refreshToken} />
+    <FileTree rootPath={ctx.workspace.path} gitFiles={ctx.git?.files ?? []} canAddToContext={!!ctx.activeSessionId} onOpenFile={ctx.actions.openFile} onPreviewFile={ctx.actions.previewFile} onOpenTerminalHere={ctx.actions.openTerminalHere} onAddPathToContext={ctx.actions.addPathToContext} onDeletedPath={ctx.actions.closeDeletedPath} refreshToken={ctx.refreshToken} />
   ),
   getCommands: (ctx) => [
     { id: 'stackdock.explorer.toggleSidebar', label: 'Toggle Sidebar', run: () => ctx.actions.toggleView('stackdock.explorer.view') },

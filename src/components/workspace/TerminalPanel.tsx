@@ -26,6 +26,9 @@ interface Props {
 const URL_PATTERN = /https?:\/\/[^\s"'`<>)\]}]+/g;
 const CODE_FONT_FAMILY = '"Cascadia Code", Consolas, monospace';
 const CODE_FONT_FEATURES = '"calt" on, "liga" on, "dlig" on';
+const EXPLORER_PATH_MIME = 'application/x-stackdock-explorer-path';
+
+function parentPath(path: string) { return path.replace(/[\\/][^\\/]+$/, ''); }
 
 function cssVar(name: string, fallback: string) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
@@ -377,6 +380,28 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     }
   }
 
+  async function insertAttachmentPaths(paths: string[]) {
+    if (!paths.length) return;
+    try {
+      const attachments = await Promise.all(paths.map((targetPath) => api.attachments.inspectPath(targetPath, 'drop')));
+      await insertAttachmentObjects(attachments);
+    } catch (error) {
+      reportAttachmentError(error);
+    }
+  }
+
+  function explorerPathsFromDataTransfer(dataTransfer: DataTransfer | null) {
+    const raw = dataTransfer?.getData(EXPLORER_PATH_MIME);
+    if (!raw) return [];
+    try {
+      const entry = JSON.parse(raw) as { path?: unknown; isDirectory?: unknown };
+      if (typeof entry.path !== 'string' || !entry.path.trim()) return [];
+      return [entry.isDirectory ? entry.path : parentPath(entry.path)];
+    } catch {
+      return [];
+    }
+  }
+
   function clipboardHasPasteableContent() {
     return api.attachments.hasClipboardText() || api.attachments.hasClipboardImage();
   }
@@ -451,7 +476,8 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
   }
 
   function handleDragOver(event: ReactDragEvent<HTMLDivElement>) {
-    const hasFiles = filesFromDataTransfer(event.dataTransfer).length > 0 || Array.from(event.dataTransfer.types).includes('Files');
+    const hasExplorerPath = Array.from(event.dataTransfer.types).includes(EXPLORER_PATH_MIME);
+    const hasFiles = hasExplorerPath || filesFromDataTransfer(event.dataTransfer).length > 0 || Array.from(event.dataTransfer.types).includes('Files');
     if (!hasFiles) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
@@ -464,11 +490,13 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
   }
 
   function handleDrop(event: ReactDragEvent<HTMLDivElement>) {
+    const explorerPaths = explorerPathsFromDataTransfer(event.dataTransfer);
     const files = filesFromDataTransfer(event.dataTransfer);
-    if (!files.length) return;
+    if (!explorerPaths.length && !files.length) return;
     event.preventDefault();
     setDragOver(false);
-    void insertAttachments(files, 'drop');
+    if (explorerPaths.length) void insertAttachmentPaths(explorerPaths);
+    else void insertAttachments(files, 'drop');
   }
 
   function handlePaste(event: ReactClipboardEvent<HTMLDivElement>) {
