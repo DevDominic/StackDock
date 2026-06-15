@@ -980,6 +980,22 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     } catch (error) { showToast(getErrorMessage(error, 'Could not split session'), 'error'); }
   }
 
+  async function detachTerminal(id: string) {
+    const target = allSessions.find((session) => session.id === id);
+    if (!target?.splitGroupId) return;
+    try {
+      const group = allSessions.filter((session) => session.splitGroupId === target.splitGroupId);
+      await sessionStore.updateSessionMetadata(id, { splitGroupId: null, splitDirection: null, splitGroupOrder: null });
+      const remaining = group.filter((session) => session.id !== id);
+      if (remaining.length <= 1) {
+        await Promise.all(remaining.map((session) => sessionStore.updateSessionMetadata(session.id, { splitGroupId: null, splitDirection: null, splitGroupOrder: null })));
+      } else {
+        await Promise.all(remaining.map((session, index) => sessionStore.updateSessionMetadata(session.id, { splitGroupOrder: index })));
+      }
+      sessionStore.setActiveSession(id);
+    } catch (error) { showToast(getErrorMessage(error, 'Could not detach session'), 'error'); }
+  }
+
   async function closeTerminal(id: string) {
     await sessionStore.closeSession(id);
   }
@@ -1271,6 +1287,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       duplicate: (id) => void duplicateTerminal(id),
       setCwd: (id, cwd) => void setTerminalCwd(id, cwd),
       split: (id, direction) => void splitTerminal(id, direction),
+      detach: (id) => void detachTerminal(id),
     },
   };
   const enabledExtensions = resolveEnabledExtensions(extensionRegistry.extensions, settings, mergedLayout.extensions);
@@ -1494,7 +1511,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       <PanelGroup key={`${sessionsVisible ? 'sessions' : 'no-sessions'}-${sidebarVisible ? 'with-sidebar' : 'without-sidebar'}`} direction="horizontal" className="workspace-body with-global-sessions" onLayout={(sizes) => { let i = 0; const next: NonNullable<WorkspaceLayout['panels']['panelSizes']> = {}; if (sessionsVisible) next.sessions = sizes[i++]; if (sidebarVisible) next.explorer = sizes[i++]; next.main = sizes[i++]; updatePanelSizes(next); }}>
         {sessionsVisible ? (
           <>
-            <Panel id="sessions" order={1} defaultSize={safePanelSizes.sessions} minSize={10} className="global-sessions-panel">
+            <Panel id="sessions" order={1} defaultSize={safePanelSizes.sessions} minSize={16} className="global-sessions-panel">
               {sessionContributions.length > 1 ? (
                 <PanelGroup direction="vertical" className="sidebar-stack sessions-stack" onLayout={([upper, lower]) => updatePanelSizes({ sessionsUpper: upper, headless: lower })}>
                   <Panel id="sessions-primary" defaultSize={panelSizes.sessionsUpper ?? 78} minSize={35}>
@@ -1600,7 +1617,7 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function getSafePanelSizes(panelSizes: NonNullable<WorkspaceLayout['panels']['panelSizes']>, sidebarVisible: boolean, sessionsVisible = true) {
-  const sessions = sessionsVisible ? clamp(panelSizes.sessions ?? 14, 10, 24) : 0;
+  const sessions = sessionsVisible ? clamp(panelSizes.sessions ?? 18, 16, 28) : 0;
   if (!sidebarVisible) return { sessions, explorer: panelSizes.explorer ?? 18, main: 100 - sessions };
 
   const maxExplorer = Math.max(12, 100 - sessions - 30);
@@ -1619,7 +1636,7 @@ function getDefaultLayout(workspaceId: string): WorkspaceLayout {
       fileTreeVisible: true,
       gitPanelVisible: true,
       terminalVisible: true,
-      panelSizes: { sessions: 14, explorer: 18, main: 68, editor: 72, git: 28, upper: 62, terminal: 38 },
+      panelSizes: { sessions: 18, explorer: 18, main: 64, editor: 72, git: 28, upper: 62, terminal: 38 },
     },
     editors: { openFiles: [], activeFile: undefined },
     terminals: [],

@@ -317,7 +317,7 @@ html[data-window-controls="native"] .workspace-titlebar::after { right: 138px; }
 .resize-handle.vertical { width: 3px; cursor: col-resize; }
 .resize-handle.horizontal { height: 3px; cursor: row-resize; }
 .workspace-explorer { min-width: 0; min-height: 0; border-right: 1px solid var(--border); background: var(--bg-panel); }
-.global-sessions-sidebar { height: 100%; background: var(--activitybar-bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+.global-sessions-sidebar { height: 100%; background: var(--activitybar-bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; min-width: 180px; }
 .global-sessions-sidebar .panel-title { padding: 8px 10px; color: var(--muted); text-transform: uppercase; font-size: 11px; letter-spacing: .07em; }
 .sessions-title { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .global-session-list { overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 8px; }
@@ -329,8 +329,9 @@ html[data-window-controls="native"] .workspace-titlebar::after { right: 138px; }
 .global-session-card.active { background: var(--accent-soft); border-color: var(--primary-border-soft); box-shadow: inset 2px 0 0 var(--primary); }
 .global-session-card.dragging { opacity: .55; border-color: var(--primary); background: var(--accent-soft); }
 .global-session-row { display: grid; grid-template-columns: minmax(0, 1fr) 26px; align-items: stretch; }
-.global-session-main { min-width: 0; width: 100%; display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: 8px; text-align: left; background: transparent; border: none; border-radius: 0; padding: 7px 4px 7px 8px; }
+.global-session-main { min-width: 0; width: 100%; display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 6px; text-align: left; background: transparent; border: none; border-radius: 0; padding: 7px 4px 7px 8px; }
 .global-session-copy { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.session-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .global-session-copy small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
 .session-more { min-height: 0; width: 24px; align-self: center; justify-self: center; padding: 0; border: none; border-radius: 6px; background: transparent; color: var(--muted); opacity: 0; }
 .global-session-card:hover .session-more, .global-session-card.active .session-more { opacity: 1; }

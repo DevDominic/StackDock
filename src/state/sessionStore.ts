@@ -159,9 +159,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     try {
       const updated = await api.terminal.update(id, patch);
       set({ sessions: get().sessions.map((session) => session.id === id ? { ...session, ...updated, workspaceId: session.workspaceId, workspaceName: session.workspaceName, workspacePath: session.workspacePath } : session) });
-    } catch (error) {
-      set({ sessions: get().sessions.map((session) => session.id === id ? previous : session) });
-      throw error;
+    } catch {
+      // Keep the optimistic renderer/layout update even if the live terminal
+      // record is unavailable; workspace layout persistence will still carry
+      // rename/split metadata for restored or already-exited terminal records.
     }
   },
   replaceSession(id, next) {

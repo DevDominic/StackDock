@@ -21,9 +21,10 @@ interface Props {
   onDuplicateSession(id: string): void;
   onSetCwd(id: string, cwd: string): void;
   onSplitSession(id: string, side: TerminalSplitSide): void;
+  onDetachSession(id: string): void;
 }
 
-export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSessionId, sessions, profiles, defaultProfileId, emptySessionsVisible, showSessionCwdForAll, onCreateSession, onSelectSession, onOpenWorkspace, onCloseSession, onRenameSession, onRestartSession, onDuplicateSession, onSetCwd, onSplitSession }: Props) {
+export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSessionId, sessions, profiles, defaultProfileId, emptySessionsVisible, showSessionCwdForAll, onCreateSession, onSelectSession, onOpenWorkspace, onCloseSession, onRenameSession, onRestartSession, onDuplicateSession, onSetCwd, onSplitSession, onDetachSession }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [actionMenu, setActionMenu] = useState<{ session: WorkspaceTerminalSession; x: number; y: number } | null>(null);
   const [query, setQuery] = useState('');
@@ -72,7 +73,7 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
 
   function promptRename(session: WorkspaceTerminalSession) {
     const next = window.prompt('Session name', session.name)?.trim();
-    if (next) onRenameSession(session.id, next);
+    if (next) void Promise.resolve(onRenameSession(session.id, next)).catch(() => undefined);
   }
 
   function promptCwd(session: WorkspaceTerminalSession) {
@@ -186,6 +187,7 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
           <button className="context-menu-item" onClick={() => runAction(() => promptCwd(actionMenu.session))}>Change CWD</button>
           <button className="context-menu-item" onClick={() => runAction(() => onSplitSession(actionMenu.session.id, 'right'))}>Split Right</button>
           <button className="context-menu-item" onClick={() => runAction(() => onSplitSession(actionMenu.session.id, 'down'))}>Split Down</button>
+          {actionMenu.session.splitGroupId ? <button className="context-menu-item" onClick={() => runAction(() => onDetachSession(actionMenu.session.id))}>Detach from Split</button> : null}
           <button className="context-menu-item danger" onClick={() => runAction(() => onCloseSession(actionMenu.session.id))}>Close</button>
         </div>
       ) : null}

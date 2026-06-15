@@ -70,6 +70,7 @@ export interface WorkspaceExtensionContext {
     duplicate(id: string): void | Promise<void>;
     setCwd(id: string, cwd: string): void | Promise<void>;
     split(id: string, side: TerminalSplitSide): void | Promise<void>;
+    detach(id: string): void | Promise<void>;
   };
 }
 

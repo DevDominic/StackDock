@@ -30,6 +30,7 @@ export const sessionsExtension: NativeExtension = {
         onDuplicateSession={ctx.sessionActions.duplicate}
         onSetCwd={ctx.sessionActions.setCwd}
         onSplitSession={ctx.sessionActions.split}
+        onDetachSession={ctx.sessionActions.detach}
       />
     );
   },

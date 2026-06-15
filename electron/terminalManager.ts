@@ -440,7 +440,11 @@ function runHeadlessProcess(session: TerminalSession, profile: TerminalProfile, 
       sendHeadlessProcessResult(entry, null);
       child.kill();
     }, HEADLESS_TIMEOUT_MS);
-    child.stdin.write(wrapHeadlessStartupCommand(command, profile.shell));
+    child.stdin.on('error', (error) => {
+      appendHeadlessProcessOutput(entry, `${error.message}\n`);
+      sendHeadlessProcessResult(entry, null);
+    });
+    child.stdin.end(wrapHeadlessStartupCommand(command, profile.shell));
   } catch (error) {
     appendHeadlessProcessOutput(entry, `${(error as Error).message}\n`);
     sendHeadlessProcessResult(entry, null);
@@ -556,7 +560,7 @@ export async function createTerminal(profileId: string, cwd: string, name?: stri
 }
 
 export function updateTerminalSession(id: string, patch: TerminalSessionUpdate): TerminalSession {
-  const entry = terminals.get(id);
+  const entry = terminals.get(id) ?? [...terminals.values()].find((candidate) => candidate.session.restoreId === id);
   if (!entry) throw new Error('Terminal not found');
   if (patch.name !== undefined) entry.session.name = patch.name.trim();
   if (patch.splitGroupId !== undefined) {
