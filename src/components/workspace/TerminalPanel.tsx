@@ -537,9 +537,10 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     event.stopPropagation();
     const menuWidth = 180;
     const menuHeight = 90;
+    const rect = event.currentTarget.getBoundingClientRect();
     setTerminalMenu({
-      x: Math.min(event.clientX, Math.max(0, window.innerWidth - menuWidth)),
-      y: Math.min(event.clientY, Math.max(0, window.innerHeight - menuHeight)),
+      x: Math.min(Math.max(0, event.clientX - rect.left), Math.max(0, rect.width - menuWidth)),
+      y: Math.min(Math.max(0, event.clientY - rect.top), Math.max(0, rect.height - menuHeight)),
       canCopy: !!terminalRef.current?.hasSelection(),
       canPaste: clipboardHasPasteableContent(),
     });
