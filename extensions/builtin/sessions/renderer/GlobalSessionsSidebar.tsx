@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { TerminalProfile, Workspace, WorkspaceTerminalSession } from '../../../../src/shared/types';
+import type { TerminalProfile, TerminalSplitSide, Workspace, WorkspaceTerminalSession } from '../../../../src/shared/types';
 
 const LAST_PROFILE_KEY = 'stackdock.lastProfileId';
 
@@ -20,13 +20,14 @@ interface Props {
   onRestartSession(id: string): void;
   onDuplicateSession(id: string): void;
   onSetCwd(id: string, cwd: string): void;
-  onSplitSession(id: string, direction: 'row' | 'column'): void;
+  onSplitSession(id: string, side: TerminalSplitSide): void;
 }
 
 export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSessionId, sessions, profiles, defaultProfileId, emptySessionsVisible, showSessionCwdForAll, onCreateSession, onSelectSession, onOpenWorkspace, onCloseSession, onRenameSession, onRestartSession, onDuplicateSession, onSetCwd, onSplitSession }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [actionMenu, setActionMenu] = useState<{ session: WorkspaceTerminalSession; x: number; y: number } | null>(null);
   const [query, setQuery] = useState('');
+  const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null);
   const [profileId, setProfileId] = useState(() => localStorage.getItem(LAST_PROFILE_KEY) ?? defaultProfileId ?? profiles[0]?.id ?? 'powershell');
   const menuRef = useRef<HTMLDivElement | null>(null);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
@@ -99,7 +100,15 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
     return (
       <div
         key={session.id}
-        className={active ? 'global-session-card active' : 'global-session-card'}
+        className={`global-session-card${active ? ' active' : ''}${draggingSessionId === session.id ? ' dragging' : ''}`}
+        draggable
+        onDragStart={(event) => {
+          setDraggingSessionId(session.id);
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('application/x-stackdock-session-id', session.id);
+          event.dataTransfer.setData('text/plain', session.name);
+        }}
+        onDragEnd={() => setDraggingSessionId(null)}
         onContextMenu={(event) => { event.preventDefault(); openActionMenu(session, event.clientX, event.clientY); }}
       >
         <div className="global-session-row">
@@ -175,8 +184,8 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
           <button className="context-menu-item" onClick={() => runAction(() => onRestartSession(actionMenu.session.id))}>Restart</button>
           <button className="context-menu-item" onClick={() => runAction(() => onDuplicateSession(actionMenu.session.id))}>Duplicate</button>
           <button className="context-menu-item" onClick={() => runAction(() => promptCwd(actionMenu.session))}>Change CWD</button>
-          <button className="context-menu-item" onClick={() => runAction(() => onSplitSession(actionMenu.session.id, 'row'))}>Split Right</button>
-          <button className="context-menu-item" onClick={() => runAction(() => onSplitSession(actionMenu.session.id, 'column'))}>Split Down</button>
+          <button className="context-menu-item" onClick={() => runAction(() => onSplitSession(actionMenu.session.id, 'right'))}>Split Right</button>
+          <button className="context-menu-item" onClick={() => runAction(() => onSplitSession(actionMenu.session.id, 'down'))}>Split Down</button>
           <button className="context-menu-item danger" onClick={() => runAction(() => onCloseSession(actionMenu.session.id))}>Close</button>
         </div>
       ) : null}

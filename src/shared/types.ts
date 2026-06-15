@@ -172,6 +172,16 @@ export interface WorkspaceTerminalSession extends TerminalSession {
   workspacePath: string;
 }
 
+export type TerminalSplitDirection = 'row' | 'column';
+export type TerminalSplitSide = 'left' | 'right' | 'up' | 'down';
+
+export interface TerminalSessionUpdate {
+  name?: string;
+  splitGroupId?: string | null;
+  splitDirection?: TerminalSplitDirection | null;
+  splitGroupOrder?: number | null;
+}
+
 export interface HeadlessCommandRun {
   id: string;
   restoreId?: string;
@@ -221,7 +231,8 @@ export interface TerminalSession {
   resumeState?: TerminalResumeState;
   restoredFromSnapshot?: boolean;
   splitGroupId?: string;
-  splitDirection?: 'row' | 'column';
+  splitDirection?: TerminalSplitDirection;
+  splitGroupOrder?: number;
   createdAt: string;
 }
 
@@ -385,6 +396,7 @@ export interface StackDockApi {
   terminal: {
     profiles(): Promise<TerminalProfile[]>;
     create(profileId: string, cwd: string, name?: string, startupCommand?: string, restoreId?: string, context?: TerminalSessionContext): Promise<TerminalSession>;
+    update(id: string, patch: TerminalSessionUpdate): Promise<TerminalSession>;
     restoreState(): Promise<TerminalPersistedState | null>;
     write(id: string, data: string): Promise<void>;
     resize(id: string, cols: number, rows: number): Promise<void>;

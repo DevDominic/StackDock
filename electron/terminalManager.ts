@@ -7,7 +7,7 @@ import { Terminal as HeadlessTerminal, type ITerminalAddon as HeadlessTerminalAd
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { buildRestoredScrollbackBarrier, sanitizeSnapshotReplay, trimSnapshotOutput } from '../src/shared/terminalSnapshot';
 import { resolveTerminalStartupCommand } from '../src/shared/terminalProfiles';
-import type { TerminalPersistedState, TerminalPersistedTab, TerminalProfile, TerminalResumeState, TerminalSession, TerminalSessionContext, TerminalSnapshot } from '../src/shared/types';
+import type { TerminalPersistedState, TerminalPersistedTab, TerminalProfile, TerminalResumeState, TerminalSession, TerminalSessionContext, TerminalSessionUpdate, TerminalSnapshot } from '../src/shared/types';
 import { getDefaultSettings, loadSettings } from './configStore';
 import { ensureDataDirs, getTerminalSnapshotsDir, getTerminalStatePath } from './storage';
 import { getBridgeEnv } from './browserBridge';
@@ -553,6 +553,25 @@ export async function createTerminal(profileId: string, cwd: string, name?: stri
     };
   }
   return session;
+}
+
+export function updateTerminalSession(id: string, patch: TerminalSessionUpdate): TerminalSession {
+  const entry = terminals.get(id);
+  if (!entry) throw new Error('Terminal not found');
+  if (patch.name !== undefined) entry.session.name = patch.name.trim();
+  if (patch.splitGroupId !== undefined) {
+    if (patch.splitGroupId === null) delete entry.session.splitGroupId;
+    else entry.session.splitGroupId = patch.splitGroupId;
+  }
+  if (patch.splitDirection !== undefined) {
+    if (patch.splitDirection === null) delete entry.session.splitDirection;
+    else entry.session.splitDirection = patch.splitDirection;
+  }
+  if (patch.splitGroupOrder !== undefined) {
+    if (patch.splitGroupOrder === null) delete entry.session.splitGroupOrder;
+    else entry.session.splitGroupOrder = patch.splitGroupOrder;
+  }
+  return entry.session;
 }
 
 export async function writeTerminal(id: string, data: string) {

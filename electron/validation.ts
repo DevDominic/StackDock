@@ -1,5 +1,5 @@
 import path from 'path';
-import type { AppRestoreState, ExtensionSettings, TerminalAttachmentOptions, TerminalAttachmentSource, TerminalSessionContext, Workspace, WorkspaceLayout } from '../src/shared/types';
+import type { AppRestoreState, ExtensionSettings, TerminalAttachmentOptions, TerminalAttachmentSource, TerminalSessionContext, TerminalSessionUpdate, Workspace, WorkspaceLayout } from '../src/shared/types';
 
 export function assertString(value: unknown, name: string): string {
   if (typeof value !== 'string') throw new Error(`${name} must be string`);
@@ -83,6 +83,20 @@ export function assertTerminalSessionContext(value: unknown): TerminalSessionCon
     headless: context.headless === true ? true : undefined,
     commandLabel: context.commandLabel == null ? undefined : assertNonEmptyString(context.commandLabel, 'context.commandLabel'),
   };
+}
+export function assertTerminalSessionUpdate(value: unknown, name: string): TerminalSessionUpdate {
+  if (value == null || typeof value !== 'object') throw new Error(`${name} invalid`);
+  const patch = value as TerminalSessionUpdate;
+  const next: TerminalSessionUpdate = {};
+  if ('name' in patch) next.name = assertNonEmptyString(patch.name, `${name}.name`).trim();
+  if ('splitGroupId' in patch) next.splitGroupId = patch.splitGroupId == null ? null : assertNonEmptyString(patch.splitGroupId, `${name}.splitGroupId`);
+  if ('splitDirection' in patch) {
+    if (patch.splitDirection == null) next.splitDirection = null;
+    else if (patch.splitDirection === 'row' || patch.splitDirection === 'column') next.splitDirection = patch.splitDirection;
+    else throw new Error(`${name}.splitDirection invalid`);
+  }
+  if ('splitGroupOrder' in patch) next.splitGroupOrder = patch.splitGroupOrder == null ? null : assertNumber(patch.splitGroupOrder, `${name}.splitGroupOrder`, 0);
+  return next;
 }
 export function assertTerminalAttachmentSource(value: unknown, name: string): TerminalAttachmentSource {
   const source = assertNonEmptyString(value, name);

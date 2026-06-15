@@ -101,6 +101,7 @@ const api: StackDockApi = {
   terminal: {
     profiles: () => ipcRenderer.invoke('terminal:profiles'),
     create: (profileId, cwd, name, startupCommand, restoreId, context) => ipcRenderer.invoke('terminal:create', profileId, cwd, name, startupCommand, restoreId, context),
+    update: (id, patch) => ipcRenderer.invoke('terminal:update', id, patch),
     restoreState: () => ipcRenderer.invoke('terminal:restoreState'),
     write: (id, data) => ipcRenderer.invoke('terminal:write', id, data),
     resize: (id, cols, rows) => ipcRenderer.invoke('terminal:resize', id, cols, rows),

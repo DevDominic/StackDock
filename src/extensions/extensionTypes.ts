@@ -1,5 +1,5 @@
 import type { MouseEvent, ReactNode } from 'react';
-import type { ExtensionConfigPrimitive, ExtensionManifest, ExtensionStatusBarContribution, ExtensionViewContribution, GitFileStatus, GitStatus, HeadlessCommandRun, StackDockSettings, TerminalProfile, Workspace, WorkspaceTerminalSession } from '../shared/types';
+import type { ExtensionConfigPrimitive, ExtensionManifest, ExtensionStatusBarContribution, ExtensionViewContribution, GitFileStatus, GitStatus, HeadlessCommandRun, StackDockSettings, TerminalProfile, TerminalSplitSide, Workspace, WorkspaceTerminalSession } from '../shared/types';
 
 export interface ExtensionCommand {
   id: string;
@@ -69,7 +69,7 @@ export interface WorkspaceExtensionContext {
     restart(id: string): void | Promise<void>;
     duplicate(id: string): void | Promise<void>;
     setCwd(id: string, cwd: string): void | Promise<void>;
-    split(id: string, direction: 'row' | 'column'): void | Promise<void>;
+    split(id: string, side: TerminalSplitSide): void | Promise<void>;
   };
 }
 

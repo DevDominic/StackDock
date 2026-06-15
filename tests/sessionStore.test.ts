@@ -5,6 +5,11 @@ let createCount = 0;
 const saveRestoreState = vi.fn(() => Promise.resolve({}));
 const kill = vi.fn(() => Promise.resolve());
 const forgetSnapshot = vi.fn(() => Promise.resolve());
+const update = vi.fn((id: string, patch: Partial<TerminalSession>) => {
+  const next = { id, restoreId: `restore-${id}`, name: patch.name ?? 'Updated', profileId: 'powershell', cwd: 'C:/repo', createdAt: new Date(0).toISOString(), ...patch } as Record<string, unknown>;
+  for (const [key, value] of Object.entries(next)) if (value === null) delete next[key];
+  return Promise.resolve(next as TerminalSession);
+});
 
 function nextTerminal(): TerminalSession {
   createCount += 1;
@@ -23,11 +28,13 @@ beforeEach(() => {
   saveRestoreState.mockClear();
   kill.mockClear();
   forgetSnapshot.mockClear();
+  update.mockClear();
   vi.resetModules();
   vi.stubGlobal('window', {
     stackdock: {
       terminal: {
         create: vi.fn(() => Promise.resolve(nextTerminal())),
+        update,
         kill,
         forgetSnapshot,
       },
@@ -72,6 +79,37 @@ describe('sessionStore active fallback', () => {
     expect(store.getState().activeSessionId).toBe(b.id);
     expect(store.getState().activeWorkspaceId).toBe('workspace-b');
     expect(saveRestoreState).toHaveBeenCalledWith({ lastWorkspaceId: 'workspace-b', lastTerminalRestoreId: b.restoreId, lastTerminalRuntimeId: b.id });
+  });
+
+  it('renames sessions through terminal metadata without changing active session', async () => {
+    const store = await loadStore();
+    const a = await store.getState().createSession({ workspaceId: 'workspace-a', workspaceName: 'A', workspacePath: 'C:/a', profileId: 'powershell' });
+    const b = await store.getState().createSession({ workspaceId: 'workspace-a', workspaceName: 'A', workspacePath: 'C:/a', profileId: 'powershell' });
+    store.getState().setActiveSession(a.id);
+
+    await store.getState().renameSession(b.id, 'Renamed');
+
+    expect(update).toHaveBeenCalledWith(b.id, { name: 'Renamed' });
+    expect(store.getState().sessions.find((session) => session.id === b.id)?.name).toBe('Renamed');
+    expect(store.getState().activeSessionId).toBe(a.id);
+  });
+
+  it('updates split metadata without changing active session', async () => {
+    const store = await loadStore();
+    const a = await store.getState().createSession({ workspaceId: 'workspace-a', workspaceName: 'A', workspacePath: 'C:/a', profileId: 'powershell' });
+    const b = await store.getState().createSession({ workspaceId: 'workspace-a', workspaceName: 'A', workspacePath: 'C:/a', profileId: 'powershell' });
+    store.getState().setActiveSession(a.id);
+
+    await store.getState().updateSessionMetadata(b.id, { splitGroupId: 'group-1', splitDirection: 'row', splitGroupOrder: 1 });
+    expect(store.getState().sessions.find((session) => session.id === b.id)).toMatchObject({ splitGroupId: 'group-1', splitDirection: 'row', splitGroupOrder: 1 });
+    expect(store.getState().activeSessionId).toBe(a.id);
+
+    await store.getState().updateSessionMetadata(b.id, { splitGroupId: null, splitDirection: null, splitGroupOrder: null });
+    const updated = store.getState().sessions.find((session) => session.id === b.id)!;
+    expect(updated.splitGroupId).toBeUndefined();
+    expect(updated.splitDirection).toBeUndefined();
+    expect(updated.splitGroupOrder).toBeUndefined();
+    expect(store.getState().activeSessionId).toBe(a.id);
   });
 
   it('clears the active session when the last session is removed', async () => {

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { api } from '../lib/api';
-import type { HeadlessCommandRun, WorkspaceTerminalSession } from '../shared/types';
+import type { HeadlessCommandRun, TerminalSessionUpdate, WorkspaceTerminalSession } from '../shared/types';
 
 const HEADLESS_OUTPUT_MAX_CHARS = 128 * 1024;
 
@@ -40,7 +40,8 @@ interface SessionState {
   completeHeadlessRun(id: string, result: { output: string; exitCode: number | null; timedOut?: boolean; label?: string }): void;
   removeHeadlessRun(id: string): void;
   removeSessionLocal(id: string): void;
-  renameSession(id: string, name: string): void;
+  renameSession(id: string, name: string): Promise<void>;
+  updateSessionMetadata(id: string, patch: TerminalSessionUpdate): Promise<void>;
   replaceSession(id: string, next: WorkspaceTerminalSession): void;
   setActiveSession(id: string): void;
   setActiveWorkspace(id: string | null): void;
@@ -128,7 +129,41 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ sessions: next, activeSessionId: picked?.id ?? null, activeWorkspaceId: fallbackWorkspaceId ?? null });
     persistActiveSession(picked, fallbackWorkspaceId);
   },
-  renameSession(id, name) { set({ sessions: get().sessions.map((session) => session.id === id ? { ...session, name } : session) }); },
+  async renameSession(id, name) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    await get().updateSessionMetadata(id, { name: trimmed });
+  },
+  async updateSessionMetadata(id, patch) {
+    const current = get();
+    const previous = current.sessions.find((session) => session.id === id);
+    if (!previous) return;
+    const applyPatch = (session: WorkspaceTerminalSession): WorkspaceTerminalSession => {
+      const next: WorkspaceTerminalSession = { ...session };
+      if (patch.name !== undefined) next.name = patch.name.trim();
+      if (patch.splitGroupId !== undefined) {
+        if (patch.splitGroupId === null) delete next.splitGroupId;
+        else next.splitGroupId = patch.splitGroupId;
+      }
+      if (patch.splitDirection !== undefined) {
+        if (patch.splitDirection === null) delete next.splitDirection;
+        else next.splitDirection = patch.splitDirection;
+      }
+      if (patch.splitGroupOrder !== undefined) {
+        if (patch.splitGroupOrder === null) delete next.splitGroupOrder;
+        else next.splitGroupOrder = patch.splitGroupOrder;
+      }
+      return next;
+    };
+    set({ sessions: current.sessions.map((session) => session.id === id ? applyPatch(session) : session) });
+    try {
+      const updated = await api.terminal.update(id, patch);
+      set({ sessions: get().sessions.map((session) => session.id === id ? { ...session, ...updated, workspaceId: session.workspaceId, workspaceName: session.workspaceName, workspacePath: session.workspacePath } : session) });
+    } catch (error) {
+      set({ sessions: get().sessions.map((session) => session.id === id ? previous : session) });
+      throw error;
+    }
+  },
   replaceSession(id, next) {
     set({ sessions: get().sessions.map((session) => session.id === id ? next : session), activeSessionId: next.id, activeWorkspaceId: next.workspaceId });
     persistActiveSession(next);

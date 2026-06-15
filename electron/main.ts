@@ -6,7 +6,7 @@ import path from 'path';
 import { addWorkspace, createWorkspace, listWorkspaces, loadLayout, loadRestoreState, removeWorkspace, saveLayout, saveRestoreState, updateWorkspace } from './workspaceStore';
 import { createFile, createFolder, deletePath, readDirectory, readFile, readFileDataUrl, renamePath, revealInExplorer, writeFile } from './fileService';
 import { addAll, commit, discardFile, fetch, getGitDiff, getGitFileContents, getGitStatus, getIgnoredFiles, listBranches, pull, push, stageFile, switchBranch, unstageFile } from '../extensions/builtin/git/main/gitService';
-import { createTerminal, forgetTerminalSnapshot, getTerminalProfiles, getTerminalSnapshot, killTerminal, loadOpenTerminalState, markTerminalReady, resizeTerminal, saveOpenTerminalState, setTerminalWindow, setVisibleTerminals, writeTerminal } from './terminalManager';
+import { createTerminal, forgetTerminalSnapshot, getTerminalProfiles, getTerminalSnapshot, killTerminal, loadOpenTerminalState, markTerminalReady, resizeTerminal, saveOpenTerminalState, setTerminalWindow, setVisibleTerminals, updateTerminalSession, writeTerminal } from './terminalManager';
 import { setBridgeWindow, startBrowserBridge } from './browserBridge';
 import { ensureDataDirs } from './storage';
 import { logError } from './log';
@@ -14,7 +14,7 @@ import { loadSettings, saveSettings } from './configStore';
 import { loadExtensions, resolveExtensionAsset } from './extensionService';
 import { loadAutomation, loadAutomationRaw, saveAutomationRaw } from './automationStore';
 import { inspectAttachmentPath, savePastedImageAttachment } from './attachmentService';
-import { assertAbsolutePath, assertLayoutLike, assertNonEmptyString, assertNumber, assertRestoreStateLike, assertSafeFileName, assertString, assertTerminalAttachmentOptions, assertTerminalAttachmentSource, assertTerminalSessionContext, assertWorkspaceLike } from './validation';
+import { assertAbsolutePath, assertLayoutLike, assertNonEmptyString, assertNumber, assertRestoreStateLike, assertSafeFileName, assertString, assertTerminalAttachmentOptions, assertTerminalAttachmentSource, assertTerminalSessionContext, assertTerminalSessionUpdate, assertWorkspaceLike } from './validation';
 
 let mainWindow: BrowserWindow | null = null;
 let quittingAfterSnapshotFlush = false;
@@ -267,6 +267,7 @@ function registerIpc() {
     assertTerminalSessionContext(context),
   ));
   ipcMain.handle('terminal:restoreState', async () => loadOpenTerminalState());
+  ipcMain.handle('terminal:update', async (_event, id: unknown, patch: unknown) => updateTerminalSession(assertNonEmptyString(id, 'id'), assertTerminalSessionUpdate(patch, 'patch')));
   ipcMain.handle('terminal:write', async (_event, id: unknown, data: unknown) => writeTerminal(assertNonEmptyString(id, 'id'), assertString(data, 'data')));
   ipcMain.handle('terminal:resize', async (_event, id: unknown, cols: unknown, rows: unknown) => resizeTerminal(assertNonEmptyString(id, 'id'), assertNumber(cols, 'cols', 2, 500), assertNumber(rows, 'rows', 1, 500)));
   ipcMain.handle('terminal:ready', async (_event, id: unknown) => markTerminalReady(assertNonEmptyString(id, 'id')));
