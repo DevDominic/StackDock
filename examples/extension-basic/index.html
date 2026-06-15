@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Hello StackDock</title>
+    <style>
+      body { margin: 0; padding: 16px; font: 13px system-ui, sans-serif; color: #e7e7e7; background: #10131a; }
+      button { margin-top: 12px; }
+      pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+    </style>
+  </head>
+  <body>
+    <h1>Hello StackDock</h1>
+    <p>This local extension runs in a sandboxed iframe.</p>
+    <button id="context">Get workspace context</button>
+    <pre id="output"></pre>
+    <script>
+      let nextId = 1;
+      const pending = new Map();
+      window.addEventListener('message', (event) => {
+        const message = event.data || {};
+        if (message.type !== 'stackdock.response' || !pending.has(message.id)) return;
+        pending.get(message.id)(message);
+        pending.delete(message.id);
+      });
+      function request(type, payload) {
+        const id = String(nextId++);
+        parent.postMessage({ id, type, payload }, '*');
+        return new Promise((resolve) => pending.set(id, resolve));
+      }
+      document.getElementById('context').addEventListener('click', async () => {
+        const response = await request('stackdock.getContext');
+        document.getElementById('output').textContent = JSON.stringify(response, null, 2);
+      });
+      request('stackdock.ready');
+    </script>
+  </body>
+</html>

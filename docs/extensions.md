@@ -50,3 +50,11 @@ Iframe code communicates with the host using `postMessage` typed messages:
 - `stackdock.revealFolder`
 
 The host replies with `stackdock.response` and either a payload or an error string.
+
+## Example
+
+See `examples/extension-basic/` for a minimal local extension with a manifest, settings field, sandboxed iframe view, and `stackdock.getContext` bridge request.
+
+## Security notes
+
+Only add local extension packages from folders you trust. Extension UI runs in a sandboxed iframe, but it can still request host actions through the documented bridge. Future capability prompts should make these permissions more explicit.

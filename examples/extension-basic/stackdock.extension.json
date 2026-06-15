@@ -1,0 +1,28 @@
+{
+  "id": "example.hello",
+  "name": "Hello StackDock",
+  "version": "0.1.0",
+  "description": "Minimal local StackDock extension example.",
+  "defaultEnabled": false,
+  "contributes": {
+    "views": [
+      {
+        "id": "example.hello.view",
+        "title": "Hello",
+        "location": "activity",
+        "entry": "index.html"
+      }
+    ],
+    "configuration": {
+      "title": "Hello settings",
+      "fields": [
+        {
+          "key": "greeting",
+          "label": "Greeting",
+          "type": "string",
+          "default": "Hello from a local extension"
+        }
+      ]
+    }
+  }
+}
