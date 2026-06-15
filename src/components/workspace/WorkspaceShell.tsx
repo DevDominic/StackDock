@@ -1224,7 +1224,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
 
   async function runGitRemoteAction(kind: 'fetch' | 'pull' | 'push') {
     if (!requireTrusted(`running git ${kind}`)) return;
-    if (gitConfig.confirmBeforeRemoteActions !== false && (kind === 'pull' || kind === 'push') && !(await promptDialog.confirm({ title: `Run git ${kind}?`, message: `Workspace: ${workspace.name}\nThis may ${kind === 'push' ? 'update the remote repository' : 'modify local files'}.`, confirmLabel: kind[0].toUpperCase() + kind.slice(1), icon: '⎇' }))) return;
+    if (gitConfig.confirmBeforeRemoteActions !== false && (kind === 'pull' || kind === 'push') && !(await promptDialog.confirm({ title: `Run git ${kind}?`, message: `Workspace: ${workspace.name}\nThis will ${kind === 'push' ? 'update the remote repository' : 'modify local files'}.`, confirmLabel: kind[0].toUpperCase() + kind.slice(1), icon: '⎇' }))) return;
     try {
       setGitError(null);
       await api.git[kind](workspace.path);
