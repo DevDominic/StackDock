@@ -32,22 +32,18 @@ function vbsHelperScriptPath() {
   return path.join(bridgeDir(), 'open-url.vbs');
 }
 
-function quoteWindowsArg(value: string) {
-  return `"${value.replace(/"/g, '""')}"`;
-}
-
 /** Env injected into terminals so CLI tools route browser opens back into StackDock. */
 export function getBridgeEnv(sessionId: string): Record<string, string> {
   if (!server) return {};
   const helper = process.platform === 'win32' ? cmdHelperScriptPath() : shHelperScriptPath();
-  const hiddenHelper = process.platform === 'win32'
-    ? `wscript.exe //B //Nologo ${quoteWindowsArg(vbsHelperScriptPath())}`
-    : helper;
+  const plannotatorHelper = process.platform === 'win32' ? vbsHelperScriptPath() : helper;
   return {
     STACKDOCK_BRIDGE_PORT: String(port),
     STACKDOCK_BRIDGE_TOKEN: token,
     STACKDOCK_SESSION_ID: sessionId,
-    PLANNOTATOR_BROWSER: hiddenHelper,
+    // Plannotator opens this via `cmd /c start`, so use a bare .vbs path on
+    // Windows: no inline wscript args to misparse, and no visible cmd window.
+    PLANNOTATOR_BROWSER: plannotatorHelper,
     BROWSER: helper,
   };
 }
@@ -113,6 +109,7 @@ async function writeHelperScripts() {
 }
 
 export async function startBrowserBridge() {
+  if (server) return;
   token = crypto.randomUUID();
   await writeHelperScripts();
   server = http.createServer((req, res) => {
@@ -142,4 +139,13 @@ export async function startBrowserBridge() {
     server!.listen(0, '127.0.0.1', resolve);
   });
   port = (server.address() as AddressInfo).port;
+}
+
+export async function stopBrowserBridge() {
+  const current = server;
+  if (!current) return;
+  server = null;
+  port = 0;
+  token = '';
+  await new Promise<void>((resolve) => current.close(() => resolve()));
 }
