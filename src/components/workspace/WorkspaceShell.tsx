@@ -737,10 +737,13 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     });
   }
 
-  // Browser opens captured from terminal tools (via the loopback bridge). Unlike
-  // openLink this deliberately ignores openLinksExternally: injecting the env vars
-  // was the explicit opt-in, and the capture setting is the escape hatch.
+  // Browser opens captured from terminal tools (via the loopback bridge). Respect
+  // the external-browser setting so CLI/browser consent prompts do what they say.
   function openCapturedLink(url: string, sessionId?: string) {
+    if (settings?.openLinksExternally) {
+      void api.shell.openExternal(url).catch((error) => showToast(getErrorMessage(error, 'Could not open link'), 'error'));
+      return;
+    }
     const target = sessionId && allSessions.some((session) => session.id === sessionId)
       ? allSessions.find((session) => session.id === sessionId)!
       : null;
