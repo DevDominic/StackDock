@@ -126,6 +126,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const sessionStore = useSessionStore();
   const allSessions = sessionStore.sessions;
   const headlessRuns = sessionStore.headlessRuns;
+  const [inspectHeadlessRunId, setInspectHeadlessRunId] = useState<string | null>(null);
   const sessions = allSessions.filter((session) => session.workspaceId === workspace.id);
   const activeTerminalId = sessions.some((session) => session.id === sessionStore.activeSessionId) ? sessionStore.activeSessionId : sessions[0]?.id ?? null;
   const [htmlPreviewBySession, setHtmlPreviewBySession] = useState<Record<string, string | null>>({});
@@ -317,8 +318,15 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       sessionStore.removeSessionLocal(payload.id);
       sessionStore.completeHeadlessRun(payload.id, payload);
       const output = liveRunOutput || payload.output.trim();
-      const message = `${payload.label ?? 'Command'}: ${output || (payload.timedOut ? 'Timed out' : 'Completed')}`;
-      showToast(message.length > 700 ? `${message.slice(0, 699)}…` : message, payload.exitCode === 0 && !payload.timedOut ? 'success' : 'error');
+      const displayOutput = output || (payload.timedOut ? 'Timed out' : 'Completed');
+      showToast(
+        <span className="headless-toast-body">
+          <strong>{payload.label ?? 'Command'}</strong>
+          <pre>{displayOutput}</pre>
+        </span>,
+        payload.exitCode === 0 && !payload.timedOut ? 'success' : 'error',
+        { onClick: () => { setInspectHeadlessRunId(payload.id); openView('stackdock.headless.view'); } },
+      );
     });
     return () => { disposeData(); disposeResult(); };
   }, [showToast]);
@@ -1067,6 +1075,8 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         catch (error) { showToast(getErrorMessage(error, 'Could not terminate headless command'), 'error'); }
       },
       delete: (id) => sessionStore.removeHeadlessRun(id),
+      inspect: (id) => { setInspectHeadlessRunId(id); openView('stackdock.headless.view'); },
+      inspectRunId: inspectHeadlessRunId,
     },
     gitActions: {
       error: gitError,

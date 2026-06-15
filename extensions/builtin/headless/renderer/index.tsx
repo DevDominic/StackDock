@@ -5,5 +5,5 @@ import './headless.css';
 
 export const headlessExtension: NativeExtension = {
   manifest: headlessExtensionManifest,
-  renderView: (_contribution, ctx) => <HeadlessPanel runs={ctx.headlessRuns} onTerminate={ctx.headlessActions.terminate} onDelete={ctx.headlessActions.delete} />,
+  renderView: (_contribution, ctx) => <HeadlessPanel runs={ctx.headlessRuns} inspectRunId={ctx.headlessActions.inspectRunId} onTerminate={ctx.headlessActions.terminate} onDelete={ctx.headlessActions.delete} />,
 };

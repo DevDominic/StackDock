@@ -720,10 +720,16 @@ html[data-window-controls="native"] .workspace-titlebar::after { right: 138px; }
 .launcher-empty { padding: 12px; text-align: center; }
 .session-switcher-current { color: var(--primary); font-style: italic; }
 .toast-stack { position: fixed; right: 16px; bottom: 42px; z-index: 200; display: flex; flex-direction: column; gap: 8px; width: min(360px, calc(100vw - 32px)); }
-.toast { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: 0 10px 28px var(--shadow); }
+.toast { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: 0 10px 28px var(--shadow); }
+.toast.clickable { cursor: pointer; }
+.toast.clickable:hover { background: var(--bg-elevated); }
+.toast > span { min-width: 0; flex: 1; }
 .toast.success { border-color: var(--success-border); }
 .toast.error { border-color: var(--error-border); }
 .toast.info { border-color: var(--border-strong); }
+.headless-toast-body { display: flex; flex-direction: column; gap: 6px; }
+.headless-toast-body strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.headless-toast-body pre { max-height: calc(8 * 1.35em); margin: 0; overflow: hidden; color: var(--editor-fg); font-family: var(--code-font); font-size: 11px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; }
 .edit-modal label, .settings-modal label { display: flex; flex-direction: column; gap: 7px; margin: 0; }
 .edit-modal input, .settings-modal input, .settings-modal select { width: 100%; background: color-mix(in srgb, var(--bg-panel) 88%, black); color: inherit; border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px; font-weight: 400; transition: border-color .12s ease, box-shadow .12s ease, background-color .12s ease; }
 .edit-modal input:focus, .settings-modal input:focus, .settings-modal select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--accent-soft); }

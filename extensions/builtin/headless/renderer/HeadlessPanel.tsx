@@ -3,6 +3,7 @@ import type { HeadlessCommandRun } from '../../../../src/shared/types';
 
 interface Props {
   runs: HeadlessCommandRun[];
+  inspectRunId?: string | null;
   onTerminate(id: string): void | Promise<void>;
   onDelete(id: string): void | Promise<void>;
 }
@@ -14,7 +15,7 @@ function elapsedLabel(startedAt: number, now: number) {
   return `${minutes}m ${seconds % 60}s`;
 }
 
-export function HeadlessPanel({ runs, onTerminate, onDelete }: Props) {
+export function HeadlessPanel({ runs, inspectRunId, onTerminate, onDelete }: Props) {
   const [inspectingRunId, setInspectingRunId] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const outputRef = useRef<HTMLPreElement | null>(null);
@@ -24,6 +25,10 @@ export function HeadlessPanel({ runs, onTerminate, onDelete }: Props) {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (inspectRunId && runs.some((run) => run.id === inspectRunId)) setInspectingRunId(inspectRunId);
+  }, [inspectRunId, runs]);
 
   useEffect(() => {
     if (!inspectingRun) setInspectingRunId(null);

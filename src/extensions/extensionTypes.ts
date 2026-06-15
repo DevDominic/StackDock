@@ -58,6 +58,8 @@ export interface WorkspaceExtensionContext {
   headlessActions: {
     terminate(id: string): void | Promise<void>;
     delete(id: string): void | Promise<void>;
+    inspect(id: string): void;
+    inspectRunId?: string | null;
   };
   sessionActions: {
     create(target: Workspace, profileId: string): Promise<void>;
