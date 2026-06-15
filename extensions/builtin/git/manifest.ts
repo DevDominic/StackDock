@@ -14,6 +14,7 @@ export const gitExtensionManifest: ExtensionManifest = {
       title: 'Source Control settings',
       fields: [
         { key: 'confirmBeforeDiscard', label: 'Confirm before discard', type: 'boolean', default: true },
+        { key: 'confirmBeforeRemoteActions', label: 'Confirm before pull/push', type: 'boolean', default: true },
         { key: 'refreshIntervalSeconds', label: 'Refresh interval (seconds)', type: 'number', default: 1, min: 1, step: 1 },
       ],
     },

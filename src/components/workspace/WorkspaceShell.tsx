@@ -197,7 +197,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const workspaceSetup = workspaceTrusted ? automation?.workspaces[workspace.id] : undefined;
   const isRepo = !!git?.isRepo;
   const gitExtensionId = extensionRegistry.extensions.find((manifest) => manifest.capabilities?.includes('git'))?.id;
-  const gitConfig = getExtensionConfig(settings, gitExtensionId ?? '', { confirmBeforeDiscard: true, refreshIntervalSeconds: 1 });
+  const gitConfig = getExtensionConfig(settings, gitExtensionId ?? '', { confirmBeforeDiscard: true, confirmBeforeRemoteActions: true, refreshIntervalSeconds: 1 });
 
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -1172,7 +1172,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
 
   async function runGitRemoteAction(kind: 'fetch' | 'pull' | 'push') {
     if (!requireTrusted(`running git ${kind}`)) return;
-    if ((kind === 'pull' || kind === 'push') && !(await promptDialog.confirm({ title: `Run git ${kind}?`, message: `Workspace: ${workspace.name}\nThis may ${kind === 'push' ? 'update the remote repository' : 'modify local files'}.`, confirmLabel: kind[0].toUpperCase() + kind.slice(1), icon: '⎇' }))) return;
+    if (gitConfig.confirmBeforeRemoteActions !== false && (kind === 'pull' || kind === 'push') && !(await promptDialog.confirm({ title: `Run git ${kind}?`, message: `Workspace: ${workspace.name}\nThis may ${kind === 'push' ? 'update the remote repository' : 'modify local files'}.`, confirmLabel: kind[0].toUpperCase() + kind.slice(1), icon: '⎇' }))) return;
     try {
       setGitError(null);
       await api.git[kind](workspace.path);

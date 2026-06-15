@@ -94,7 +94,7 @@ export function getDefaultSettings(): StackDockSettings {
       config: {
         ...getBundledExtensionConfigDefaults(),
         'stackdock.sessions': { emptySessionsVisible: false, showSessionCwdForAll: false },
-        'stackdock.git': { confirmBeforeDiscard: true, refreshIntervalSeconds: 1 },
+        'stackdock.git': { confirmBeforeDiscard: true, confirmBeforeRemoteActions: true, refreshIntervalSeconds: 1 },
         'stackdock.workspaceStatus': { showPath: true },
       },
     },
@@ -139,6 +139,7 @@ export async function loadSettings(): Promise<StackDockSettings> {
       'stackdock.git': {
         ...defaults.extensions.config['stackdock.git'],
         confirmBeforeDiscard: raw.confirmBeforeDiscard ?? rawExtensionConfig['stackdock.git']?.confirmBeforeDiscard ?? defaults.confirmBeforeDiscard,
+        confirmBeforeRemoteActions: rawExtensionConfig['stackdock.git']?.confirmBeforeRemoteActions ?? defaults.extensions.config['stackdock.git']?.confirmBeforeRemoteActions ?? true,
         refreshIntervalSeconds: raw.gitRefreshIntervalSeconds ?? rawExtensionConfig['stackdock.git']?.refreshIntervalSeconds ?? defaults.gitRefreshIntervalSeconds,
       },
       'stackdock.workspaceStatus': {
