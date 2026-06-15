@@ -162,6 +162,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   if (mainView === 'web' && !openLinks.length) mainView = 'terminal';
   const webSplit = activeEditors.webSplit && openLinks.length ? activeEditors.webSplit : null;
   const primaryView = webSplit && mainView === 'web' ? 'terminal' : mainView;
+  const visibleEditorDiff = editorDiff && primaryView === 'editor' && activeFilePath === editorDiff.path ? editorDiff : null;
   const activeHtmlPreviewPath = activeTerminalId ? htmlPreviewBySession[activeTerminalId] ?? null : null;
   const activeHtmlPreview = !!activeFilePath && activeHtmlPreviewPath === activeFilePath;
   const [selectedGitFile, setSelectedGitFile] = useState<GitFileStatus | null>(null);
@@ -1488,7 +1489,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         </div>
         <div className="topbar-right">
           <div className="topbar-actions">
-            {editorDiff && !editorDiff.untracked ? (
+            {visibleEditorDiff && !visibleEditorDiff.untracked ? (
               <div className="diff-mode-control" role="group" aria-label="Editor diff display mode">
                 <button className={diffMode === 'inline' ? 'active-toggle' : ''} onClick={() => setDiffMode('inline')}>Inline</button>
                 <button className={diffMode === 'side-by-side' ? 'active-toggle' : ''} onClick={() => setDiffMode('side-by-side')}>Side by side</button>
