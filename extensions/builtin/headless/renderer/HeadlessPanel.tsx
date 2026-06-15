@@ -44,7 +44,7 @@ export function HeadlessPanel({ runs, inspectRunId, onTerminate, onDelete }: Pro
   return (
     <aside className="panel headless-panel">
       <div className="panel-title headless-title">
-        <span>Headless</span>
+        <span>Commands</span>
         <small>{runs.length}</small>
       </div>
       <div className="headless-list">
