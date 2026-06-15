@@ -59,8 +59,9 @@ function ownsPiCommand(command: string) {
   return PI_COMMAND_PATTERN.test(command);
 }
 
-function isBarePiCommand(command: string) {
-  return /^\s*pi\s*$/i.test(command);
+function isSessionablePiCommand(command: string) {
+  const args = command.replace(/^\s*pi(?:\s+|$)/i, '').trim();
+  return !args || args.startsWith('-');
 }
 
 function isSafeSinglePiCommand(command: string) {
@@ -156,7 +157,7 @@ function resolveStartupCommand(command: string, ctx: TerminalStartupCommandConte
   const storagePath = commandSessionDir ?? (config.useStackDockSessionDir ? getStackDockPiSessionsDir() : undefined);
   const directState = stateFromCommand(trimmed, storagePath);
   if (directState || hasDirectSessionArg(trimmed) || isNonInteractivePiCommand(trimmed)) return { command: trimmed, resumeState: directState };
-  if (!isBarePiCommand(trimmed) || !config.stableSessionIds) return { command: trimmed };
+  if (!isSessionablePiCommand(trimmed) || !config.stableSessionIds) return { command: trimmed };
 
   const sessionId = stackDockPiSessionId(ctx.restoreId);
   const args = ['--session-id', quoteArg(sessionId)];

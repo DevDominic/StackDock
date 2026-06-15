@@ -51,6 +51,22 @@ describe('Pi terminal integration', () => {
     expect(result?.command).not.toContain('C:\\\\Users');
   });
 
+  it('adds stable session id to interactive pi flag invocations', () => {
+    const integration = createPiTerminalIntegration(settings());
+    const result = integration.resolveStartupCommand?.('pi -a', { restoreId: 'restore_abc', cwd: 'C:\\repo' });
+
+    expect(result?.command).toBe('pi -a --session-id "stackdock.restore_abc"');
+    expect(result?.resumeState?.sessionId).toBe('stackdock.restore_abc');
+  });
+
+  it('adds stable session id when pi is typed interactively', () => {
+    const integration = createPiTerminalIntegration(settings());
+    const result = integration.resolveInteractiveCommand?.('pi -a', { restoreId: 'restore_abc', cwd: 'C:\\repo' });
+
+    expect(result?.command).toBe('pi -a --session-id "stackdock.restore_abc"');
+    expect(result?.resumeState?.sessionId).toBe('stackdock.restore_abc');
+  });
+
   it('does not inject session args into pi subcommands', () => {
     const integration = createPiTerminalIntegration(settings());
     const command = 'pi install npm:gentle-engram@0.1.8';
