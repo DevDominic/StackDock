@@ -28,39 +28,14 @@ const GLOBAL_KEY = '__global__';
 
 const UI_FONT_PRESETS = [
   {
-    label: 'Inter',
-    family: '"Inter Variable", "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
-    note: 'Clean modern UI font. FontAlternatives: replaces 102 premium fonts.',
-  },
-  {
-    label: 'Montserrat',
-    family: '"Montserrat", "Inter Variable", "Inter", system-ui, sans-serif',
-    note: 'Geometric and polished. FontAlternatives: replaces 23 premium fonts.',
-  },
-  {
-    label: 'Barlow',
-    family: '"Barlow", "Inter Variable", "Inter", system-ui, sans-serif',
-    note: 'Friendly, slightly condensed. FontAlternatives: replaces 22 premium fonts.',
-  },
-  {
-    label: 'Geist',
-    family: '"Geist Variable", "Geist", "Inter Variable", "Inter", system-ui, sans-serif',
-    note: 'Crisp modern product UI. FontAlternatives: replaces 12 premium fonts.',
-  },
-  {
-    label: 'Google Sans Flex',
-    family: '"Google Sans Flex", "Inter Variable", "Inter", system-ui, sans-serif',
-    note: 'Soft Google-style interface font. No replacement count listed.',
-  },
-  {
     label: 'Segoe UI',
     family: '"Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
-    note: 'Native Windows app feel. Listed as premium on FontAlternatives.',
+    note: 'Native Windows app feel without bundled font files.',
   },
   {
     label: 'System UI',
     family: 'system-ui, sans-serif',
-    note: 'Uses platform default UI font. Not listed as a specific font.',
+    note: 'Uses platform default UI font without bundled font files.',
   },
 ] as const;
 
@@ -76,44 +51,14 @@ function cleanUiFontFamily(fontFamily: string) {
 
 const CODE_FONT_PRESETS = [
   {
-    label: 'JetBrains Mono',
-    family: '"JetBrains Mono Variable", "JetBrains Mono", "Cascadia Code", Consolas, monospace',
-    note: 'Crisp coding font. FontAlternatives: replaces 17 premium fonts.',
-  },
-  {
-    label: 'Fira Code',
-    family: '"Fira Code Variable", "Fira Code", "Cascadia Code", Consolas, monospace',
-    note: 'Ligature-focused. FontAlternatives: replaces 13 premium fonts.',
-  },
-  {
-    label: 'Source Code Pro',
-    family: '"Source Code Pro", "Cascadia Code", Consolas, monospace',
-    note: 'Adobe coding font. FontAlternatives: replaces 8 premium fonts.',
-  },
-  {
-    label: 'Geist Mono',
-    family: '"Geist Mono Variable", "Geist Mono", "Cascadia Code", Consolas, monospace',
-    note: 'Minimal modern monospace. FontAlternatives: replaces 5 premium fonts.',
-  },
-  {
-    label: 'Fira Mono',
-    family: '"Fira Mono", "Cascadia Code", Consolas, monospace',
-    note: 'Simple Mozilla monospace. FontAlternatives: replaces 4 premium fonts.',
-  },
-  {
-    label: 'Monaspace Neon',
-    family: '"Monaspace Neon", "Cascadia Code", Consolas, monospace',
-    note: 'Monaspace texture healing + coding ligatures. Neon variant not listed as free font.',
-  },
-  {
     label: 'Cascadia Code',
     family: '"Cascadia Code", Consolas, monospace',
-    note: 'Windows-native coding font. Listed as premium on FontAlternatives.',
+    note: 'Windows-native coding font without bundled font files.',
   },
   {
     label: 'Consolas',
     family: 'Consolas, monospace',
-    note: 'Classic Windows monospace. Listed as premium on FontAlternatives.',
+    note: 'Classic Windows monospace without bundled font files.',
   },
 ] as const;
 

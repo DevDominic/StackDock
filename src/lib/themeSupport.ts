@@ -1,5 +1,5 @@
 import './monacoEnvironment';
-import * as monaco from 'monaco-editor';
+import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import catppuccinNoctisMochaRaw from './themes/catppuccin-noctis-mocha-color-theme.json?raw';
 import type { EditorThemeRule, StackDockTheme } from '../shared/types';
 

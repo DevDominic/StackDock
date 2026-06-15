@@ -6,9 +6,12 @@ import { ensureDataDirs, getConfigPath } from './storage';
 import { getBundledTerminalProfiles } from '../extensions/mainRegistry';
 import { getBundledExtensionManifests } from './extensionService';
 
-const UI_FONT_FAMILY = '"Inter Variable", "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif';
-const CODE_FONT_FAMILY = '"Monaspace Neon", "Cascadia Code", Consolas, monospace';
-const LEGACY_DEFAULT_CODE_FONTS = new Set(['Consolas, monospace', '"Consolas", monospace']);
+const UI_FONT_FAMILY = '"Segoe UI Variable", "Segoe UI", system-ui, sans-serif';
+const CODE_FONT_FAMILY = '"Cascadia Code", Consolas, monospace';
+const LEGACY_DEFAULT_UI_FONTS = new Set([
+  '"Inter Variable", "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
+]);
+const LEGACY_DEFAULT_CODE_FONTS = new Set(['Consolas, monospace', '"Consolas", monospace', '"Monaspace Neon", "Cascadia Code", Consolas, monospace']);
 
 function normalizeKeybindSettings(raw: unknown, defaults: Record<string, string>) {
   const result: Record<string, string> = { ...defaults };
@@ -19,6 +22,12 @@ function normalizeKeybindSettings(raw: unknown, defaults: Record<string, string>
     result[key] = normalized ?? '';
   }
   return result;
+}
+
+function migrateUiFont(fontFamily?: string) {
+  const value = fontFamily?.trim();
+  if (!value || LEGACY_DEFAULT_UI_FONTS.has(value)) return UI_FONT_FAMILY;
+  return value;
 }
 
 function migrateCodeFont(fontFamily?: string) {
@@ -155,7 +164,7 @@ export async function loadSettings(): Promise<StackDockSettings> {
       ui: {
         ...defaults.ui,
         ...rawUi,
-        fontFamily: rawUi.fontFamily?.trim() || defaults.ui.fontFamily,
+        fontFamily: migrateUiFont(rawUi.fontFamily),
         fontSize: Math.max(10, Number(rawUi.fontSize) || defaults.ui.fontSize),
       },
       code: { ...defaults.code, ...rawCode, ligatures: rawCode.ligatures !== false },

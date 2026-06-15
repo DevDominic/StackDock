@@ -8,13 +8,13 @@
    ============================================================ */
 :root {
   color-scheme: dark;
-  --ui-font: "Inter Variable", "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --ui-font: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   --ui-font-size: 13px;
   --ui-line-height: 1.35;
   font-family: var(--ui-font);
   font-size: var(--ui-font-size);
   line-height: var(--ui-line-height);
-  --code-font: "Monaspace Neon", "Cascadia Code", Consolas, monospace;
+  --code-font: "Cascadia Code", Consolas, monospace;
   --code-font-weight: 300;
   --code-font-width: 100%;
   --code-font-features: "calt" 1, "liga" 1, "dlig" 1;

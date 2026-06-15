@@ -1,10 +1,10 @@
 import { useEffect, useRef } from 'react';
 import '../../lib/monacoEnvironment';
-import * as monaco from 'monaco-editor';
+import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import { DEFAULT_THEME_ID } from '../../lib/themeSupport';
 import type { StackDockSettings } from '../../shared/types';
 
-const CODE_FONT_FAMILY = '"Monaspace Neon", "Cascadia Code", Consolas, monospace';
+const CODE_FONT_FAMILY = '"Cascadia Code", Consolas, monospace';
 const CODE_FONT_FEATURES = '"calt" on, "liga" on, "dlig" on';
 const CODE_FONT_VARIATIONS = '"wght" 300, "wdth" 100';
 

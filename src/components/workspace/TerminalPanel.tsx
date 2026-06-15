@@ -24,7 +24,7 @@ interface Props {
 // URLs printed by dev servers, loggers, etc. Trailing punctuation is trimmed on
 // click so "see http://localhost:5173." doesn't capture the period.
 const URL_PATTERN = /https?:\/\/[^\s"'`<>)\]}]+/g;
-const CODE_FONT_FAMILY = '"Monaspace Neon", "Cascadia Code", Consolas, monospace';
+const CODE_FONT_FAMILY = '"Cascadia Code", Consolas, monospace';
 const CODE_FONT_FEATURES = '"calt" on, "liga" on, "dlig" on';
 
 function cssVar(name: string, fallback: string) {

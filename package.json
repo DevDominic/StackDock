@@ -35,9 +35,7 @@
   },
   "dependencies": {
     "@xterm/addon-serialize": "^0.14.0",
-    "@xterm/addon-webgl": "^0.19.0",
     "@xterm/headless": "^6.0.0",
-    "@xterm/xterm": "^6.0.0",
     "node-pty": "^1.1.0"
   },
   "build": {
@@ -50,10 +48,12 @@
     "electronLanguages": [
       "en-US"
     ],
-    "asar": true,
+    "asar": {
+      "smartUnpack": false
+    },
     "npmRebuild": false,
     "asarUnpack": [
-      "node_modules/node-pty/prebuilds/win32-x64/**/*.{node,dll,exe}"
+      "node_modules/node-pty/prebuilds/win32-x64/**/*"
     ],
     "files": [
       "dist/**/*",
@@ -61,12 +61,20 @@
       "!dist/win-unpacked.tmp{,/**}",
       "!dist/*.exe",
       "!dist/builder-effective-config.yaml",
+      "!node_modules/node-pty/prebuilds/darwin-*{,/**}",
+      "!node_modules/node-pty/prebuilds/linux-*{,/**}",
       "!node_modules/node-pty/prebuilds/win32-arm64{,/**}",
+      "!node_modules/node-pty/prebuilds/win32-ia32{,/**}",
       "!node_modules/node-pty/prebuilds/**/*.pdb",
       "!node_modules/node-pty/deps{,/**}",
       "!node_modules/node-pty/third_party{,/**}",
       "!node_modules/node-pty/src{,/**}",
       "!node_modules/node-pty/build{,/**}",
+      "!node_modules/node-pty/**/*.map",
+      "!node_modules/node-pty/**/*.ts",
+      "!node_modules/node-pty/**/{*.test.js,*.test.js.map}",
+      "!node_modules/node-pty/node-addon-api{,/**}",
+      "!node_modules/node-pty/scripts{,/**}",
       "dist-electron/**/*",
       "package.json"
     ],
@@ -75,17 +83,6 @@
     }
   },
   "devDependencies": {
-    "@fontsource-variable/fira-code": "^5.2.7",
-    "@fontsource-variable/geist": "^5.2.9",
-    "@fontsource-variable/geist-mono": "^5.2.8",
-    "@fontsource-variable/inter": "^5.2.8",
-    "@fontsource-variable/jetbrains-mono": "^5.2.8",
-    "@fontsource/barlow": "^5.2.8",
-    "@fontsource/fira-mono": "^5.2.7",
-    "@fontsource/google-sans-flex": "^5.2.4",
-    "@fontsource/monaspace-neon": "^5.2.5",
-    "@fontsource/montserrat": "^5.2.8",
-    "@fontsource/source-code-pro": "^5.2.7",
     "@mdi/js": "^7.4.47",
     "@types/node": "^22.15.29",
     "@types/react": "^18.3.23",
@@ -93,6 +90,8 @@
     "@vitejs/plugin-react": "^4.5.2",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-ligatures": "^0.10.0",
+    "@xterm/addon-webgl": "^0.19.0",
+    "@xterm/xterm": "^6.0.0",
     "concurrently": "^9.2.0",
     "electron": "^36.5.0",
     "electron-builder": "^26.0.12",
