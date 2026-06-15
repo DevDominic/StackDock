@@ -27,6 +27,7 @@ interface Props {
 
 export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSessionId, sessions, profiles, defaultProfileId, emptySessionsVisible, showSessionCwdForAll, onCreateSession, onSelectSession, onOpenWorkspace, onCloseSession, onRenameSession, onRestartSession, onDuplicateSession, onSetCwd, onSplitSession, onDetachSession }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number; width: number } | null>(null);
   const [actionMenu, setActionMenu] = useState<{ session: WorkspaceTerminalSession; x: number; y: number } | null>(null);
   const [query, setQuery] = useState('');
   const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null);
@@ -45,8 +46,13 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
     const handle = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false);
     };
+    const onResize = () => setMenuOpen(false);
     window.addEventListener('mousedown', handle);
-    return () => window.removeEventListener('mousedown', handle);
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('mousedown', handle);
+      window.removeEventListener('resize', onResize);
+    };
   }, [menuOpen]);
 
   useEffect(() => {
@@ -66,6 +72,23 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
       window.removeEventListener('keydown', onKey);
     };
   }, [actionMenu]);
+
+  function toggleCreateMenu() {
+    if (menuOpen) {
+      setMenuOpen(false);
+      return;
+    }
+    const rect = menuRef.current?.getBoundingClientRect();
+    const width = Math.min(flatWorkspace ? 220 : 380, window.innerWidth - 16);
+    const anchorRight = rect?.right ?? window.innerWidth - 8;
+    const anchorBottom = rect?.bottom ?? 40;
+    setMenuPosition({
+      x: Math.min(Math.max(8, anchorRight - width), window.innerWidth - width - 8),
+      y: Math.min(anchorBottom + 6, window.innerHeight - 8),
+      width,
+    });
+    setMenuOpen(true);
+  }
 
   async function createWith(workspace: Workspace, nextProfileId = defaultProfile?.id ?? profileId) {
     setProfileId(nextProfileId);
@@ -152,10 +175,10 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
       <div className="panel-title sessions-title">
         <span>Sessions</span>
         <div className="new-session" ref={menuRef}>
-          <button className="new-session-main" onClick={() => flatWorkspace ? void createWith(flatWorkspace) : setMenuOpen((open) => !open)}>New</button>
-          <button className="new-session-caret" aria-label="Choose terminal target" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>▾</button>
+          <button className="new-session-main" onClick={() => flatWorkspace ? void createWith(flatWorkspace) : toggleCreateMenu()}>New</button>
+          <button className="new-session-caret" aria-label="Choose terminal target" aria-haspopup="menu" aria-expanded={menuOpen} onClick={toggleCreateMenu}>▾</button>
           {menuOpen ? (
-            <div className="new-session-menu session-create-menu" role="menu">
+            <div className="new-session-menu session-create-menu" role="menu" style={menuPosition ? { left: menuPosition.x, top: menuPosition.y, width: menuPosition.width } : undefined}>
               {flatWorkspace ? (
                 <div className="profile-pick-list">
                   {(profiles.length ? profiles : [{ id: profileId, name: defaultProfile?.name ?? profileId } as TerminalProfile]).map((profile) => (
