@@ -389,7 +389,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     }
 
     try {
-      await navigator.clipboard.writeText(terminal.getSelection());
+      api.attachments.writeClipboardText(terminal.getSelection());
       terminal.clearSelection();
       terminal.focus();
       showToast('Copied terminal selection', 'success');
@@ -417,7 +417,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     const terminal = terminalRef.current;
     if (api.attachments.hasClipboardText()) {
       try {
-        const text = await navigator.clipboard.readText();
+        const text = api.attachments.readClipboardText();
         if (text) {
           terminal?.paste(text);
           terminal?.focus();

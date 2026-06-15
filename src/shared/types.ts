@@ -390,6 +390,8 @@ export interface StackDockApi {
     getPathForFile(file: unknown): string;
     hasClipboardImage(): boolean;
     hasClipboardText(): boolean;
+    readClipboardText(): string;
+    writeClipboardText(text: string): void;
     inspectPath(path: string, source: TerminalAttachmentSource, options?: TerminalAttachmentOptions): Promise<TerminalAttachment>;
     savePastedImage(dataUrl: string, name?: string, options?: TerminalAttachmentOptions): Promise<TerminalAttachment>;
     saveClipboardImage(name?: string, options?: TerminalAttachmentOptions): Promise<TerminalAttachment | null>;
