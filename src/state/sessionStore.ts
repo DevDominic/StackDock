@@ -13,6 +13,11 @@ function stripAnsi(value: string) {
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
 }
 
+function isExitEchoLine(line: string) {
+  const trimmed = line.trim();
+  return trimmed === 'exit' || /^(?:PS\s+)?[A-Za-z]:[\\/].*>\s*exit$/i.test(trimmed);
+}
+
 function cleanHeadlessOutput(output: string, command: string) {
   let trimmed = stripAnsi(output);
   if (command) {
@@ -24,7 +29,7 @@ function cleanHeadlessOutput(output: string, command: string) {
   return trimmed
     .split('\n')
     .filter((line, index) => !(index === 0 && !line.trim()))
-    .filter((line) => line.trim() !== 'exit')
+    .filter((line) => !isExitEchoLine(line))
     .join('\n');
 }
 

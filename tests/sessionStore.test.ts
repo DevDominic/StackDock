@@ -124,4 +124,13 @@ describe('sessionStore active fallback', () => {
     expect(store.getState().activeWorkspaceId).toBe('workspace-a');
     expect(saveRestoreState).toHaveBeenCalledWith({ lastWorkspaceId: 'workspace-a' });
   });
+
+  it('removes shell exit echo from headless command output', async () => {
+    const store = await loadStore();
+    const session = await store.getState().createSession({ workspaceId: 'workspace-a', workspaceName: 'A', workspacePath: 'C:/a', profileId: 'powershell', startupCommand: 'npm test', headless: true });
+
+    store.getState().appendHeadlessOutput(session.id, 'npm test\r\npass\r\nPS C:\\repo> exit\r\n');
+
+    expect(store.getState().headlessRuns.find((run) => run.id === session.id)?.output.trim()).toBe('pass');
+  });
 });

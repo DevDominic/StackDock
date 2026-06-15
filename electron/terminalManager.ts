@@ -360,6 +360,11 @@ function stripAnsi(value: string) {
     .trim();
 }
 
+function isExitEchoLine(line: string) {
+  const trimmed = line.trim();
+  return trimmed === 'exit' || /^(?:PS\s+)?[A-Za-z]:[\\/].*>\s*exit$/i.test(trimmed);
+}
+
 function cleanHeadlessOutput(value: string, command: string) {
   let output = value;
   if (command) {
@@ -371,7 +376,7 @@ function cleanHeadlessOutput(value: string, command: string) {
   return output
     .split('\n')
     .filter((line, index) => !(index === 0 && !line.trim()))
-    .filter((line) => line.trim() !== 'exit')
+    .filter((line) => !isExitEchoLine(line))
     .join('\n')
     .trim();
 }

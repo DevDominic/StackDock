@@ -352,10 +352,9 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       sessionStore.appendHeadlessOutput(payload.id, payload.data);
     });
     const disposeResult = api.onTerminalHeadlessResult((payload) => {
-      const liveRunOutput = useSessionStore.getState().headlessRuns.find((run) => run.id === payload.id)?.output.trim();
       sessionStore.removeSessionLocal(payload.id);
       sessionStore.completeHeadlessRun(payload.id, payload);
-      const output = liveRunOutput || payload.output.trim();
+      const output = useSessionStore.getState().headlessRuns.find((run) => run.id === payload.id)?.output.trim() || payload.output.trim();
       const displayOutput = output || (payload.timedOut ? 'Timed out' : 'Completed');
       showToast(
         <span className="headless-toast-body">
