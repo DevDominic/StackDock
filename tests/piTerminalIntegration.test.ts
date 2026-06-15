@@ -31,8 +31,19 @@ function settings(): StackDockSettings {
 }
 
 describe('Pi terminal integration', () => {
-  it('adds stable session args only for bare pi command', () => {
+  it('adds stable session id but no custom session dir by default', () => {
     const integration = createPiTerminalIntegration(settings());
+    const result = integration.resolveStartupCommand?.('pi', { restoreId: 'restore_abc', cwd: 'C:\\repo' });
+
+    expect(result?.command).toContain('--session-id "stackdock.restore_abc"');
+    expect(result?.command).not.toContain('--session-dir');
+    expect(result?.resumeState?.storagePath).toBeUndefined();
+  });
+
+  it('adds StackDock session dir only when explicitly enabled', () => {
+    const withSessionDir = settings();
+    withSessionDir.extensions.config['stackdock.pi'] = { useStackDockSessionDir: true };
+    const integration = createPiTerminalIntegration(withSessionDir);
     const result = integration.resolveStartupCommand?.('pi', { restoreId: 'restore_abc', cwd: 'C:\\repo' });
 
     expect(result?.command).toContain('--session-id "stackdock.restore_abc"');

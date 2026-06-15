@@ -13,7 +13,7 @@ export const piExtensionManifest: ExtensionManifest = {
       title: 'Pi session integration',
       fields: [
         { key: 'stableSessionIds', label: 'Use stable session IDs', type: 'boolean', default: true, description: 'Pass --session-id so each StackDock terminal can reopen the same Pi session without using the resume picker.' },
-        { key: 'useStackDockSessionDir', label: 'Store sessions under StackDock', type: 'boolean', default: true, description: 'Pass --session-dir so StackDock-managed Pi sessions live under StackDock app data instead of the default Pi sessions folder.' },
+        { key: 'useStackDockSessionDir', label: 'Store sessions under StackDock', type: 'boolean', default: false, description: 'Opt in to passing --session-dir so StackDock-managed Pi sessions live under StackDock app data instead of the default Pi sessions folder.' }
       ],
     },
   },

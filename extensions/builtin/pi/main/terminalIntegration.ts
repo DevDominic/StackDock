@@ -35,7 +35,7 @@ function getPiConfig(settings: StackDockSettings): PiConfig {
   const config = settings.extensions.config?.[PI_EXTENSION_ID] ?? {};
   return {
     stableSessionIds: config.stableSessionIds !== false,
-    useStackDockSessionDir: config.useStackDockSessionDir !== false,
+    useStackDockSessionDir: config.useStackDockSessionDir === true,
   };
 }
 
