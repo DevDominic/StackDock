@@ -4,6 +4,7 @@ const FILE_TREE_REFRESH_DEBOUNCE_MS = 500;
 import type { DirectoryEntry, GitFileStatus } from '../../../../src/shared/types';
 import { api } from '../../../../src/lib/api';
 import { FileIcon } from '../../../../src/components/workspace/fileIcons';
+import { usePromptDialog } from '../../../../src/components/common/PromptProvider';
 
 interface Props {
   rootPath: string;
@@ -117,6 +118,7 @@ export function FileTree({ rootPath, gitFiles, onOpenFile, onPreviewFile, onOpen
   const refreshTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const previousRootPathRef = useRef(rootPath);
   const ignoredLookup = useMemo<IgnoredLookup>(() => (entry) => ignoredPaths.has(normalizePath(entry.path).toLowerCase()), [ignoredPaths]);
+  const promptDialog = usePromptDialog();
   const rememberIgnored = async (entries: DirectoryEntry[]) => {
     if (!entries.length) return;
     const ignored = await api.git.ignored(rootPath, entries.map((entry) => entry.path));
@@ -179,27 +181,27 @@ export function FileTree({ rootPath, gitFiles, onOpenFile, onPreviewFile, onOpen
   }
 
   async function createFileIn(folderPath: string) {
-    const name = window.prompt('File name');
-    if (!name) return;
-    const target = joinPath(folderPath, name);
+    const name = await promptDialog.input({ title: 'File name', placeholder: 'index.ts', confirmLabel: 'Create' });
+    if (!name?.trim()) return;
+    const target = joinPath(folderPath, name.trim());
     await api.fs.createFile(target);
     await afterAction(target);
   }
   async function createFolderIn(folderPath: string) {
-    const name = window.prompt('Folder name');
-    if (!name) return;
-    await api.fs.createFolder(joinPath(folderPath, name));
+    const name = await promptDialog.input({ title: 'Folder name', placeholder: 'src', confirmLabel: 'Create' });
+    if (!name?.trim()) return;
+    await api.fs.createFolder(joinPath(folderPath, name.trim()));
     await afterAction();
   }
   async function rename(entry: DirectoryEntry) {
-    const name = window.prompt('New name', entry.name);
-    if (!name || name === entry.name) return;
-    const target = joinPath(parentPath(entry.path), name);
+    const name = await promptDialog.input({ title: 'New name', defaultValue: entry.name, confirmLabel: 'Rename' });
+    if (!name?.trim() || name.trim() === entry.name) return;
+    const target = joinPath(parentPath(entry.path), name.trim());
     await api.fs.renamePath(entry.path, target);
     await afterAction(entry.isFile ? target : undefined);
   }
   async function remove(entry: DirectoryEntry) {
-    if (!window.confirm(`Delete ${entry.name}?`)) return;
+    if (!(await promptDialog.confirm({ title: `Delete ${entry.name}?`, message: 'This removes item from disk.', confirmLabel: 'Delete', danger: true }))) return;
     await api.fs.deletePath(entry.path);
     await afterAction();
   }

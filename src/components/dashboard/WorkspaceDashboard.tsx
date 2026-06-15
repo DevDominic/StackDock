@@ -15,6 +15,7 @@ import {
 } from '@mdi/js';
 import { api } from '../../lib/api';
 import { SettingsModal } from '../workspace/SettingsModal';
+import { usePromptDialog } from '../common/PromptProvider';
 import { applyTheme } from '../../lib/themeSupport';
 import type { GitStatus, StackDockSettings, Workspace } from '../../shared/types';
 
@@ -50,6 +51,7 @@ export function WorkspaceDashboard({ workspaces, onAdd, onCreate, onOpen, onRemo
   const [editing, setEditing] = useState<Workspace | null>(null);
   const [settings, setSettings] = useState<StackDockSettings | null>(appSettings ?? null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const promptDialog = usePromptDialog();
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -150,7 +152,7 @@ export function WorkspaceDashboard({ workspaces, onAdd, onCreate, onOpen, onRemo
                   <button className="icon-btn" title="Open folder" onClick={() => api.fs.revealInExplorer(workspace.path)}><Icon path={mdiFolderOpenOutline} /></button>
                   <button className="icon-btn" title="Edit" onClick={() => setEditing(workspace)}><Icon path={mdiPencilOutline} /></button>
                   <button className="icon-btn" title="Duplicate" onClick={() => onDuplicate(workspace)}><Icon path={mdiContentCopy} /></button>
-                  <button className="icon-btn danger" title="Remove" onClick={() => { if (window.confirm(`Remove ${workspace.name} from StackDock? Files stay on disk.`)) onRemove(workspace.id); }}><Icon path={mdiTrashCanOutline} /></button>
+                  <button className="icon-btn danger" title="Remove" onClick={async () => { if (await promptDialog.confirm({ title: `Remove ${workspace.name}?`, message: 'Files stay on disk.', confirmLabel: 'Remove', danger: true })) onRemove(workspace.id); }}><Icon path={mdiTrashCanOutline} /></button>
                 </div>
               </article>
             );

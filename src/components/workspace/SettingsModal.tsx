@@ -7,6 +7,7 @@ import { BUILTIN_KEYBIND_COMMANDS, DEFAULT_KEYBINDS, EXTENSION_KEYBIND_COMMANDS 
 import { findKeybindConflicts, formatKeybind, normalizeKeybind } from '../../shared/keybinds';
 import { CommandsEditor } from './CommandsEditor';
 import { JsonCodeEditor } from './JsonCodeEditor';
+import { usePromptDialog } from '../common/PromptProvider';
 import { useExtensions } from '../../extensions/ExtensionProvider';
 import { coerceConfigValue, defaultsFromFields, getExtensionConfig, setExtensionConfig } from '../../extensions/configuration';
 
@@ -252,6 +253,7 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
   const [wsSaved, setWsSaved] = useState(false);
   const [extensionResult, setExtensionResult] = useState<ExtensionListResult>({ extensions: [], errors: [] });
   const [extensionError, setExtensionError] = useState<string | null>(null);
+  const promptDialog = usePromptDialog();
   const [extensionsLoading, setExtensionsLoading] = useState(false);
 
   async function loadExtensions() {
@@ -370,8 +372,8 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
     setWorkspaceViewMode('json');
   }
 
-  function showWorkspaceUiMode() {
-    if (workspaceJsonDirty && !window.confirm('Discard unsaved JSON changes and return to UI mode?')) return;
+  async function showWorkspaceUiMode() {
+    if (workspaceJsonDirty && !(await promptDialog.confirm({ title: 'Discard JSON changes?', message: 'Unsaved workspace JSON edits will be lost.', confirmLabel: 'Discard', danger: true }))) return;
     setWsError(null);
     setWorkspaceJsonDirty(false);
     setWorkspaceViewMode('ui');

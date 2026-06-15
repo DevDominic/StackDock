@@ -6,6 +6,7 @@ import { useWorkspaceStore } from './state/workspaceStore';
 import { applyTheme } from './lib/themeSupport';
 import type { StackDockSettings } from './shared/types';
 import { ExtensionProvider } from './extensions/ExtensionProvider';
+import { usePromptDialog } from './components/common/PromptProvider';
 
 const WorkspaceShell = lazy(() => import('./components/workspace/WorkspaceShell.js').then((module) => ({ default: module.WorkspaceShell })));
 
@@ -17,6 +18,7 @@ function applyUiFont(settings: StackDockSettings) {
 export default function App() {
   const { workspaces, activeWorkspaceId, loading, error, reload, addWorkspace, createWorkspace, duplicateWorkspace, openWorkspace, closeWorkspace, removeWorkspace, updateWorkspace } = useWorkspaceStore();
   const [settings, setSettings] = useState<StackDockSettings | null>(null);
+  const promptDialog = usePromptDialog();
   const restoredRef = useRef(false);
 
   useEffect(() => {
@@ -55,8 +57,8 @@ export default function App() {
 
   async function handleCreate() {
     const parent = await api.app.pickWorkspaceFolder();
-    const name = parent ? window.prompt('Workspace name') : null;
-    if (parent && name) await createWorkspace(parent, name);
+    const name = parent ? await promptDialog.input({ title: 'Workspace name', placeholder: 'My project', confirmLabel: 'Create' }) : null;
+    if (parent && name?.trim()) await createWorkspace(parent, name.trim());
   }
 
   const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null;

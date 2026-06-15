@@ -4,6 +4,7 @@ import type { AutomationConfig, GitFileStatus, GitStatus, PaletteCommand, StackD
 import { api } from '../../lib/api';
 import { getErrorMessage } from '../../lib/errors';
 import { useToast } from '../common/ToastProvider';
+import { usePromptDialog } from '../common/PromptProvider';
 import { useSessionStore } from '../../state/sessionStore';
 import type { EditorDiffMode, EditorDiffModel, MediaKind, OpenFileTab } from './EditorPanel';
 import { WebTabPanel, type WebTab } from './WebTabPanel';
@@ -127,6 +128,7 @@ interface Props {
 
 export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspaces, onOpenWorkspace, settings: appSettings, onSettingsApplied }: Props) {
   const { showToast } = useToast();
+  const promptDialog = usePromptDialog();
   const [layout, setLayout] = useState<WorkspaceLayout | null>(null);
   const [layoutHydrated, setLayoutHydrated] = useState(false);
   const [git, setGit] = useState<GitStatus | null>(null);
@@ -610,7 +612,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
 
   async function promptSaveBeforeClose(files: OpenFileTab[]) {
     for (const file of files.filter((item) => item.dirty)) {
-      const shouldSave = window.confirm(`Save changes to ${file.name} before closing?`);
+      const shouldSave = await promptDialog.confirm({ title: `Save ${file.name}?`, message: 'Save changes before closing this file.', confirmLabel: 'Save' });
       if (!shouldSave) return false;
       await saveFile(file.path, { silent: true });
     }
@@ -950,7 +952,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
 
   async function setTerminalCwd(id: string, cwd: string) {
     if (!cwd.trim()) return;
-    if (!window.confirm('Restart terminal in new cwd?')) return;
+    if (!(await promptDialog.confirm({ title: 'Restart terminal?', message: 'Terminal will restart in the new working directory.', confirmLabel: 'Restart', icon: '↻' }))) return;
     await restartTerminal(id, cwd.trim());
   }
 
@@ -1086,7 +1088,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
 
   async function discard(path: string) {
     if (!requireTrusted('discarding git changes')) return;
-    if (gitConfig.confirmBeforeDiscard !== false && !window.confirm(`Discard changes in ${path}? This cannot be undone.`)) return;
+    if (gitConfig.confirmBeforeDiscard !== false && !(await promptDialog.confirm({ title: `Discard ${path}?`, message: 'This cannot be undone.', confirmLabel: 'Discard', danger: true }))) return;
     try {
       setGitError(null);
       await discardPath(path);
@@ -1098,7 +1100,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   async function discardPaths(paths: string[]) {
     if (!requireTrusted('discarding git changes')) return;
     if (!paths.length) return;
-    if (gitConfig.confirmBeforeDiscard !== false && !window.confirm(`Discard changes in ${paths.length} selected ${paths.length === 1 ? 'file' : 'files'}? This cannot be undone.`)) return;
+    if (gitConfig.confirmBeforeDiscard !== false && !(await promptDialog.confirm({ title: `Discard ${paths.length} selected ${paths.length === 1 ? 'file' : 'files'}?`, message: 'This cannot be undone.', confirmLabel: 'Discard', danger: true }))) return;
     try {
       setGitError(null);
       for (const path of paths) await discardPath(path);
@@ -1170,7 +1172,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
 
   async function runGitRemoteAction(kind: 'fetch' | 'pull' | 'push') {
     if (!requireTrusted(`running git ${kind}`)) return;
-    if ((kind === 'pull' || kind === 'push') && !window.confirm(`Run git ${kind} in ${workspace.name}? This may ${kind === 'push' ? 'update the remote repository' : 'modify local files'}.`)) return;
+    if ((kind === 'pull' || kind === 'push') && !(await promptDialog.confirm({ title: `Run git ${kind}?`, message: `Workspace: ${workspace.name}\nThis may ${kind === 'push' ? 'update the remote repository' : 'modify local files'}.`, confirmLabel: kind[0].toUpperCase() + kind.slice(1), icon: '⎇' }))) return;
     try {
       setGitError(null);
       await api.git[kind](workspace.path);

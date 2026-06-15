@@ -1,5 +1,6 @@
 import type { PaletteCommand } from '../../shared/types';
 import { formatKeybind, normalizeKeybind } from '../../shared/keybinds';
+import { usePromptDialog } from '../common/PromptProvider';
 
 interface Props {
   commands: PaletteCommand[];
@@ -39,6 +40,7 @@ function KeybindInput({ value, onChange }: { value?: string; onChange(value?: st
 // old one-line WorkspaceCommandsModal rows so longer commands and optional
 // fields are actually readable.
 export function CommandsEditor({ commands, onChange, onRun, showSessionFields = false, cwdPlaceholder }: Props) {
+  const promptDialog = usePromptDialog();
   function update(id: string, patch: Partial<PaletteCommand>) {
     onChange(commands.map((command) => (command.id === id ? { ...command, ...patch } : command)));
   }
@@ -48,9 +50,9 @@ export function CommandsEditor({ commands, onChange, onRun, showSessionFields = 
   function add() {
     onChange([...commands, blankCommand()]);
   }
-  function toggleAutoStart(command: PaletteCommand, checked: boolean) {
+  async function toggleAutoStart(command: PaletteCommand, checked: boolean) {
     // Auto-run fires unattended on workspace open, so confirm before enabling.
-    if (checked && command.command.trim() && !window.confirm(`Run automatically when this workspace opens?\n\n${command.command}`)) return;
+    if (checked && command.command.trim() && !(await promptDialog.confirm({ title: 'Run automatically?', message: `This command will run when the workspace opens.\n${command.command}`, confirmLabel: 'Enable', icon: '▶' }))) return;
     update(command.id, { autoStart: checked ? true : undefined });
   }
 
@@ -96,7 +98,7 @@ export function CommandsEditor({ commands, onChange, onRun, showSessionFields = 
             </label>
             {showSessionFields ? (
               <label className="checkbox-field">
-                <input type="checkbox" checked={!!command.autoStart} onChange={(event) => toggleAutoStart(command, event.target.checked)} />
+                <input type="checkbox" checked={!!command.autoStart} onChange={(event) => { void toggleAutoStart(command, event.target.checked); }} />
                 Run automatically when this workspace opens
               </label>
             ) : null}

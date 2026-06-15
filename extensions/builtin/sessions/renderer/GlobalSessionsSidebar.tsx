@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TerminalProfile, TerminalSplitSide, Workspace, WorkspaceTerminalSession } from '../../../../src/shared/types';
+import { usePromptDialog } from '../../../../src/components/common/PromptProvider';
 
 const LAST_PROFILE_KEY = 'stackdock.lastProfileId';
 
@@ -30,6 +31,7 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
   const [query, setQuery] = useState('');
   const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null);
   const [profileId, setProfileId] = useState(() => localStorage.getItem(LAST_PROFILE_KEY) ?? defaultProfileId ?? profiles[0]?.id ?? 'powershell');
+  const promptDialog = usePromptDialog();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
   const visibleWorkspaces = useMemo(() => workspaces.filter((workspace) => emptySessionsVisible || sessions.some((session) => session.workspaceId === workspace.id)), [emptySessionsVisible, sessions, workspaces]);
@@ -71,13 +73,13 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
     await onCreateSession(workspace, nextProfileId);
   }
 
-  function promptRename(session: WorkspaceTerminalSession) {
-    const next = window.prompt('Session name', session.name)?.trim();
+  async function promptRename(session: WorkspaceTerminalSession) {
+    const next = (await promptDialog.input({ title: 'Session name', defaultValue: session.name, confirmLabel: 'Rename' }))?.trim();
     if (next) void Promise.resolve(onRenameSession(session.id, next)).catch(() => undefined);
   }
 
-  function promptCwd(session: WorkspaceTerminalSession) {
-    const next = window.prompt('CWD', session.cwd)?.trim();
+  async function promptCwd(session: WorkspaceTerminalSession) {
+    const next = (await promptDialog.input({ title: 'Working directory', defaultValue: session.cwd, confirmLabel: 'Restart' }))?.trim();
     if (next) onSetCwd(session.id, next);
   }
 

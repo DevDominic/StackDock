@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { ToastProvider } from './components/common/ToastProvider';
+import { PromptProvider } from './components/common/PromptProvider';
 import '@fontsource-variable/inter';
 import '@fontsource/barlow/400.css';
 import '@fontsource/barlow/500.css';
@@ -23,5 +24,5 @@ import '@fontsource-variable/geist-mono';
 import './styles.css';
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <ToastProvider><App /></ToastProvider>,
+  <ToastProvider><PromptProvider><App /></PromptProvider></ToastProvider>,
 );
