@@ -40,7 +40,7 @@ function getPiConfig(settings: StackDockSettings): PiConfig {
 }
 
 function quoteArg(value: string) {
-  return `"${value.replace(/(["\\$`])/g, '\\$1')}"`;
+  return `"${value.replace(/"/g, '\\"')}"`;
 }
 
 function cleanSessionIdPart(value: string) {
@@ -57,6 +57,10 @@ function getStackDockPiSessionsDir() {
 
 function ownsPiCommand(command: string) {
   return PI_COMMAND_PATTERN.test(command);
+}
+
+function isBarePiCommand(command: string) {
+  return /^\s*pi\s*$/i.test(command);
 }
 
 function isSafeSinglePiCommand(command: string) {
@@ -135,8 +139,13 @@ function stripAnsi(value: string) {
 
 function detectPiSnapshotOutput(output?: string) {
   if (!output) return false;
-  const text = stripAnsi(output);
-  return /\bpi\s+v\d+\.\d+\.\d+/i.test(text) && /(Model scope:|caveman level:|OpenAI cache|\bMCP:\s*\d+\/\d+)/i.test(text);
+  const text = stripAnsi(output).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const tail = text.split('\n').slice(-80).join('\n');
+  const versionIndex = tail.search(/\bpi\s+v\d+\.\d+\.\d+/i);
+  const statusMatch = tail.match(/Model scope:|caveman level:|OpenAI cache|\bMCP:\s*\d+\/\d+/i);
+  if (versionIndex < 0 || !statusMatch) return false;
+  const afterPiUi = tail.slice(Math.max(versionIndex, statusMatch.index ?? 0));
+  return !/(?:^|\n)\s*(?:PS\s+)?[A-Za-z]:\\[^\n>]*>\s*$|(?:^|\n)\s*[^\n]*[$#]\s*$/m.test(afterPiUi);
 }
 
 function resolveStartupCommand(command: string, ctx: TerminalStartupCommandContext, config: PiConfig): TerminalStartupCommandResult | undefined {
@@ -147,7 +156,7 @@ function resolveStartupCommand(command: string, ctx: TerminalStartupCommandConte
   const storagePath = commandSessionDir ?? (config.useStackDockSessionDir ? getStackDockPiSessionsDir() : undefined);
   const directState = stateFromCommand(trimmed, storagePath);
   if (directState || hasDirectSessionArg(trimmed) || isNonInteractivePiCommand(trimmed)) return { command: trimmed, resumeState: directState };
-  if (!config.stableSessionIds) return { command: trimmed };
+  if (!isBarePiCommand(trimmed) || !config.stableSessionIds) return { command: trimmed };
 
   const sessionId = stackDockPiSessionId(ctx.restoreId);
   const args = ['--session-id', quoteArg(sessionId)];
@@ -179,6 +188,7 @@ function captureResumeState(ctx: TerminalOutputContext): TerminalResumeState | u
 }
 
 function buildResumeCommand(ctx: TerminalResumeContext): string | undefined {
+  if (!detectPiSnapshotOutput(ctx.snapshot?.output)) return undefined;
   const state = resolveState(ctx.session, ctx.snapshot);
   if (state?.sessionId) return buildPiResumeCommand(state.sessionId, state.storagePath, state.resumeCommand);
   return undefined;

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
+import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import * as pty from 'node-pty';
 import { Terminal as HeadlessTerminal, type ITerminalAddon as HeadlessTerminalAddon } from '@xterm/headless';
 import { SerializeAddon } from '@xterm/addon-serialize';
@@ -12,6 +13,16 @@ import { ensureDataDirs, getTerminalSnapshotsDir, getTerminalStatePath } from '.
 import { getBridgeEnv } from './browserBridge';
 import type { TerminalCommandIntegration } from './terminalIntegration';
 import { getEnabledTerminalIntegrations } from '../extensions/mainRegistry';
+
+interface HeadlessProcessEntry {
+  session: TerminalSession;
+  context?: TerminalSessionContext;
+  process: ChildProcessWithoutNullStreams | null;
+  output: string;
+  timer: NodeJS.Timeout | null;
+  timedOut: boolean;
+  resultSent: boolean;
+}
 
 interface RecordEntry {
   session: TerminalSession;
@@ -40,6 +51,7 @@ interface RecordEntry {
 }
 
 const terminals = new Map<string, RecordEntry>();
+const headlessProcesses = new Map<string, HeadlessProcessEntry>();
 const runtimeToRestore = new Map<string, string>();
 const snapshots = new Map<string, TerminalSnapshot>();
 const snapshotWriteTimers = new Map<string, NodeJS.Timeout>();
@@ -214,7 +226,7 @@ function terminalPersistedTab(entry: RecordEntry): TerminalPersistedTab {
     ...entry.context,
     startupCommand: suppressIntegratedStartup ? undefined : entry.session.startupCommand,
     resumeState,
-    resumeStartupCommand,
+    resumeStartupCommand: resumeStartupCommand ?? '',
     lastActiveAt: new Date().toISOString(),
   };
 }
@@ -375,6 +387,66 @@ function wrapHeadlessStartupCommand(command: string, shell: string) {
   return `${suppressEcho}${command}\r\nexit\r\n`;
 }
 
+function appendHeadlessProcessOutput(entry: HeadlessProcessEntry, data: string) {
+  entry.output = (entry.output + data).slice(-HEADLESS_OUTPUT_MAX_BYTES);
+  mainWindow?.webContents.send('terminal:headlessData', { id: entry.session.id, data });
+}
+
+function sendHeadlessProcessResult(entry: HeadlessProcessEntry, exitCode: number | null) {
+  if (entry.resultSent) return;
+  entry.resultSent = true;
+  if (entry.timer) {
+    clearTimeout(entry.timer);
+    entry.timer = null;
+  }
+  const output = truncateHeadlessOutput(cleanHeadlessOutput(stripAnsi(entry.output), entry.session.startupCommand ?? ''));
+  headlessProcesses.delete(entry.session.id);
+  runtimeToRestore.delete(entry.session.id);
+  mainWindow?.webContents.send('terminal:headlessResult', {
+    id: entry.session.id,
+    label: entry.context?.commandLabel ?? entry.session.name,
+    command: entry.session.startupCommand ?? '',
+    output,
+    exitCode,
+    timedOut: entry.timedOut || undefined,
+  });
+}
+
+function runHeadlessProcess(session: TerminalSession, profile: TerminalProfile, command: string | undefined, cwd: string, context?: TerminalSessionContext, env?: Record<string, string>) {
+  const entry: HeadlessProcessEntry = { session, context, process: null, output: '', timer: null, timedOut: false, resultSent: false };
+  headlessProcesses.set(session.id, entry);
+  runtimeToRestore.set(session.id, session.restoreId!);
+  if (!command) {
+    setTimeout(() => sendHeadlessProcessResult(entry, 0), 0);
+    return;
+  }
+  try {
+    const child = spawn(profile.shell, profile.args, {
+      cwd,
+      env: { ...(process.env as Record<string, string>), STACKDOCK: '1', STACKDOCK_TERMINAL: '1', ...env },
+      windowsHide: true,
+      stdio: 'pipe',
+    });
+    entry.process = child;
+    child.stdout.on('data', (data) => appendHeadlessProcessOutput(entry, data.toString()));
+    child.stderr.on('data', (data) => appendHeadlessProcessOutput(entry, data.toString()));
+    child.on('error', (error) => {
+      appendHeadlessProcessOutput(entry, `${error.message}\n`);
+      sendHeadlessProcessResult(entry, null);
+    });
+    child.on('exit', (exitCode) => sendHeadlessProcessResult(entry, exitCode));
+    entry.timer = setTimeout(() => {
+      entry.timedOut = true;
+      sendHeadlessProcessResult(entry, null);
+      child.kill();
+    }, HEADLESS_TIMEOUT_MS);
+    child.stdin.write(wrapHeadlessStartupCommand(command, profile.shell));
+  } catch (error) {
+    appendHeadlessProcessOutput(entry, `${(error as Error).message}\n`);
+    sendHeadlessProcessResult(entry, null);
+  }
+}
+
 function sendHeadlessResult(entry: RecordEntry, exitCode: number | null) {
   if (!entry.context?.headless || entry.headlessResultSent) return;
   entry.headlessResultSent = true;
@@ -415,6 +487,11 @@ export async function createTerminal(profileId: string, cwd: string, name?: stri
   };
 
   const bridgeEnv = settings.captureTerminalBrowserOpens ? getBridgeEnv(session.id) : {};
+
+  if (context?.headless) {
+    runHeadlessProcess(session, profile, normalizedStartupCommand, resolvedCwd, context, bridgeEnv);
+    return session;
+  }
 
   const terminal = pty.spawn(profile.shell, profile.args, {
     name: 'xterm-256color',
@@ -502,6 +579,17 @@ export async function markTerminalReady(id: string) {
 }
 
 export async function killTerminal(id: string, preserveSnapshot = false) {
+  const headlessEntry = headlessProcesses.get(id);
+  if (headlessEntry) {
+    if (headlessEntry.timer) {
+      clearTimeout(headlessEntry.timer);
+      headlessEntry.timer = null;
+    }
+    headlessEntry.process?.kill();
+    sendHeadlessProcessResult(headlessEntry, null);
+    if (!preserveSnapshot) await forgetTerminalSnapshot(headlessEntry.session.restoreId ?? id);
+    return;
+  }
   const entry = terminals.get(id);
   const restoreId = entry?.session.restoreId ?? runtimeToRestore.get(id) ?? id;
   if (entry) {

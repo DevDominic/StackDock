@@ -235,10 +235,10 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
           let restoredActiveRuntimeId: string | null = null;
           for (const session of terminalsToRestore) {
             const snapshot = session.restoreId ? await api.terminal.snapshot(session.restoreId).catch(() => null) : null;
-            const resumeCommand = 'resumeStartupCommand' in session && session.resumeStartupCommand ? session.resumeStartupCommand : session.resumeState?.resumeCommand ?? snapshot?.resumeState?.resumeCommand;
+            const resumeCommand = 'resumeStartupCommand' in session ? session.resumeStartupCommand : session.resumeState?.resumeCommand ?? snapshot?.resumeState?.resumeCommand;
             const startupCommand = resumeCommand || session.startupCommand;
             const created = await sessionStore.createSession({ workspaceId: workspace.id, workspaceName: workspace.name, workspacePath: workspace.path, profileId: session.profileId, cwd: session.cwd, name: session.name, startupCommand, restoreId: session.restoreId });
-            const restoredSession = { ...created, originalStartupCommand: session.originalStartupCommand ?? session.startupCommand, resumeState: session.resumeState ?? snapshot?.resumeState, restoredFromSnapshot: true, splitGroupId: session.splitGroupId, splitDirection: session.splitDirection };
+            const restoredSession = { ...created, originalStartupCommand: session.originalStartupCommand ?? session.startupCommand, resumeState: session.resumeState ?? snapshot?.resumeState, restoredFromSnapshot: true, ...('resumeStartupCommand' in session ? { resumeStartupCommand: session.resumeStartupCommand ?? '' } : {}), splitGroupId: session.splitGroupId, splitDirection: session.splitDirection };
             sessionStore.replaceSession(created.id, restoredSession);
             if (session.restoreId && (session.restoreId === loadedLayout?.activeTerminalRestoreId || session.restoreId === persistedActiveRestoreId)) restoredActiveRuntimeId = restoredSession.id;
             if (session.id === loadedLayout?.activeTerminalRuntimeId) restoredActiveRuntimeId = restoredSession.id;
