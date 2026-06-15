@@ -170,9 +170,11 @@ function terminalPersistedTab(entry: RecordEntry): TerminalPersistedTab {
   if (snapshot) hydrateSnapshotResumeState(snapshot, entry.terminalIntegrations);
   const resumeState = entry.session.resumeState ?? snapshot?.resumeState;
   const resumeStartupCommand = buildResumeCommand(entry.session, snapshot, entry.terminalIntegrations);
+  const suppressIntegratedStartup = !resumeStartupCommand && integrationOwnsCommand(entry.session.startupCommand, entry.terminalIntegrations);
   return {
     ...entry.session,
     ...entry.context,
+    startupCommand: suppressIntegratedStartup ? undefined : entry.session.startupCommand,
     resumeState,
     resumeStartupCommand,
     lastActiveAt: new Date().toISOString(),

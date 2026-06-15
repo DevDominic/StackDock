@@ -112,7 +112,6 @@ function stateFromCommand(command: string, storagePath?: string): TerminalResume
   const sessionId = getLongArg(command, '--session-id');
   const commandSessionDir = getLongArg(command, '--session-dir') ?? storagePath;
   if (sessionId) return { integrationId: PI_EXTENSION_ID, sessionId, storagePath: commandSessionDir, resumeCommand: buildPiResumeCommand(sessionId, commandSessionDir) };
-  if (hasDirectSessionArg(command)) return { integrationId: PI_EXTENSION_ID, storagePath: commandSessionDir, resumeCommand: buildPiResumeCommand(undefined, commandSessionDir, command) };
   return undefined;
 }
 
@@ -181,20 +180,13 @@ function captureResumeState(ctx: TerminalOutputContext): TerminalResumeState | u
 
 function buildResumeCommand(ctx: TerminalResumeContext): string | undefined {
   const state = resolveState(ctx.session, ctx.snapshot);
-  if (state?.sessionId || state?.resumeCommand) return buildPiResumeCommand(state.sessionId, state.storagePath, state.resumeCommand);
-  if (ctx.session.startupCommand && ownsPiCommand(ctx.session.startupCommand)) {
-    const commandState = stateFromCommand(ctx.session.startupCommand);
-    if (commandState?.sessionId || commandState?.resumeCommand) return buildPiResumeCommand(commandState.sessionId, commandState.storagePath, commandState.resumeCommand);
-    return 'pi -r';
-  }
-  if (detectPiSnapshotOutput(ctx.snapshot?.output)) return 'pi -r';
+  if (state?.sessionId) return buildPiResumeCommand(state.sessionId, state.storagePath, state.resumeCommand);
   return undefined;
 }
 
 function detectSnapshotResumeState(ctx: TerminalSnapshotContext): TerminalResumeState | undefined {
   const existing = stateFromCarrier(ctx.snapshot as LegacyPiCarrier);
-  if (existing) return existing;
-  if (detectPiSnapshotOutput(ctx.snapshot.output)) return { integrationId: PI_EXTENSION_ID, resumeCommand: 'pi -r' };
+  if (existing?.sessionId) return existing;
   return undefined;
 }
 
