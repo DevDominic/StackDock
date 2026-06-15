@@ -1020,7 +1020,8 @@ html[data-window-controls="native"] .workspace-titlebar::after { right: 0; }
 .workspace-json-editor { flex: 1; min-height: 320px; }
 .monaco-json-editor { padding: 0; overflow: hidden; white-space: normal; resize: none; }
 .workspace-save-status { align-self: center; margin-right: 4px; font-size: 12px; }
-.settings-warning { margin: 10px 0 0; padding: 13px 14px; border-radius: 13px; background: var(--warning-bg); border-color: var(--warning-border); color: var(--warning-fg); line-height: 1.45; }
+.settings-warning { margin: 10px 0 0; padding: 13px 14px; border-radius: 13px; background: var(--warning-bg); border-color: var(--warning-border); color: var(--text); line-height: 1.45; }
+.settings-warning.error { background: var(--error-bg); border-color: var(--error-border); color: var(--error-fg); }
 
 /* ---- Commands editor (Settings -> Workspace) ---- */
 .commands-editor { display: flex; flex-direction: column; gap: 10px; margin: 6px 0 4px; }
