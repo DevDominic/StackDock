@@ -22,20 +22,21 @@ StackDock is a Windows-first Electron desktop workbench for managing project wor
 ### `electron`
 
 Purpose: Electron main-process services, IPC handlers, validation, persistence, and Node-only integration.
-Important files:
+Important files (paths are repo-relative; there is no top-level `main/` folder):
 
-* `main.ts` — app/window lifecycle and all `ipcMain.handle` registrations.
-* `preload.ts` — typed bridge from isolated renderer to main IPC.
-* `validation.ts` — IPC argument guard helpers; keep in sync with API changes.
-* `terminalManager.ts` — node-pty lifecycle, terminal snapshots, headless command output, terminal events.
-* `workspaceStore.ts` — workspace CRUD, layout restore/save, restore-state JSON.
-* `fileService.ts` — filesystem read/write/create/rename/delete operations.
-* `configStore.ts` — user settings and terminal profile persistence.
-* `automationStore.ts` — palette commands and per-workspace automation config.
-* `extensionService.ts` — bundled/local extension manifest loading and extension assets.
-* `browserBridge.ts` — captured browser/webview bridge handling.
-* `attachmentService.ts` — terminal drag/drop/paste attachment inspection/cache.
-* `storage.ts` — Electron userData paths and data-dir setup.
+* `electron/main.ts` — app/window lifecycle and all `ipcMain.handle` registrations.
+* `electron/preload.ts` — typed bridge from isolated renderer to main IPC.
+* `electron/validation.ts` — IPC argument guard helpers; keep in sync with API changes.
+* `electron/terminalManager.ts` — node-pty lifecycle, terminal snapshots, headless command output, terminal events.
+* `electron/terminalIntegration.ts` — main-process terminal integration interfaces used by built-in extensions.
+* `electron/workspaceStore.ts` — workspace CRUD, layout restore/save, restore-state JSON.
+* `electron/fileService.ts` — filesystem read/write/create/rename/delete operations.
+* `electron/configStore.ts` — user settings and terminal profile persistence.
+* `electron/automationStore.ts` — palette commands and per-workspace automation config.
+* `electron/extensionService.ts` — bundled/local extension manifest loading and extension assets.
+* `electron/browserBridge.ts` — captured browser/webview bridge handling.
+* `electron/attachmentService.ts` — terminal drag/drop/paste attachment inspection/cache.
+* `electron/storage.ts` — Electron userData paths and data-dir setup.
 
 ### `src`
 
@@ -91,18 +92,18 @@ Important files:
 ### `src/components/workspace`
 
 Purpose: Main workspace panels and content tabs.
-Important files:
+Important files (paths are repo-relative; there is no top-level `workspace/` folder):
 
-* `WorkspaceShell.tsx` — main layout, panels, extensions, terminal/editor/web/git command wiring.
-* `EditorPanel.tsx` — Monaco editor and file tabs.
-* `TerminalPanel.tsx` — xterm view bound to pty session output/input.
-* `WebTabPanel.tsx` — in-app webview tabs.
-* `CommandLauncher.tsx` — command palette.
-* `CommandsEditor.tsx` — global/per-workspace command editing UI.
-* `SettingsModal.tsx` — settings UI for theme/editor/terminal/profiles/extensions.
-* `SessionSwitcher.tsx` — terminal/session picker.
-* `StatusBar.tsx` — bottom status bar composition.
-* `JsonCodeEditor.tsx` — JSON editor wrapper.
+* `src/components/workspace/WorkspaceShell.tsx` — main layout, panels, extensions, terminal/editor/web/git command wiring.
+* `src/components/workspace/EditorPanel.tsx` — Monaco editor and file tabs.
+* `src/components/workspace/TerminalPanel.tsx` — xterm view bound to pty session output/input.
+* `src/components/workspace/WebTabPanel.tsx` — in-app webview tabs.
+* `src/components/workspace/CommandLauncher.tsx` — command palette.
+* `src/components/workspace/CommandsEditor.tsx` — global/per-workspace command editing UI.
+* `src/components/workspace/SettingsModal.tsx` — settings UI for theme/editor/terminal/profiles/extensions.
+* `src/components/workspace/SessionSwitcher.tsx` — terminal/session picker.
+* `src/components/workspace/StatusBar.tsx` — bottom status bar composition.
+* `src/components/workspace/JsonCodeEditor.tsx` — JSON editor wrapper.
 
 ### `src/extensions`
 
