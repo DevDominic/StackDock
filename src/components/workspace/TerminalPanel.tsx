@@ -28,8 +28,6 @@ const CODE_FONT_FAMILY = '"Cascadia Code", Consolas, monospace';
 const CODE_FONT_FEATURES = '"calt" on, "liga" on, "dlig" on';
 const EXPLORER_PATH_MIME = 'application/x-stackdock-explorer-path';
 
-function parentPath(path: string) { return path.replace(/[\\/][^\\/]+$/, ''); }
-
 function cssVar(name: string, fallback: string) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 }
@@ -396,7 +394,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     try {
       const entry = JSON.parse(raw) as { path?: unknown; isDirectory?: unknown };
       if (typeof entry.path !== 'string' || !entry.path.trim()) return [];
-      return [entry.isDirectory ? entry.path : parentPath(entry.path)];
+      return [entry.path];
     } catch {
       return [];
     }
