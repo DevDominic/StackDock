@@ -1,12 +1,13 @@
-.headless-panel { height: 100%; min-height: 0; overflow: auto; padding-bottom: 6px; }
+.headless-panel { height: 100%; min-height: 0; overflow: auto; padding-bottom: 6px; border-radius: 0; }
 .headless-title { padding: 8px 10px; color: var(--muted); text-transform: uppercase; font-size: 11px; letter-spacing: .07em; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .headless-title small { font-size: 10px; color: var(--muted); }
 .headless-list { display: flex; flex-direction: column; gap: 3px; padding: 0 6px 6px; }
-.headless-run { width: 100%; min-height: 30px; display: grid; grid-template-columns: minmax(0, 1fr) 24px; align-items: center; gap: 6px; padding: 5px 4px 5px 8px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: inherit; text-align: left; }
+.headless-run { width: 100%; min-height: 30px; display: grid; grid-template-columns: minmax(0, 1fr) 24px; align-items: center; gap: 6px; padding: 5px 4px 5px 8px; border: 1px solid transparent; border-radius: 0; background: transparent; color: inherit; text-align: left; }
 .headless-run:hover { background: var(--hover); border-color: var(--border); }
 .headless-run-copy { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .headless-run-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .headless-run-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 10px; }
+.headless-run-output { max-height: 2.7em; overflow: hidden; color: var(--muted); font-family: var(--code-font); font-size: 10px; line-height: 1.35; white-space: pre-wrap; }
 .headless-terminate { opacity: 0; justify-self: center; }
 .headless-run:hover .headless-terminate, .headless-run:focus-visible .headless-terminate { opacity: 1; }
 .headless-output-modal { width: min(820px, calc(100vw - 48px)); height: min(620px, calc(100vh - 48px)); display: flex; flex-direction: column; padding: 0; overflow: hidden; }

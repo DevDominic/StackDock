@@ -37,6 +37,7 @@ interface SessionState {
   createSession(input: CreateInput): Promise<WorkspaceTerminalSession>;
   closeSession(id: string): Promise<void>;
   appendHeadlessOutput(id: string, data: string): void;
+  completeHeadlessRun(id: string, result: { output: string; exitCode: number | null; timedOut?: boolean; label?: string }): void;
   removeHeadlessRun(id: string): void;
   removeSessionLocal(id: string): void;
   renameSession(id: string, name: string): void;
@@ -104,6 +105,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
   appendHeadlessOutput(id, data) {
     set({ headlessRuns: get().headlessRuns.map((run) => run.id === id ? { ...run, output: cleanHeadlessOutput((run.output + data).slice(-HEADLESS_OUTPUT_MAX_CHARS), run.command) } : run) });
+  },
+  completeHeadlessRun(id, result) {
+    set({ headlessRuns: get().headlessRuns.map((run) => {
+      if (run.id !== id) return run;
+      const liveOutput = run.output.trim();
+      const finalOutput = cleanHeadlessOutput((liveOutput || result.output).slice(-HEADLESS_OUTPUT_MAX_CHARS), run.command);
+      return { ...run, label: result.label ?? run.label, output: finalOutput, completedAt: Date.now(), exitCode: result.exitCode, timedOut: result.timedOut };
+    }) });
   },
   removeHeadlessRun(id) { set({ headlessRuns: get().headlessRuns.filter((run) => run.id !== id) }); },
   removeSessionLocal(id) {

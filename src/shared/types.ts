@@ -182,7 +182,10 @@ export interface HeadlessCommandRun {
   command: string;
   cwd: string;
   startedAt: number;
+  completedAt?: number;
   output: string;
+  exitCode?: number | null;
+  timedOut?: boolean;
 }
 
 export interface TerminalSessionContext {

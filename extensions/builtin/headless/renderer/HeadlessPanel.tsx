@@ -4,6 +4,7 @@ import type { HeadlessCommandRun } from '../../../../src/shared/types';
 interface Props {
   runs: HeadlessCommandRun[];
   onTerminate(id: string): void | Promise<void>;
+  onDelete(id: string): void | Promise<void>;
 }
 
 function elapsedLabel(startedAt: number, now: number) {
@@ -13,7 +14,7 @@ function elapsedLabel(startedAt: number, now: number) {
   return `${minutes}m ${seconds % 60}s`;
 }
 
-export function HeadlessPanel({ runs, onTerminate }: Props) {
+export function HeadlessPanel({ runs, onTerminate, onDelete }: Props) {
   const [inspectingRunId, setInspectingRunId] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const outputRef = useRef<HTMLPreElement | null>(null);
@@ -43,23 +44,24 @@ export function HeadlessPanel({ runs, onTerminate }: Props) {
       </div>
       <div className="headless-list">
         {runs.map((run) => (
-          <button key={run.id} className="headless-run" title={run.command} onClick={() => setInspectingRunId(run.id)}>
+          <button key={run.id} className={`headless-run${run.completedAt ? ' completed' : ''}`} title={run.output || run.command} onClick={() => setInspectingRunId(run.id)}>
             <span className="headless-run-copy">
               <span className="headless-run-label">{run.label}</span>
-              <small>{run.workspaceName} · {elapsedLabel(run.startedAt, now)}</small>
+              <small>{run.workspaceName} · {run.completedAt ? (run.timedOut ? 'Timed out' : run.exitCode === 0 ? 'Completed' : `Exited ${run.exitCode ?? '?'}`) : elapsedLabel(run.startedAt, now)}</small>
+              {run.output ? <span className="headless-run-output">{run.output}</span> : null}
             </span>
             <span
               role="button"
               tabIndex={0}
               className="git-row-action git-row-undo headless-terminate"
-              title="Terminate"
-              aria-label={`Terminate ${run.label}`}
-              onClick={(event) => { event.stopPropagation(); void onTerminate(run.id); }}
+              title={run.completedAt ? 'Delete' : 'Terminate'}
+              aria-label={`${run.completedAt ? 'Delete' : 'Terminate'} ${run.label}`}
+              onClick={(event) => { event.stopPropagation(); void (run.completedAt ? onDelete(run.id) : onTerminate(run.id)); }}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
                   event.stopPropagation();
-                  void onTerminate(run.id);
+                  void (run.completedAt ? onDelete(run.id) : onTerminate(run.id));
                 }
               }}
             >×</span>

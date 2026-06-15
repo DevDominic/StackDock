@@ -315,7 +315,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     const disposeResult = api.onTerminalHeadlessResult((payload) => {
       const liveRunOutput = useSessionStore.getState().headlessRuns.find((run) => run.id === payload.id)?.output.trim();
       sessionStore.removeSessionLocal(payload.id);
-      sessionStore.removeHeadlessRun(payload.id);
+      sessionStore.completeHeadlessRun(payload.id, payload);
       const output = liveRunOutput || payload.output.trim();
       const message = `${payload.label ?? 'Command'}: ${output || (payload.timedOut ? 'Timed out' : 'Completed')}`;
       showToast(message.length > 700 ? `${message.slice(0, 699)}…` : message, payload.exitCode === 0 && !payload.timedOut ? 'success' : 'error');
@@ -1066,6 +1066,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         try { await api.terminal.kill(id); }
         catch (error) { showToast(getErrorMessage(error, 'Could not terminate headless command'), 'error'); }
       },
+      delete: (id) => sessionStore.removeHeadlessRun(id),
     },
     gitActions: {
       error: gitError,
