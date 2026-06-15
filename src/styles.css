@@ -280,10 +280,11 @@ html[data-window-controls="native"] .workspace-titlebar::after { right: 138px; }
 .workspace-titlebar { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: stretch; -webkit-app-region: drag; user-select: none; }
 .workspace-titlebar::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; z-index: 20; height: 1px; background: var(--border); pointer-events: none; }
 .workspace-titlebar button, .workspace-titlebar .topbar-nav, .workspace-titlebar .diff-mode-control, .workspace-titlebar .window-controls { -webkit-app-region: no-drag; }
-.workspace-trust-banner { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--warning, #f6c177) 12%, var(--bg-panel)); color: var(--text); flex-shrink: 0; }
-.workspace-trust-banner div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.workspace-trust-banner span { color: var(--muted); font-size: 12px; }
-.workspace-trust-banner button { flex-shrink: 0; }
+.workspace-trust-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 8px 10px 0; padding: 12px 18px; border: 1px solid var(--warning-border); border-radius: 12px; background: color-mix(in srgb, var(--warning, #f6c177) 18%, var(--bg-panel)); color: var(--text); box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow) 55%, transparent); flex-shrink: 0; }
+.workspace-trust-banner div { display: flex; flex-direction: column; gap: 4px; min-width: 0; line-height: 1.35; }
+.workspace-trust-banner strong { font-size: 13px; }
+.workspace-trust-banner span { color: color-mix(in srgb, var(--text) 78%, var(--muted)); font-size: 12.5px; }
+.workspace-trust-banner button { flex-shrink: 0; padding: 5px 12px; }
 .compact-topbar .window-controls { align-self: stretch; }
 .compact-topbar .window-control { width: 44px; height: 100%; min-height: 0; padding: 0; border-radius: 0; }
 .topbar-left, .topbar-actions, .topbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; min-width: 0; }
