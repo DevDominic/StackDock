@@ -73,6 +73,7 @@ const api: StackDockApi = {
   },
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
+    defaults: () => ipcRenderer.invoke('settings:defaults'),
     save: (settings) => ipcRenderer.invoke('settings:save', settings),
   },
   automation: {

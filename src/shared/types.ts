@@ -373,6 +373,7 @@ export interface StackDockApi {
   };
   settings: {
     load(): Promise<StackDockSettings>;
+    defaults(): Promise<StackDockSettings>;
     save(settings: StackDockSettings): Promise<StackDockSettings>;
   };
   automation: {

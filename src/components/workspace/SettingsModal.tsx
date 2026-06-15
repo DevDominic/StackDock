@@ -168,6 +168,7 @@ function setWindowOverlayDimmed(dimmed: boolean) {
 export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave, onAutomationSaved, onRunCommand, onClose }: Props) {
   const [tab, setTab] = useState<SettingsTab>(initialTab ?? 'general');
   const [draft, setDraft] = useState(settings);
+  const [defaultSettings, setDefaultSettings] = useState<StackDockSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [themeError, setThemeError] = useState<string | null>(null);
   const [uiFontCustomOpen, setUiFontCustomOpen] = useState(false);
@@ -180,6 +181,12 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
   useEffect(() => {
     setWindowOverlayDimmed(true);
     return () => setWindowOverlayDimmed(false);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    api.settings.defaults().then((defaults) => { if (active) setDefaultSettings(defaults); }).catch(() => undefined);
+    return () => { active = false; };
   }, []);
 
   // Workspace tab (automation.json) state — held as a typed AutomationConfig and
@@ -425,6 +432,29 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
     onClose();
   }
 
+  async function resetSettingsDraft() {
+    if (!defaultSettings) return;
+    const confirmed = await promptDialog.confirm({
+      title: 'Reset all settings?',
+      message: 'This resets app settings in this dialog. Save to persist. Themes, keybinds, terminal profiles, local extension paths, and extension config will be replaced with defaults.',
+      confirmLabel: 'Reset settings',
+      danger: true,
+    });
+    if (!confirmed) return;
+    registerThemes(defaultSettings.importedThemes);
+    applyTheme(defaultSettings.themeId, defaultSettings.importedThemes);
+    document.documentElement.style.setProperty('--ui-font', defaultSettings.ui.fontFamily);
+    document.documentElement.style.setProperty('--ui-font-size', `${defaultSettings.ui.fontSize}px`);
+    setThemeError(null);
+    setUiFontCustomOpen(false);
+    setCodeFontCustomOpen(false);
+    setDraft(defaultSettings);
+  }
+
+  function renderResetSettingsButton() {
+    return <button className="ghost danger" disabled={!defaultSettings || saving} onClick={resetSettingsDraft}>Reset settings</button>;
+  }
+
   const uiFontFamily = cleanUiFontFamily(draft.ui.fontFamily);
   const uiFontPreset = findUiFontPreset(uiFontFamily);
 
@@ -458,6 +488,23 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
 
   function patchExtensionConfig(extensionId: string, patch: Record<string, ExtensionConfigPrimitive>) {
     setDraft((current) => setExtensionConfig(current, extensionId, patch));
+  }
+
+  async function resetExtensionConfig(extension: ExtensionManifest, defaults: Record<string, ExtensionConfigPrimitive>) {
+    const confirmed = await promptDialog.confirm({
+      title: `Reset ${extension.name} settings?`,
+      message: 'This removes stale keys and restores default values for this extension. Save settings to persist.',
+      confirmLabel: 'Reset extension',
+      danger: true,
+    });
+    if (!confirmed) return;
+    setDraft((current) => ({
+      ...current,
+      extensions: {
+        ...current.extensions,
+        config: { ...(current.extensions.config ?? {}), [extension.id]: defaults },
+      },
+    }));
   }
 
   const currentWorkspaceCommands = selectedKey !== GLOBAL_KEY ? (config?.workspaces[selectedKey]?.commands ?? []) : [];
@@ -498,8 +545,19 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
   function renderExtensionConfigView(extension: ExtensionManifest) {
     const native = extensionRegistry.nativeExtensions.get(extension.id);
     const fields = extension.contributes?.configuration?.fields ?? [];
-    const config = getExtensionConfig(draft, extension.id, defaultsFromFields(fields));
-    return <div className="settings-tab-body extension-settings-body"><button className="ghost extension-back" onClick={() => setSelectedExtensionConfigId(null)}>← Back to extensions</button><div className="extension-hero"><div><span className="extension-kicker">Extension configuration</span><h3>{extension.contributes?.configuration?.title ?? extension.name}</h3><p className="muted config-hint">{extension.id}</p></div></div>{native?.renderSettings ? native.renderSettings({ manifest: extension, settings: draft, config, setConfig: (patch) => patchExtensionConfig(extension.id, patch) }) : <div className="extension-config-form">{fields.map((field) => renderConfigField(extension.id, field, config[field.key]))}</div>}</div>;
+    const defaults = defaultsFromFields(fields);
+    const config = getExtensionConfig(draft, extension.id, defaults);
+    return (
+      <div className="settings-tab-body extension-settings-body">
+        <button className="ghost extension-back" onClick={() => setSelectedExtensionConfigId(null)}>← Back to extensions</button>
+        <div className="extension-hero"><div><span className="extension-kicker">Extension configuration</span><h3>{extension.contributes?.configuration?.title ?? extension.name}</h3><p className="muted config-hint">{extension.id}</p></div></div>
+        {native?.renderSettings ? native.renderSettings({ manifest: extension, settings: draft, config, setConfig: (patch) => patchExtensionConfig(extension.id, patch) }) : <div className="extension-config-form">{fields.map((field) => renderConfigField(extension.id, field, config[field.key]))}</div>}
+        <div className="extension-config-reset">
+          <button className="ghost danger" onClick={() => resetExtensionConfig(extension, defaults)}>Reset extension settings</button>
+          <span className="muted code-font-note">Removes stale config keys and restores this extension's defaults.</span>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -768,9 +826,12 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
 
         {tab === 'workspace' ? (
           <div className="modal-actions workspace-modal-actions">
-            <button className="ghost" disabled={wsLoading || !config} onClick={workspaceViewMode === 'ui' ? showWorkspaceJsonMode : showWorkspaceUiMode}>
-              {workspaceViewMode === 'ui' ? 'View JSON Mode' : 'View UI Mode'}
-            </button>
+            <div className="settings-reset-actions">
+              {renderResetSettingsButton()}
+              <button className="ghost" disabled={wsLoading || !config} onClick={workspaceViewMode === 'ui' ? showWorkspaceJsonMode : showWorkspaceUiMode}>
+                {workspaceViewMode === 'ui' ? 'View JSON Mode' : 'View UI Mode'}
+              </button>
+            </div>
             <div className="workspace-save-actions">
               {wsSaved && !wsSaving ? <span className="muted workspace-save-status">Saved</span> : null}
               {workspaceViewMode === 'json' && workspaceJsonDirty && !wsSaved && !wsSaving ? <span className="muted workspace-save-status">Unsaved JSON changes</span> : null}
@@ -778,13 +839,17 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
             </div>
           </div>
         ) : tab === 'keybinds' ? (
-          <div className="modal-actions">
-            <button className="ghost" onClick={closeWithoutSave}>Cancel</button>
-            <button className="primary" disabled={saving || wsSaving} onClick={async () => { await saveKeybindSettings(); onClose(); }}>{saving || wsSaving ? 'Saving...' : 'Save'}</button>
+          <div className="modal-actions settings-modal-actions">
+            {renderResetSettingsButton()}
+            <div className="settings-save-actions">
+              <button className="ghost" onClick={closeWithoutSave}>Cancel</button>
+              <button className="primary" disabled={saving || wsSaving} onClick={async () => { await saveKeybindSettings(); onClose(); }}>{saving || wsSaving ? 'Saving...' : 'Save'}</button>
+            </div>
           </div>
         ) : tab === 'extensions' ? (
           <div className="modal-actions extension-modal-actions">
             <div className="extension-footer-actions">
+              {renderResetSettingsButton()}
               <button className="ghost" disabled={extensionsLoading} onClick={loadExtensions}>{extensionsLoading ? 'Loading…' : 'Reload extensions'}</button>
               <button className="ghost" onClick={addLocalExtensionPackage}>Add local package</button>
             </div>
@@ -794,9 +859,12 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
             </div>
           </div>
         ) : (
-          <div className="modal-actions">
-            <button className="ghost" onClick={closeWithoutSave}>Cancel</button>
-            <button className="primary" disabled={!valid || saving} onClick={async () => { setSaving(true); await onSave(draft); setSaving(false); onClose(); }}>{saving ? 'Saving...' : 'Save'}</button>
+          <div className="modal-actions settings-modal-actions">
+            {renderResetSettingsButton()}
+            <div className="settings-save-actions">
+              <button className="ghost" onClick={closeWithoutSave}>Cancel</button>
+              <button className="primary" disabled={!valid || saving} onClick={async () => { setSaving(true); await onSave(draft); setSaving(false); onClose(); }}>{saving ? 'Saving...' : 'Save'}</button>
+            </div>
           </div>
         )}
       </div>

@@ -11,7 +11,7 @@ import { createTerminal, forgetTerminalSnapshot, getTerminalProfiles, getTermina
 import { setBridgeWindow, startBrowserBridge } from './browserBridge';
 import { ensureDataDirs } from './storage';
 import { logError } from './log';
-import { loadSettings, saveSettings } from './configStore';
+import { getDefaultSettings, loadSettings, saveSettings } from './configStore';
 import { loadExtensions, resolveExtensionAsset } from './extensionService';
 import { loadAutomation, loadAutomationRaw, saveAutomationRaw } from './automationStore';
 import { inspectAttachmentPath, savePastedImageAttachment } from './attachmentService';
@@ -242,6 +242,7 @@ function registerIpc() {
   ipcMain.handle('git:ignored', async (_event, targetPath: unknown, paths: unknown) => getIgnoredFiles(assertAbsolutePath(targetPath, 'targetPath'), Array.isArray(paths) ? paths.map((item) => assertNonEmptyString(item, 'path')) : []));
 
   ipcMain.handle('settings:load', async () => loadSettings());
+  ipcMain.handle('settings:defaults', async () => getDefaultSettings());
   ipcMain.handle('settings:save', async (_event, settings) => saveSettings(settings));
 
   ipcMain.handle('automation:load', async () => loadAutomation());

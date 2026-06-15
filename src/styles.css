@@ -927,7 +927,7 @@ html[data-window-controls="native"] .workspace-titlebar::after { right: 0; }
 }
 .extension-stats b { color: var(--text); font-size: 12px; line-height: 1; }
 .extension-actions { justify-content: flex-end; }
-.extension-footer-actions, .extension-save-actions { display: flex; align-items: center; gap: 8px; }
+.extension-footer-actions, .extension-save-actions, .settings-reset-actions, .settings-save-actions { display: flex; align-items: center; gap: 8px; }
 .extension-list { display: flex; flex-direction: column; gap: 14px; }
 .extension-card {
   position: relative;
@@ -1005,9 +1005,10 @@ html[data-window-controls="native"] .workspace-titlebar::after { right: 0; }
 .extension-action-buttons button { min-height: 30px; }
 .extension-empty { border: 1px dashed var(--border); border-radius: 14px; }
 .extension-save-note { margin-top: -2px; }
+.extension-config-reset { display: flex; align-items: center; gap: 10px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .settings-modal > .modal-actions { flex: 0 0 65px; min-height: 65px; align-items: center; padding: 14px 18px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 92%, black); }
-.settings-modal > .modal-actions.extension-modal-actions { justify-content: space-between; align-items: center; }
+.settings-modal > .modal-actions.extension-modal-actions, .settings-modal > .modal-actions.settings-modal-actions { justify-content: space-between; align-items: center; }
 .settings-modal > .modal-actions button { min-width: 78px; }
 .config-modal { width: min(760px, calc(100vw - 32px)); }
 .config-hint { margin: 4px 0 10px; font-size: 12px; line-height: 1.5; }
