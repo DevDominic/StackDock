@@ -25,7 +25,9 @@ export interface ExtensionStatusBarContribution { id: string; extensionId: strin
 export type ExtensionConfigPrimitive = string | number | boolean;
 export interface ExtensionConfigField { key: string; label: string; type: 'boolean' | 'number' | 'text' | 'select'; description?: string; default?: ExtensionConfigPrimitive; min?: number; max?: number; step?: number; options?: { label: string; value: string }[]; }
 export interface ExtensionConfigurationContribution { title?: string; fields: ExtensionConfigField[]; }
-export interface ExtensionManifest { id: string; name: string; version: string; description?: string; defaultEnabled?: boolean; source?: ExtensionSource; packagePath?: string; capabilities?: string[]; contributes?: { views?: ExtensionViewContribution[]; statusBar?: ExtensionStatusBarContribution[]; configuration?: ExtensionConfigurationContribution }; }
+export type TerminalCommandHookSource = 'interactive' | 'startup' | 'resume' | 'headless' | 'programmatic';
+export interface ExtensionTerminalCommandHookContribution { id: string; match: string; sources?: TerminalCommandHookSource[]; appendArgs: string; description?: string; }
+export interface ExtensionManifest { id: string; name: string; version: string; description?: string; defaultEnabled?: boolean; source?: ExtensionSource; packagePath?: string; capabilities?: string[]; contributes?: { views?: ExtensionViewContribution[]; statusBar?: ExtensionStatusBarContribution[]; configuration?: ExtensionConfigurationContribution; terminalCommandHooks?: ExtensionTerminalCommandHookContribution[] }; }
 export interface ExtensionLoadError { extensionId?: string; packagePath?: string; message: string; }
 export interface ExtensionListResult { extensions: ExtensionManifest[]; errors: ExtensionLoadError[]; }
 export interface ExtensionSettings { localPackagePaths: string[]; disabled: string[]; enabled: string[]; config: Record<string, Record<string, ExtensionConfigPrimitive>>; }

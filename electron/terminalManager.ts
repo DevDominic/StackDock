@@ -11,9 +11,10 @@ import type { TerminalPersistedState, TerminalPersistedTab, TerminalProfile, Ter
 import { getDefaultSettings, loadSettings } from './configStore';
 import { ensureDataDirs, getTerminalSnapshotsDir, getTerminalStatePath } from './storage';
 import { getBridgeEnv } from './browserBridge';
-import type { TerminalCommandIntegration } from './terminalIntegration';
-import { applyTerminalInputResumeState, transformTerminalInput } from './terminalInput';
+import type { TerminalCommandIntegration, TerminalCommandSource } from './terminalIntegration';
+import { applyTerminalInputResumeState, runTerminalCommandHooks, transformTerminalInput } from './terminalInput';
 import { getEnabledTerminalIntegrations } from '../extensions/mainRegistry';
+import { ensureExtensionsLoaded } from './extensionService';
 
 interface HeadlessProcessEntry {
   session: TerminalSession;
@@ -150,10 +151,10 @@ function hydrateSnapshotResumeState(snapshot: TerminalSnapshot, terminalIntegrat
   }
 }
 
-function resolveIntegratedStartupCommand(command: string | undefined, restoreId: string, cwd: string, name: string | undefined, terminalIntegrations: TerminalCommandIntegration[]) {
+async function resolveIntegratedStartupCommand(command: string | undefined, restoreId: string, cwd: string, name: string | undefined, terminalIntegrations: TerminalCommandIntegration[]) {
   if (!command) return { command: undefined as string | undefined, resumeState: undefined as TerminalResumeState | undefined };
   for (const integration of terminalIntegrations) {
-    const result = integration.resolveStartupCommand?.(command, { restoreId, cwd, name });
+    const result = await integration.resolveStartupCommand?.(command, { restoreId, cwd, name });
     if (result) return { command: result.command, resumeState: result.resumeState };
   }
   return { command, resumeState: undefined as TerminalResumeState | undefined };
@@ -169,6 +170,7 @@ function buildResumeCommand(session: TerminalSession, snapshot: TerminalSnapshot
 
 async function refreshTerminalIntegrations(entry: RecordEntry) {
   const settings = await loadSettings().catch(() => getDefaultSettings());
+  await ensureExtensionsLoaded(settings);
   entry.terminalIntegrations = getEnabledTerminalIntegrations(settings);
 }
 
@@ -244,13 +246,19 @@ function applyPendingRestoreBarrier(entry: RecordEntry) {
   entry.headless.write(buildRestoredScrollbackBarrier(entry.headless.rows, pending.resumeCommand));
 }
 
-function flushPendingStartupCommand(entry: RecordEntry) {
+async function writeCommandThroughHooks(entry: RecordEntry, command: string, source: TerminalCommandSource) {
+  const snapshot = ensureSnapshotRecord(entry);
+  const resolved = await runTerminalCommandHooks(entry, command, snapshot, { source });
+  if (terminals.has(entry.session.id)) entry.terminal.write(`${resolved}\r`);
+}
+
+async function flushPendingStartupCommand(entry: RecordEntry) {
   const pending = entry.pendingStartupCommand;
   if (!pending) return;
   entry.pendingStartupCommand = null;
   clearTimeout(pending.timer);
   applyPendingRestoreBarrier(entry);
-  if (terminals.has(entry.session.id)) entry.terminal.write(`${pending.command}\r`);
+  await writeCommandThroughHooks(entry, pending.command, entry.session.restoredFromSnapshot ? 'resume' : 'startup');
 }
 
 function cancelPendingStartupCommand(entry: RecordEntry) {
@@ -438,12 +446,13 @@ function sendHeadlessResult(entry: RecordEntry, exitCode: number | null) {
 
 export async function createTerminal(profileId: string, cwd: string, name?: string, startupCommand?: string, restoreId?: string, context?: TerminalSessionContext): Promise<TerminalSession> {
   const settings = await loadSettings().catch(() => getDefaultSettings());
+  await ensureExtensionsLoaded(settings);
   const profile = settings.terminalProfiles.find((item) => item.id === profileId) ?? settings.terminalProfiles[0] ?? getDefaultSettings().terminalProfiles[0];
   const terminalIntegrations = getEnabledTerminalIntegrations(settings);
   const resolvedCwd = resolveCwd(cwd);
   const stableRestoreId = restoreId || `restore_${crypto.randomUUID()}`;
   const effectiveStartupCommand = resolveTerminalStartupCommand({ explicitStartupCommand: startupCommand, profileStartupCommand: profile.startupCommand });
-  const resolvedStartupCommand = resolveIntegratedStartupCommand(effectiveStartupCommand, stableRestoreId, resolvedCwd, name || profile.name, terminalIntegrations);
+  const resolvedStartupCommand = await resolveIntegratedStartupCommand(effectiveStartupCommand, stableRestoreId, resolvedCwd, name || profile.name, terminalIntegrations);
   const normalizedStartupCommand = resolvedStartupCommand.command;
   const session: TerminalSession = {
     id: `term_${crypto.randomUUID()}`,
@@ -513,14 +522,16 @@ export async function createTerminal(profileId: string, cwd: string, name?: stri
       sendHeadlessResult(entry, null);
       terminal.kill();
     }, HEADLESS_TIMEOUT_MS);
-    terminal.write(wrapHeadlessStartupCommand(normalizedStartupCommand, profile.shell));
+    const snapshot = ensureSnapshotRecord(entry);
+    const resolvedHeadlessCommand = await runTerminalCommandHooks(entry, normalizedStartupCommand, snapshot, { source: 'headless', shell: profile.shell });
+    terminal.write(wrapHeadlessStartupCommand(resolvedHeadlessCommand, profile.shell));
   } else if (context?.headless) {
     sendHeadlessResult(entry, 0);
     terminal.kill();
   } else if (normalizedStartupCommand) {
     entry.pendingStartupCommand = {
       command: normalizedStartupCommand,
-      timer: setTimeout(() => flushPendingStartupCommand(entry), 3000),
+      timer: setTimeout(() => void flushPendingStartupCommand(entry), 3000),
     };
   }
   return session;
@@ -551,7 +562,7 @@ export async function writeTerminal(id: string, data: string) {
   const priorQueue = entry.inputWriteQueue.catch(() => undefined);
   const nextQueue = priorQueue.then(async () => {
     if (data.includes('\r') || data.includes('\n')) await refreshTerminalIntegrations(entry);
-    entry.terminal.write(transformTerminalInput(entry, data, ensureSnapshotRecord(entry)));
+    entry.terminal.write(await transformTerminalInput(entry, data, ensureSnapshotRecord(entry)));
   });
   entry.inputWriteQueue = nextQueue.catch(() => undefined);
   await nextQueue;
@@ -571,7 +582,7 @@ export async function resizeTerminal(id: string, cols: number, rows: number) {
 
 export async function markTerminalReady(id: string) {
   const entry = terminals.get(id);
-  if (entry) flushPendingStartupCommand(entry);
+  if (entry) await flushPendingStartupCommand(entry);
 }
 
 export async function killTerminal(id: string, preserveSnapshot = false) {
@@ -625,6 +636,7 @@ export async function getTerminalSnapshot(idOrRestoreId: string): Promise<Termin
     return snapshot;
   }
   const settings = await loadSettings().catch(() => getDefaultSettings());
+  await ensureExtensionsLoaded(settings);
   const terminalIntegrations = getEnabledTerminalIntegrations(settings);
   const existing = snapshots.get(idOrRestoreId) ?? snapshots.get(restoreId);
   if (existing) {

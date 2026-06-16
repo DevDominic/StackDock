@@ -27,7 +27,7 @@ Known limitation: many filesystem APIs currently accept absolute paths. Public h
 
 ## Terminals and automation
 
-Terminals run with the user's local account permissions. Treat startup commands, profile startup commands, and automation commands like shell scripts from the workspace owner.
+Terminals run with the user's local account permissions. Treat startup commands, profile startup commands, automation commands, and enabled terminal command hooks like shell scripts from the workspace owner. Enabled terminal command hooks can mutate submitted commands before execution.
 
 ## Git operations
 
@@ -40,6 +40,8 @@ Web tabs can load local development pages or external URLs. Webview navigation, 
 ## Extensions
 
 Local extension package JavaScript runs in sandboxed iframes served by the `stackdock-extension://` protocol. Extension code must not be dynamically imported into the main renderer. Extensions communicate with StackDock through documented bridge messages.
+
+Local declarative terminal command hooks require the `terminal-command-hook` capability. Only enable local packages with this capability from trusted folders. Review hook `match` and `appendArgs` values before enabling them because they can alter terminal commands.
 
 Current extension hardening priorities:
 

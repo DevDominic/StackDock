@@ -1,5 +1,8 @@
 import type { TerminalResumeState, TerminalSession, TerminalSnapshot } from '../src/shared/types';
 
+export type MaybePromise<T> = T | Promise<T>;
+export type TerminalCommandSource = 'interactive' | 'startup' | 'resume' | 'headless' | 'programmatic';
+
 export interface TerminalStartupCommandContext {
   restoreId: string;
   cwd: string;
@@ -8,12 +11,21 @@ export interface TerminalStartupCommandContext {
 
 export type TerminalInteractiveCommandContext = TerminalStartupCommandContext;
 
+export interface TerminalCommandHookContext extends TerminalStartupCommandContext {
+  source: TerminalCommandSource;
+  session?: TerminalSession;
+  snapshot?: TerminalSnapshot;
+  profileId?: string;
+  shell?: string;
+}
+
 export interface TerminalStartupCommandResult {
   command: string;
   resumeState?: TerminalResumeState;
 }
 
 export type TerminalInteractiveCommandResult = TerminalStartupCommandResult;
+export type TerminalCommandHookResult = TerminalStartupCommandResult;
 
 export interface TerminalOutputContext {
   data: string;
@@ -33,8 +45,9 @@ export interface TerminalSnapshotContext {
 
 export interface TerminalCommandIntegration {
   id: string;
-  resolveStartupCommand?(command: string, ctx: TerminalStartupCommandContext): TerminalStartupCommandResult | undefined;
-  resolveInteractiveCommand?(command: string, ctx: TerminalInteractiveCommandContext): TerminalInteractiveCommandResult | undefined;
+  beforeShellCommand?(command: string, ctx: TerminalCommandHookContext): MaybePromise<TerminalCommandHookResult | undefined>;
+  resolveStartupCommand?(command: string, ctx: TerminalStartupCommandContext): MaybePromise<TerminalStartupCommandResult | undefined>;
+  resolveInteractiveCommand?(command: string, ctx: TerminalInteractiveCommandContext): MaybePromise<TerminalInteractiveCommandResult | undefined>;
   captureResumeState?(ctx: TerminalOutputContext): TerminalResumeState | undefined;
   buildResumeCommand?(ctx: TerminalResumeContext): string | undefined;
   detectSnapshotResumeState?(ctx: TerminalSnapshotContext): TerminalResumeState | undefined;

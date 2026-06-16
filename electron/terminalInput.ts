@@ -1,4 +1,4 @@
-import type { TerminalCommandIntegration } from './terminalIntegration';
+import type { TerminalCommandHookContext, TerminalCommandIntegration, TerminalCommandSource } from './terminalIntegration';
 import type { TerminalResumeState, TerminalSession, TerminalSnapshot } from '../src/shared/types';
 
 export interface TerminalInputTransformEntry {
@@ -19,25 +19,53 @@ export function applyTerminalInputResumeState(session: TerminalSession, snapshot
   snapshot.resumeState = mergeResumeState(snapshot.resumeState, session.resumeState);
 }
 
-export function resolveTerminalInteractiveCommand(entry: TerminalInputTransformEntry, command: string, snapshot: TerminalSnapshot) {
+export async function runTerminalCommandHooks(entry: TerminalInputTransformEntry, command: string, snapshot: TerminalSnapshot, context: Partial<TerminalCommandHookContext> & { source: TerminalCommandSource }) {
   const restoreId = entry.session.restoreId ?? entry.session.id;
+  let current = command;
+  const baseCtx: TerminalCommandHookContext = {
+    restoreId,
+    cwd: entry.session.cwd,
+    name: entry.session.name,
+    profileId: entry.session.profileId,
+    session: entry.session,
+    snapshot,
+    ...context,
+  };
   for (const integration of entry.terminalIntegrations) {
-    const result = integration.resolveInteractiveCommand?.(command, { restoreId, cwd: entry.session.cwd, name: entry.session.name });
-    if (result) {
-      applyTerminalInputResumeState(entry.session, snapshot, result.resumeState);
-      return result.command;
+    try {
+      const result = integration.beforeShellCommand
+        ? await integration.beforeShellCommand(current, baseCtx)
+        : baseCtx.source === 'interactive'
+          ? await integration.resolveInteractiveCommand?.(current, baseCtx)
+          : ['startup', 'resume', 'headless'].includes(baseCtx.source)
+            ? await integration.resolveStartupCommand?.(current, baseCtx)
+            : undefined;
+      if (result) {
+        current = result.command;
+        applyTerminalInputResumeState(entry.session, snapshot, result.resumeState);
+      }
+    } catch (error) {
+      console.warn(`[terminal] command hook failed (${integration.id})`, error);
     }
   }
-  return command;
+  return current;
 }
 
-export function transformTerminalInput(entry: TerminalInputTransformEntry, data: string, snapshot: TerminalSnapshot) {
+export async function resolveTerminalInteractiveCommand(entry: TerminalInputTransformEntry, command: string, snapshot: TerminalSnapshot) {
+  return runTerminalCommandHooks(entry, command, snapshot, { source: 'interactive' });
+}
+
+export async function transformTerminalInput(entry: TerminalInputTransformEntry, data: string, snapshot: TerminalSnapshot) {
   let output = '';
   for (const char of data) {
     if (char === '\r' || char === '\n') {
       const typed = entry.inputLine;
-      const resolved = resolveTerminalInteractiveCommand(entry, typed, snapshot);
-      output += `${resolved.startsWith(typed) ? resolved.slice(typed.length) : resolved}${char}`;
+      const resolved = await resolveTerminalInteractiveCommand(entry, typed, snapshot);
+      if (resolved.startsWith(typed)) output += `${resolved.slice(typed.length)}${char}`;
+      else {
+        console.warn('[terminal] command hook replacement ignored because it does not preserve typed prefix');
+        output += char;
+      }
       entry.inputLine = '';
     } else if (char === '\u0003') {
       entry.inputLine = '';

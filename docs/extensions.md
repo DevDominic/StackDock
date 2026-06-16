@@ -38,6 +38,32 @@ Extensions can declare Settings UI fields with `contributes.configuration`:
 ```
 Configurable extensions show a **Configure** button in Settings > Extensions. Built-in native extensions may also provide a custom settings renderer.
 
+## Terminal command hooks
+
+Local extensions can declare append-only terminal command hooks. Hooks run after the user presses Enter and before the command is sent to PowerShell, CMD, bash, or another shell.
+
+```json
+{
+  "id": "example.tool-hook",
+  "name": "Tool Hook",
+  "version": "0.1.0",
+  "defaultEnabled": true,
+  "capabilities": ["terminal-command-hook"],
+  "contributes": {
+    "terminalCommandHooks": [
+      {
+        "id": "append.workspace",
+        "match": "^tool(?:\\s|$)",
+        "sources": ["interactive"],
+        "appendArgs": "--workspace ${name}"
+      }
+    ]
+  }
+}
+```
+
+Version 1 hooks can only append arguments to matched commands. `match` is a JavaScript `RegExp` source string without flags. Supported template variables in `appendArgs` are `${command}`, `${restoreId}`, `${cwd}`, and `${name}`. Hooks apply only while the extension is enabled.
+
 ## Bridge
 
 Iframe code communicates with the host using `postMessage` typed messages:

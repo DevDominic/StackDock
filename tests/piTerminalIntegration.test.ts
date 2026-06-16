@@ -60,15 +60,23 @@ describe('Pi terminal integration', () => {
     expect(result?.resumeState?.sessionId).toBe('stackdock.restore_abc');
   });
 
-  it('adds stable session id when pi is typed interactively', () => {
+  it('adds stable session id when pi is typed interactively', async () => {
     const integration = createPiTerminalIntegration(settings());
-    const result = integration.resolveInteractiveCommand?.('pi -a', { restoreId: 'restore_abc', cwd: 'C:\\repo' });
+    const result = await integration.beforeShellCommand?.('pi -a', { source: 'interactive', restoreId: 'restore_abc', cwd: 'C:\\repo' });
 
     expect(result?.command).toBe('pi -a --session-id "stackdock.restore_abc"');
     expect(result?.resumeState?.sessionId).toBe('stackdock.restore_abc');
   });
 
-  it('adds stable session id when interactive pi arrives in separate chunks', () => {
+  it('adds stable session id when startup pi passes through beforeShellCommand', async () => {
+    const integration = createPiTerminalIntegration(settings());
+    const result = await integration.beforeShellCommand?.('pi', { source: 'startup', restoreId: 'restore_abc', cwd: 'C:\\repo' });
+
+    expect(result?.command).toBe('pi --session-id "stackdock.restore_abc"');
+    expect(result?.resumeState?.sessionId).toBe('stackdock.restore_abc');
+  });
+
+  it('adds stable session id when interactive pi arrives in separate chunks', async () => {
     const integration = createPiTerminalIntegration(settings());
     const session = {
       id: 'term_1',
@@ -81,9 +89,9 @@ describe('Pi terminal integration', () => {
     const snapshot = { id: 'term_1', restoreId: 'restore_abc', output: '' } satisfies TerminalSnapshot;
     const entry = { session, terminalIntegrations: [integration], inputLine: '' };
 
-    const output = transformTerminalInput(entry, 'p', snapshot)
-      + transformTerminalInput(entry, 'i', snapshot)
-      + transformTerminalInput(entry, '\r', snapshot);
+    const output = (await transformTerminalInput(entry, 'p', snapshot))
+      + (await transformTerminalInput(entry, 'i', snapshot))
+      + (await transformTerminalInput(entry, '\r', snapshot));
 
     expect(output).toBe('pi --session-id "stackdock.restore_abc"\r');
     expect(session.resumeState?.sessionId).toBe('stackdock.restore_abc');

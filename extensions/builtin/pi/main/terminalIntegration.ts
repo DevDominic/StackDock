@@ -1,5 +1,5 @@
 import path from 'path';
-import type { TerminalCommandIntegration, TerminalResumeContext, TerminalSnapshotContext, TerminalStartupCommandContext, TerminalStartupCommandResult, TerminalOutputContext } from '../../../../electron/terminalIntegration';
+import type { TerminalCommandHookContext, TerminalCommandIntegration, TerminalResumeContext, TerminalSnapshotContext, TerminalStartupCommandContext, TerminalStartupCommandResult, TerminalOutputContext } from '../../../../electron/terminalIntegration';
 import { getDataDir } from '../../../../electron/storage';
 import type { StackDockSettings, TerminalProfile, TerminalResumeState, TerminalSession, TerminalSnapshot } from '../../../../src/shared/types';
 import { piExtensionManifest } from '../manifest';
@@ -206,6 +206,7 @@ export function createPiTerminalIntegration(settings: StackDockSettings): Termin
   return {
     id: PI_EXTENSION_ID,
     ownsCommand: ownsPiCommand,
+    beforeShellCommand: (command, ctx: TerminalCommandHookContext) => resolveStartupCommand(command, ctx, config),
     resolveStartupCommand: (command, ctx) => resolveStartupCommand(command, ctx, config),
     resolveInteractiveCommand: (command, ctx) => resolveStartupCommand(command, ctx, config),
     captureResumeState,

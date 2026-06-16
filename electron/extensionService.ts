@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import type { ExtensionListResult, ExtensionLoadError, ExtensionManifest, StackDockSettings } from '../src/shared/types';
+import type { ExtensionListResult, ExtensionLoadError, ExtensionManifest, ExtensionTerminalCommandHookContribution, StackDockSettings, TerminalCommandHookSource } from '../src/shared/types';
 import { explorerExtensionManifest } from '../extensions/builtin/explorer/manifest';
 import { gitExtensionManifest } from '../extensions/builtin/git/manifest';
 import { sessionsExtensionManifest } from '../extensions/builtin/sessions/manifest';
@@ -9,7 +9,14 @@ import { workspaceStatusExtensionManifest } from '../extensions/builtin/workspac
 import { piExtensionManifest } from '../extensions/builtin/pi/manifest';
 
 const MANIFEST_FILE = 'stackdock.extension.json';
+const TERMINAL_COMMAND_HOOK_CAPABILITY = 'terminal-command-hook';
+const MAX_HOOK_PATTERN_LENGTH = 256;
+const MAX_HOOK_APPEND_LENGTH = 512;
+const ALLOWED_HOOK_SOURCES = new Set<TerminalCommandHookSource>(['interactive', 'startup', 'resume', 'headless', 'programmatic']);
+const ALLOWED_HOOK_TEMPLATE_VARS = new Set(['command', 'restoreId', 'cwd', 'name']);
 const packageRoots = new Map<string, string>();
+let loadedExtensionsCache: ExtensionManifest[] = getBundledExtensionManifests();
+let loadedExtensionPathKey: string | null = null;
 
 export function getBundledExtensionManifests(): ExtensionManifest[] {
   return [explorerExtensionManifest, gitExtensionManifest, sessionsExtensionManifest, headlessExtensionManifest, workspaceStatusExtensionManifest, piExtensionManifest];
@@ -17,6 +24,24 @@ export function getBundledExtensionManifests(): ExtensionManifest[] {
 
 function validId(id: string) { return /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id); }
 function asString(value: unknown, name: string) { if (typeof value !== 'string' || !value.trim()) throw new Error(`${name} required`); return value.trim(); }
+function settingsPathKey(settings: StackDockSettings) { return settings.extensions.localPackagePaths.map((item) => path.resolve(item)).join('\0'); }
+
+function validateTerminalCommandHook(raw: unknown, capabilities: string[] | undefined): ExtensionTerminalCommandHookContribution {
+  if (!capabilities?.includes(TERMINAL_COMMAND_HOOK_CAPABILITY)) throw new Error(`terminalCommandHooks require ${TERMINAL_COMMAND_HOOK_CAPABILITY} capability`);
+  if (!raw || typeof raw !== 'object') throw new Error('terminalCommandHook must be object');
+  const source = raw as ExtensionTerminalCommandHookContribution;
+  const id = asString(source.id, 'terminalCommandHook.id');
+  if (!validId(id)) throw new Error(`Invalid terminalCommandHook id ${id}`);
+  const match = asString(source.match, 'terminalCommandHook.match');
+  const appendArgs = asString(source.appendArgs, 'terminalCommandHook.appendArgs');
+  if (match.length > MAX_HOOK_PATTERN_LENGTH) throw new Error(`terminalCommandHook.match exceeds ${MAX_HOOK_PATTERN_LENGTH} characters`);
+  if (appendArgs.length > MAX_HOOK_APPEND_LENGTH) throw new Error(`terminalCommandHook.appendArgs exceeds ${MAX_HOOK_APPEND_LENGTH} characters`);
+  try { new RegExp(match); } catch (error) { throw new Error(`Invalid terminalCommandHook.match regex: ${error instanceof Error ? error.message : String(error)}`); }
+  const sources = Array.isArray(source.sources) ? source.sources.map((item) => asString(item, 'terminalCommandHook.sources')) : undefined;
+  for (const item of sources ?? []) if (!ALLOWED_HOOK_SOURCES.has(item as TerminalCommandHookSource)) throw new Error(`Unknown terminalCommandHook source ${item}`);
+  for (const [, name] of appendArgs.matchAll(/\$\{([^}]+)\}/g)) if (!ALLOWED_HOOK_TEMPLATE_VARS.has(name)) throw new Error(`Unsupported terminalCommandHook template variable ${name}`);
+  return { id, match, appendArgs, sources: sources as TerminalCommandHookSource[] | undefined, description: typeof source.description === 'string' ? source.description.trim() : undefined };
+}
 
 function normalizeManifest(raw: unknown, root: string): ExtensionManifest {
   if (!raw || typeof raw !== 'object') throw new Error('Manifest must be object');
@@ -32,7 +57,7 @@ function normalizeManifest(raw: unknown, root: string): ExtensionManifest {
     source: 'local',
     packagePath: root,
     capabilities: Array.isArray(source.capabilities) ? source.capabilities.filter((item): item is string => typeof item === 'string') : undefined,
-    contributes: { views: [], statusBar: [], configuration: source.contributes?.configuration },
+    contributes: { views: [], statusBar: [], configuration: source.contributes?.configuration, terminalCommandHooks: [] },
   };
   const seen = new Set<string>();
   for (const view of source.contributes?.views ?? []) {
@@ -48,6 +73,12 @@ function normalizeManifest(raw: unknown, root: string): ExtensionManifest {
     seen.add(itemId);
     if (item.entry) validateEntry(root, item.entry);
     manifest.contributes!.statusBar!.push({ ...item, id: itemId, extensionId: id, native: false, side: item.side ?? 'left' });
+  }
+  for (const item of source.contributes?.terminalCommandHooks ?? []) {
+    const hook = validateTerminalCommandHook(item, manifest.capabilities);
+    if (seen.has(hook.id)) throw new Error(`Duplicate contribution id ${hook.id}`);
+    seen.add(hook.id);
+    manifest.contributes!.terminalCommandHooks!.push(hook);
   }
   return manifest;
 }
@@ -79,7 +110,18 @@ export async function loadExtensions(settings: StackDockSettings): Promise<Exten
       errors.push({ packagePath, message: error instanceof Error ? error.message : String(error) });
     }
   }
+  loadedExtensionsCache = extensions;
+  loadedExtensionPathKey = settingsPathKey(settings);
   return { extensions, errors };
+}
+
+export async function ensureExtensionsLoaded(settings: StackDockSettings): Promise<ExtensionManifest[]> {
+  if (loadedExtensionPathKey !== settingsPathKey(settings)) await loadExtensions(settings);
+  return loadedExtensionsCache;
+}
+
+export function getLoadedExtensionManifests(): ExtensionManifest[] {
+  return loadedExtensionsCache;
 }
 
 export function resolveExtensionAsset(extensionId: string, assetPath: string): string | null {
