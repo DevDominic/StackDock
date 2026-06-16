@@ -6,6 +6,7 @@ vi.mock('electron', () => ({
 }));
 
 import { createPiTerminalIntegration } from '../extensions/builtin/pi/main/terminalIntegration';
+import { transformTerminalInput } from '../electron/terminalInput';
 
 function settings(): StackDockSettings {
   return {
@@ -65,6 +66,28 @@ describe('Pi terminal integration', () => {
 
     expect(result?.command).toBe('pi -a --session-id "stackdock.restore_abc"');
     expect(result?.resumeState?.sessionId).toBe('stackdock.restore_abc');
+  });
+
+  it('adds stable session id when interactive pi arrives in separate chunks', () => {
+    const integration = createPiTerminalIntegration(settings());
+    const session = {
+      id: 'term_1',
+      restoreId: 'restore_abc',
+      name: 'Terminal',
+      profileId: 'powershell',
+      cwd: 'C:\\repo',
+      createdAt: '2026-06-14T00:00:00.000Z',
+    } satisfies TerminalSession;
+    const snapshot = { id: 'term_1', restoreId: 'restore_abc', output: '' } satisfies TerminalSnapshot;
+    const entry = { session, terminalIntegrations: [integration], inputLine: '' };
+
+    const output = transformTerminalInput(entry, 'p', snapshot)
+      + transformTerminalInput(entry, 'i', snapshot)
+      + transformTerminalInput(entry, '\r', snapshot);
+
+    expect(output).toBe('pi --session-id "stackdock.restore_abc"\r');
+    expect(session.resumeState?.sessionId).toBe('stackdock.restore_abc');
+    expect(snapshot.resumeState?.sessionId).toBe('stackdock.restore_abc');
   });
 
   it('does not inject session args into pi subcommands', () => {

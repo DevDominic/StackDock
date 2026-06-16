@@ -12,6 +12,7 @@ import { getDefaultSettings, loadSettings } from './configStore';
 import { ensureDataDirs, getTerminalSnapshotsDir, getTerminalStatePath } from './storage';
 import { getBridgeEnv } from './browserBridge';
 import type { TerminalCommandIntegration } from './terminalIntegration';
+import { applyTerminalInputResumeState, transformTerminalInput } from './terminalInput';
 import { getEnabledTerminalIntegrations } from '../extensions/mainRegistry';
 
 interface HeadlessProcessEntry {
@@ -34,6 +35,7 @@ interface RecordEntry {
   pendingRestoreBarrier: { resumeCommand?: string } | null;
   terminalIntegrations: TerminalCommandIntegration[];
   inputLine: string;
+  inputWriteQueue: Promise<void>;
   // Shadow terminal that interprets every pty byte so snapshots can persist the
   // *rendered* buffer instead of the raw stream. Full-screen terminal apps
   // emit absolute-cursor repaint frames that only replay correctly into a
@@ -133,16 +135,8 @@ export async function flushTerminalSnapshots() {
   await Promise.all([...terminals.values()].map((entry) => persistEntrySnapshot(entry)));
 }
 
-function mergeResumeState(current: TerminalResumeState | undefined, next: TerminalResumeState | undefined): TerminalResumeState | undefined {
-  if (!next) return current;
-  if (!current || current.integrationId !== next.integrationId) return next;
-  return { ...current, ...next };
-}
-
 function applyResumeState(session: TerminalSession, snapshot: TerminalSnapshot, resumeState: TerminalResumeState | undefined) {
-  if (!resumeState) return;
-  session.resumeState = mergeResumeState(session.resumeState, resumeState);
-  snapshot.resumeState = mergeResumeState(snapshot.resumeState, session.resumeState);
+  applyTerminalInputResumeState(session, snapshot, resumeState);
 }
 
 function hydrateSnapshotResumeState(snapshot: TerminalSnapshot, terminalIntegrations: TerminalCommandIntegration[]) {
@@ -173,46 +167,9 @@ function buildResumeCommand(session: TerminalSession, snapshot: TerminalSnapshot
   return session.resumeState?.resumeCommand ?? snapshot?.resumeState?.resumeCommand;
 }
 
-function resolveInteractiveCommand(entry: RecordEntry, command: string) {
-  const restoreId = entry.session.restoreId ?? entry.session.id;
-  for (const integration of entry.terminalIntegrations) {
-    const result = integration.resolveInteractiveCommand?.(command, { restoreId, cwd: entry.session.cwd, name: entry.session.name });
-    if (result) {
-      const snapshot = ensureSnapshotRecord(entry);
-      applyResumeState(entry.session, snapshot, result.resumeState);
-      return result.command;
-    }
-  }
-  return command;
-}
-
 async function refreshTerminalIntegrations(entry: RecordEntry) {
   const settings = await loadSettings().catch(() => getDefaultSettings());
   entry.terminalIntegrations = getEnabledTerminalIntegrations(settings);
-}
-
-function transformTerminalInput(entry: RecordEntry, data: string) {
-  let output = '';
-  for (const char of data) {
-    if (char === '\r' || char === '\n') {
-      const typed = entry.inputLine;
-      const resolved = resolveInteractiveCommand(entry, typed);
-      output += `${resolved.startsWith(typed) ? resolved.slice(typed.length) : resolved}${char}`;
-      entry.inputLine = '';
-    } else if (char === '\u0003') {
-      entry.inputLine = '';
-      output += char;
-    } else if (char === '\b' || char === '\u007f') {
-      entry.inputLine = entry.inputLine.slice(0, -1);
-      output += char;
-    } else if (char >= ' ' && char !== '\u007f') {
-      entry.inputLine += char;
-      output += char;
-    } else {
-      output += char;
-    }
-  }
-  return output;
 }
 
 function integrationOwnsCommand(command: string | undefined, terminalIntegrations: TerminalCommandIntegration[]) {
@@ -533,7 +490,7 @@ export async function createTerminal(profileId: string, cwd: string, name?: stri
     // repaint area.
     headless.write(`${priorSnapshot.output}\x1b[0m`);
   }
-  const entry: RecordEntry = { session, context, terminal, pendingData: [], flushTimer: null, pendingStartupCommand: null, pendingRestoreBarrier, terminalIntegrations, inputLine: '', headless, serializeAddon, recentOutput: '', headlessDisposed: false, discardSnapshot: context?.headless === true, headlessOutput: '', headlessTimer: null, headlessTimedOut: false, headlessResultSent: false };
+  const entry: RecordEntry = { session, context, terminal, pendingData: [], flushTimer: null, pendingStartupCommand: null, pendingRestoreBarrier, terminalIntegrations, inputLine: '', inputWriteQueue: Promise.resolve(), headless, serializeAddon, recentOutput: '', headlessDisposed: false, discardSnapshot: context?.headless === true, headlessOutput: '', headlessTimer: null, headlessTimedOut: false, headlessResultSent: false };
   terminal.onData((data) => queueTerminalOutput(entry, data));
   terminal.onExit(({ exitCode }) => {
     cancelPendingStartupCommand(entry);
@@ -591,8 +548,13 @@ export function updateTerminalSession(id: string, patch: TerminalSessionUpdate):
 export async function writeTerminal(id: string, data: string) {
   const entry = terminals.get(id);
   if (!entry) return;
-  if (data.includes('\r') || data.includes('\n')) await refreshTerminalIntegrations(entry);
-  entry.terminal.write(transformTerminalInput(entry, data));
+  const priorQueue = entry.inputWriteQueue.catch(() => undefined);
+  const nextQueue = priorQueue.then(async () => {
+    if (data.includes('\r') || data.includes('\n')) await refreshTerminalIntegrations(entry);
+    entry.terminal.write(transformTerminalInput(entry, data, ensureSnapshotRecord(entry)));
+  });
+  entry.inputWriteQueue = nextQueue.catch(() => undefined);
+  await nextQueue;
 }
 
 export async function resizeTerminal(id: string, cols: number, rows: number) {
