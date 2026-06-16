@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { TerminalProfile, TerminalSplitSide, Workspace, WorkspaceTerminalSession } from '../../../../src/shared/types';
 import { usePromptDialog } from '../../../../src/components/common/PromptProvider';
 
@@ -34,6 +35,7 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
   const [profileId, setProfileId] = useState(() => localStorage.getItem(LAST_PROFILE_KEY) ?? defaultProfileId ?? profiles[0]?.id ?? 'powershell');
   const promptDialog = usePromptDialog();
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const createMenuRef = useRef<HTMLDivElement | null>(null);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
   const visibleWorkspaces = useMemo(() => workspaces.filter((workspace) => emptySessionsVisible || sessions.some((session) => session.workspaceId === workspace.id)), [emptySessionsVisible, sessions, workspaces]);
   const flatWorkspace = visibleWorkspaces.length <= 1 ? visibleWorkspaces[0] ?? workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces[0] ?? null : null;
@@ -44,7 +46,9 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
   useEffect(() => {
     if (!menuOpen) return;
     const handle = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false);
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target) || createMenuRef.current?.contains(target)) return;
+      setMenuOpen(false);
     };
     const onResize = () => setMenuOpen(false);
     window.addEventListener('mousedown', handle);
@@ -80,11 +84,13 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
     }
     const rect = menuRef.current?.getBoundingClientRect();
     const width = Math.min(flatWorkspace ? 220 : 380, window.innerWidth - 16);
+    const estimatedHeight = flatWorkspace ? Math.min(260, Math.max(52, (profiles.length || 1) * 36 + 20)) : Math.min(420, Math.max(180, filteredWorkspaces.length * 50 + 92));
     const anchorRight = rect?.right ?? window.innerWidth - 8;
     const anchorBottom = rect?.bottom ?? 40;
+    const nextY = anchorBottom + 6;
     setMenuPosition({
       x: Math.min(Math.max(8, anchorRight - width), window.innerWidth - width - 8),
-      y: Math.min(anchorBottom + 6, window.innerHeight - 8),
+      y: Math.min(Math.max(8, nextY), Math.max(8, window.innerHeight - estimatedHeight - 8)),
       width,
     });
     setMenuOpen(true);
@@ -170,6 +176,27 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
     return group.map(renderSession);
   }
 
+  const createMenu = menuOpen && menuPosition ? createPortal(
+    <div ref={createMenuRef} className="new-session-menu session-create-menu" role="menu" style={{ left: menuPosition.x, top: menuPosition.y, width: menuPosition.width }}>
+      {flatWorkspace ? (
+        <div className="profile-pick-list">
+          {(profiles.length ? profiles : [{ id: profileId, name: defaultProfile?.name ?? profileId } as TerminalProfile]).map((profile) => (
+            <button key={profile.id} className="new-session-item" onClick={() => void createWith(flatWorkspace, profile.id)}>{profile.name}</button>
+          ))}
+        </div>
+      ) : (
+        <>
+          <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Workspace" />
+          {profiles.length ? <div className="profile-pills">{profiles.map((profile) => <button key={profile.id} className={profile.id === (defaultProfile?.id ?? profileId) ? 'ghost active-toggle' : 'ghost'} onClick={() => setProfileId(profile.id)}>{profile.name}</button>)}</div> : null}
+          <div className="workspace-pick-list">
+            {filteredWorkspaces.map((workspace) => <button key={workspace.id} className="workspace-pick" onClick={() => void createWith(workspace, defaultProfile?.id ?? profileId)}><strong>{workspace.name}</strong><small>{workspace.path}</small></button>)}
+          </div>
+        </>
+      )}
+    </div>,
+    document.body,
+  ) : null;
+
   return (
     <aside className="global-sessions-sidebar">
       <div className="panel-title sessions-title">
@@ -177,25 +204,7 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
         <div className="new-session" ref={menuRef}>
           <button className="new-session-main" onClick={() => flatWorkspace ? void createWith(flatWorkspace) : toggleCreateMenu()}>New</button>
           <button className="new-session-caret" aria-label="Choose terminal target" aria-haspopup="menu" aria-expanded={menuOpen} onClick={toggleCreateMenu}>▾</button>
-          {menuOpen ? (
-            <div className="new-session-menu session-create-menu" role="menu" style={menuPosition ? { left: menuPosition.x, top: menuPosition.y, width: menuPosition.width } : undefined}>
-              {flatWorkspace ? (
-                <div className="profile-pick-list">
-                  {(profiles.length ? profiles : [{ id: profileId, name: defaultProfile?.name ?? profileId } as TerminalProfile]).map((profile) => (
-                    <button key={profile.id} className="new-session-item" onClick={() => void createWith(flatWorkspace, profile.id)}>{profile.name}</button>
-                  ))}
-                </div>
-              ) : (
-                <>
-                  <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Workspace" />
-                  {profiles.length ? <div className="profile-pills">{profiles.map((profile) => <button key={profile.id} className={profile.id === (defaultProfile?.id ?? profileId) ? 'ghost active-toggle' : 'ghost'} onClick={() => setProfileId(profile.id)}>{profile.name}</button>)}</div> : null}
-                  <div className="workspace-pick-list">
-                    {filteredWorkspaces.map((workspace) => <button key={workspace.id} className="workspace-pick" onClick={() => void createWith(workspace, defaultProfile?.id ?? profileId)}><strong>{workspace.name}</strong><small>{workspace.path}</small></button>)}
-                  </div>
-                </>
-              )}
-            </div>
-          ) : null}
+          {createMenu}
         </div>
       </div>
       <div className="global-session-list">
