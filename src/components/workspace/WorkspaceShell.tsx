@@ -32,6 +32,7 @@ type SplitDirection = 'left' | 'right' | 'up' | 'down';
 type EditorSplitOrientation = 'horizontal' | 'vertical';
 
 const SESSION_DRAG_MIME = 'application/x-stackdock-session-id';
+const FILE_TAB_DRAG_MIME = 'application/x-stackdock-file-tab';
 function sideToDirection(side: TerminalSplitSide): 'row' | 'column' { return side === 'left' || side === 'right' ? 'row' : 'column'; }
 function isBeforeSide(side: TerminalSplitSide) { return side === 'left' || side === 'up'; }
 function getDropSide(event: DragEvent, element: HTMLElement): TerminalSplitSide {
@@ -127,11 +128,12 @@ interface Props {
   onUpdateWorkspace(workspace: Workspace): Promise<void>;
   workspaces: Workspace[];
   onOpenWorkspace(id: string): Promise<void>;
+  onOpenWorkspacePicker(): Promise<boolean>;
   settings?: StackDockSettings | null;
   onSettingsApplied?(settings: StackDockSettings): void;
 }
 
-export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspaces, onOpenWorkspace, settings: appSettings, onSettingsApplied }: Props) {
+export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspaces, onOpenWorkspace, onOpenWorkspacePicker, settings: appSettings, onSettingsApplied }: Props) {
   const { showToast } = useToast();
   const promptDialog = usePromptDialog();
   const [layout, setLayout] = useState<WorkspaceLayout | null>(null);
@@ -182,9 +184,9 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>('general');
   const [pendingBranchSwitch, setPendingBranchSwitch] = useState<string | null>(null);
-  const [tabMenu, setTabMenu] = useState<{ file: OpenFileTab; groupId: string; x: number; y: number } | null>(null);
-  const [terminalTabMenu, setTerminalTabMenu] = useState<{ x: number; y: number } | null>(null);
-  const [sessionDropSide, setSessionDropSide] = useState<TerminalSplitSide | null>(null);
+  const [tabMenu, setTabMenu] = useState<{ sessionId: string; file: OpenFileTab; groupId: string; x: number; y: number } | null>(null);
+  const [terminalTabMenu, setTerminalTabMenu] = useState<{ sessionId: string; x: number; y: number } | null>(null);
+  const [tabDrop, setTabDrop] = useState<{ side: TerminalSplitSide; kind: 'terminal' | 'file' } | null>(null);
   const [tabOverflow, setTabOverflow] = useState({ left: false, right: false });
   const autoStartedRef = useRef<string | null>(null);
   const sessionsRef = useRef<WorkspaceTerminalSession[]>([]);
@@ -1434,6 +1436,16 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     : activeSession ? [activeSession] : [];
   const sessionSplitDirection = activeSession?.splitDirection ?? 'row';
 
+  function startTerminalTabDrag(event: DragEvent<HTMLDivElement>, sessionId: string) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData(SESSION_DRAG_MIME, sessionId);
+  }
+
+  function startFileTabDrag(event: DragEvent<HTMLDivElement>, sessionId: string, groupId: string, path: string) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData(FILE_TAB_DRAG_MIME, JSON.stringify({ sessionId, groupId, path }));
+  }
+
   function renderSessionMainPane(session: WorkspaceTerminalSession) {
     const paneEditors = normalizeEditors(editorsBySession[session.id]);
     const paneEditorGroup = paneEditors.editorGroups.find((group) => group.id === paneEditors.activeEditorGroup) ?? paneEditors.editorGroups[0];
@@ -1463,13 +1475,13 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         {paneContentTabCount > 0 ? (
           <div className="editor-tabbar main-tabbar">
             <div className="tab-strip">
-              <div className={`tab main-terminal-tab${paneMainView === 'terminal' ? ' active' : ''}`} title="Terminal" onClick={() => showTerminalFor(session.id)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setTerminalTabMenu({ x: event.clientX, y: event.clientY }); }}>
+              <div className={`tab main-terminal-tab${paneMainView === 'terminal' ? ' active' : ''}`} title="Terminal" draggable onDragStart={(event) => startTerminalTabDrag(event, session.id)} onClick={() => showTerminalFor(session.id)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); sessionStore.setActiveSession(session.id); setTerminalTabMenu({ sessionId: session.id, x: event.clientX, y: event.clientY }); }}>
                 <span className="tab-name">Terminal</span>
               </div>
               {paneEditorGroup.openFiles.map((file) => (
-                <div key={`${session.id}:${paneEditorGroup.id}:${file.path}`} className={`tab${paneMainView === 'editor' && file.path === paneActiveFilePath ? ' active' : ''}${file.dirty ? ' dirty' : ''}`} title={file.path} onClick={() => selectFileFor(session.id, file.path, paneEditorGroup.id)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setTabMenu({ file, groupId: paneEditorGroup.id, x: event.clientX, y: event.clientY }); }} onMouseDown={(event) => { if (event.button === 1) { event.preventDefault(); void closeFileFor(session.id, file.path, paneEditorGroup.id); } }}>
+                <div key={`${session.id}:${paneEditorGroup.id}:${file.path}`} className={`tab${paneMainView === 'editor' && file.path === paneActiveFilePath ? ' active' : ''}${file.dirty ? ' dirty' : ''}`} title={file.path} draggable onDragStart={(event) => startFileTabDrag(event, session.id, paneEditorGroup.id, file.path)} onClick={() => selectFileFor(session.id, file.path, paneEditorGroup.id)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); sessionStore.setActiveSession(session.id); setTabMenu({ sessionId: session.id, file, groupId: paneEditorGroup.id, x: event.clientX, y: event.clientY }); }} onMouseDown={(event) => { if (event.button === 1) { event.preventDefault(); void closeFileFor(session.id, file.path, paneEditorGroup.id); } }}>
                   <span className="tab-name">{file.name}{file.dirty ? '*' : ''}</span>
-                  <span className="tab-close" onClick={(event) => { event.stopPropagation(); void closeFileFor(session.id, file.path, paneEditorGroup.id); }}><span className="dot">●</span><span className="x">×</span></span>
+                  <span className="tab-close" draggable={false} onClick={(event) => { event.stopPropagation(); void closeFileFor(session.id, file.path, paneEditorGroup.id); }}><span className="dot">●</span><span className="x">×</span></span>
                 </div>
               ))}
               {paneOpenLinks.map((link) => (
@@ -1481,9 +1493,26 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
             </div>
           </div>
         ) : null}
-        {terminalTabMenu && session.id === activeTerminalId ? (
+        {terminalTabMenu?.sessionId === session.id ? (
           <div className="context-menu tab-context-menu" style={{ top: terminalTabMenu.y, left: terminalTabMenu.x }} onMouseDown={(event) => event.stopPropagation()}>
+            <button className="context-menu-item" onClick={() => { void splitTerminal(session.id, 'left'); setTerminalTabMenu(null); }}>Split Left</button>
+            <button className="context-menu-item" onClick={() => { void splitTerminal(session.id, 'right'); setTerminalTabMenu(null); }}>Split Right</button>
+            <button className="context-menu-item" onClick={() => { void splitTerminal(session.id, 'up'); setTerminalTabMenu(null); }}>Split Up</button>
+            <button className="context-menu-item" onClick={() => { void splitTerminal(session.id, 'down'); setTerminalTabMenu(null); }}>Split Down</button>
+            <button className="context-menu-item" onClick={() => { void closeTerminal(session.id); setTerminalTabMenu(null); }}>Close</button>
             <button className="context-menu-item" disabled={paneContentTabCount === 0} onClick={() => { void closeAllContentTabsFor(session.id); setTerminalTabMenu(null); }}>Close Others</button>
+          </div>
+        ) : null}
+        {tabMenu?.sessionId === session.id ? (
+          <div className="context-menu tab-context-menu" style={{ top: tabMenu.y, left: tabMenu.x }} onMouseDown={(event) => event.stopPropagation()}>
+            <button className="context-menu-item" onClick={() => { splitFileFor(tabMenu.sessionId, tabMenu.file.path, tabMenu.groupId, 'left'); setTabMenu(null); }}>Split Left</button>
+            <button className="context-menu-item" onClick={() => { splitFileFor(tabMenu.sessionId, tabMenu.file.path, tabMenu.groupId, 'right'); setTabMenu(null); }}>Split Right</button>
+            <button className="context-menu-item" onClick={() => { splitFileFor(tabMenu.sessionId, tabMenu.file.path, tabMenu.groupId, 'up'); setTabMenu(null); }}>Split Up</button>
+            <button className="context-menu-item" onClick={() => { splitFileFor(tabMenu.sessionId, tabMenu.file.path, tabMenu.groupId, 'down'); setTabMenu(null); }}>Split Down</button>
+            <button className="context-menu-item" onClick={() => { void closeFileFor(tabMenu.sessionId, tabMenu.file.path, tabMenu.groupId); setTabMenu(null); }}>Close</button>
+            <button className="context-menu-item" onClick={() => { void closeOthersFor(tabMenu.sessionId, tabMenu.file.path, tabMenu.groupId); setTabMenu(null); }}>Close Others</button>
+            <button className="context-menu-item" onClick={() => { void closeToSideFor(tabMenu.sessionId, tabMenu.file.path, tabMenu.groupId, 'right'); setTabMenu(null); }}>Close to Right</button>
+            <button className="context-menu-item" onClick={() => { void closeToSideFor(tabMenu.sessionId, tabMenu.file.path, tabMenu.groupId, 'left'); setTabMenu(null); }}>Close to Left</button>
           </div>
         ) : null}
         <div className="main-tab-content">
@@ -1512,18 +1541,6 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
                     </PanelGroup>
                   </Suspense>
                 ) : <div className="empty-pad muted">Open file to edit.</div>}
-                {tabMenu && session.id === activeTerminalId ? (
-                  <div className="context-menu tab-context-menu" style={{ top: tabMenu.y, left: tabMenu.x }} onMouseDown={(event) => event.stopPropagation()}>
-                    <button className="context-menu-item" onClick={() => { splitFileFor(session.id, tabMenu.file.path, tabMenu.groupId, 'left'); setTabMenu(null); }}>Split Left</button>
-                    <button className="context-menu-item" onClick={() => { splitFileFor(session.id, tabMenu.file.path, tabMenu.groupId, 'right'); setTabMenu(null); }}>Split Right</button>
-                    <button className="context-menu-item" onClick={() => { splitFileFor(session.id, tabMenu.file.path, tabMenu.groupId, 'up'); setTabMenu(null); }}>Split Up</button>
-                    <button className="context-menu-item" onClick={() => { splitFileFor(session.id, tabMenu.file.path, tabMenu.groupId, 'down'); setTabMenu(null); }}>Split Down</button>
-                    <button className="context-menu-item" onClick={() => { void closeFileFor(session.id, tabMenu.file.path, tabMenu.groupId); setTabMenu(null); }}>Close</button>
-                    <button className="context-menu-item" onClick={() => { void closeOthersFor(session.id, tabMenu.file.path, tabMenu.groupId); setTabMenu(null); }}>Close Others</button>
-                    <button className="context-menu-item" onClick={() => { void closeToSideFor(session.id, tabMenu.file.path, tabMenu.groupId, 'right'); setTabMenu(null); }}>Close to Right</button>
-                    <button className="context-menu-item" onClick={() => { void closeToSideFor(session.id, tabMenu.file.path, tabMenu.groupId, 'left'); setTabMenu(null); }}>Close to Left</button>
-                  </div>
-                ) : null}
               </div>
               {!paneWebSplit ? <div className="main-tab-pane" style={{ display: paneMainView === 'web' ? 'flex' : 'none' }}><WebTabPanel tabs={paneOpenLinks} activeId={paneActiveWebId} onTitle={setWebTitle} onClose={(id) => closeLinkFor(session.id, id)} /></div> : null}
             </Panel>
@@ -1633,19 +1650,35 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
           <div
             className="session-split-host"
             onDragOver={(event) => {
-              if (!Array.from(event.dataTransfer.types).includes(SESSION_DRAG_MIME)) return;
+              const types = Array.from(event.dataTransfer.types);
+              const kind = types.includes(SESSION_DRAG_MIME) ? 'terminal' : types.includes(FILE_TAB_DRAG_MIME) ? 'file' : null;
+              if (!kind) return;
               event.preventDefault();
               event.dataTransfer.dropEffect = 'move';
-              setSessionDropSide(getDropSide(event, event.currentTarget));
+              setTabDrop({ side: getDropSide(event, event.currentTarget), kind });
             }}
-            onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setSessionDropSide(null); }}
+            onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setTabDrop(null); }}
             onDrop={(event) => {
-              if (!Array.from(event.dataTransfer.types).includes(SESSION_DRAG_MIME)) return;
+              const types = Array.from(event.dataTransfer.types);
+              const isTerminalDrop = types.includes(SESSION_DRAG_MIME);
+              const isFileDrop = types.includes(FILE_TAB_DRAG_MIME);
+              if (!isTerminalDrop && !isFileDrop) return;
               event.preventDefault();
-              const id = event.dataTransfer.getData(SESSION_DRAG_MIME);
-              const side = sessionDropSide ?? getDropSide(event, event.currentTarget);
-              setSessionDropSide(null);
-              if (id) void splitTerminal(id, side);
+              const side = tabDrop?.side ?? getDropSide(event, event.currentTarget);
+              setTabDrop(null);
+              if (isTerminalDrop) {
+                const id = event.dataTransfer.getData(SESSION_DRAG_MIME);
+                if (id) void splitTerminal(id, side);
+                return;
+              }
+              try {
+                const payload = JSON.parse(event.dataTransfer.getData(FILE_TAB_DRAG_MIME)) as { sessionId?: unknown; groupId?: unknown; path?: unknown };
+                if (typeof payload.sessionId === 'string' && typeof payload.groupId === 'string' && typeof payload.path === 'string') {
+                  splitFileFor(payload.sessionId, payload.path, payload.groupId, side);
+                }
+              } catch {
+                // Ignore malformed drag payloads from outside StackDock.
+              }
             }}
           >
             {visibleSessionPanes.length > 1 ? (
@@ -1658,7 +1691,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
                 ])}
               </PanelGroup>
             ) : visibleSessionPanes[0] ? renderSessionMainPane(visibleSessionPanes[0]) : <div className="empty-pad muted">Open terminal from Sessions.</div>}
-            {sessionDropSide ? <div className={`session-split-drop-overlay side-${sessionDropSide}`}>Split {sessionDropSide[0].toUpperCase() + sessionDropSide.slice(1)}</div> : null}
+            {tabDrop ? <div className={`session-split-drop-overlay side-${tabDrop.side}`}>Split {tabDrop.side[0].toUpperCase() + tabDrop.side.slice(1)}</div> : null}
           </div>
         </Panel>
       </PanelGroup>
@@ -1667,8 +1700,12 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       <SessionSwitcher
         open={sessionSwitcherOpen}
         sessions={allSessions}
+        workspaces={workspaces}
         activeSessionId={sessionStore.activeSessionId}
+        activeWorkspaceId={workspace.id}
         onSelect={(id) => { const target = allSessions.find((session) => session.id === id); sessionStore.setActiveSession(id); if (target && target.workspaceId !== workspace.id) void onOpenWorkspace(target.workspaceId); }}
+        onOpenWorkspace={onOpenWorkspace}
+        onPickWorkspace={onOpenWorkspacePicker}
         onClose={() => setSessionSwitcherOpen(false)}
       />
       {settingsOpen && settings ? <SettingsModal settings={settings} currentWorkspaceId={workspace.id} initialTab={settingsInitialTab} onSave={async (next) => { const saved = await api.settings.save(next); setSettings(saved); applyTheme(saved.themeId, saved.importedThemes); onSettingsApplied?.(saved); setProfiles(await api.terminal.profiles()); }} onAutomationSaved={(config) => setAutomation(config)} onRunCommand={(command) => void runPaletteCommand(command)} onClose={() => setSettingsOpen(false)} /> : null}

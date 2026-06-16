@@ -2,6 +2,10 @@ import { create } from 'zustand';
 import type { Workspace, WorkspaceLayout } from '../shared/types';
 import { api } from '../lib/api';
 
+function normalizeWorkspacePath(value: string) {
+  return value.replace(/[\\/]+$/, '').toLowerCase();
+}
+
 interface WorkspaceState {
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
@@ -9,6 +13,7 @@ interface WorkspaceState {
   error: string | null;
   reload(): Promise<void>;
   addWorkspace(path: string): Promise<void>;
+  openWorkspacePath(path: string): Promise<void>;
   createWorkspace(parentPath: string, name: string): Promise<void>;
   duplicateWorkspace(workspace: Workspace): Promise<void>;
   openWorkspace(id: string): Promise<void>;
@@ -40,6 +45,22 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       set({ workspaces: [workspace, ...get().workspaces], activeWorkspaceId: workspace.id, loading: false });
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'Could not add workspace', loading: false });
+    }
+  },
+  async openWorkspacePath(path) {
+    set({ loading: true, error: null });
+    try {
+      const normalized = normalizeWorkspacePath(path);
+      const existing = get().workspaces.find((workspace) => normalizeWorkspacePath(workspace.path) === normalized);
+      if (existing) {
+        set({ loading: false });
+        await get().openWorkspace(existing.id);
+        return;
+      }
+      const workspace = await api.workspaces.add(path);
+      set({ workspaces: [workspace, ...get().workspaces], activeWorkspaceId: workspace.id, loading: false });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : 'Could not open workspace', loading: false });
     }
   },
   async createWorkspace(parentPath, name) {

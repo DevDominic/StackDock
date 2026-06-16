@@ -16,7 +16,7 @@ function applyUiFont(settings: StackDockSettings) {
 }
 
 export default function App() {
-  const { workspaces, activeWorkspaceId, loading, error, reload, addWorkspace, createWorkspace, duplicateWorkspace, openWorkspace, closeWorkspace, removeWorkspace, updateWorkspace } = useWorkspaceStore();
+  const { workspaces, activeWorkspaceId, loading, error, reload, addWorkspace, openWorkspacePath, createWorkspace, duplicateWorkspace, openWorkspace, closeWorkspace, removeWorkspace, updateWorkspace } = useWorkspaceStore();
   const [settings, setSettings] = useState<StackDockSettings | null>(null);
   const promptDialog = usePromptDialog();
   const restoredRef = useRef(false);
@@ -61,13 +61,20 @@ export default function App() {
     if (parent && name?.trim()) await createWorkspace(parent, name.trim());
   }
 
+  async function handleOpenWorkspacePicker() {
+    const folder = await api.app.pickWorkspaceFolder();
+    if (!folder) return false;
+    await openWorkspacePath(folder);
+    return true;
+  }
+
   const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null;
 
   if (activeWorkspace) {
     return (
       <div className="root-shell">
         <Suspense fallback={<main className="app-shell"><div className="empty-pad muted">Loading workspace…</div></main>}>
-          <ExtensionProvider><WorkspaceShell workspace={activeWorkspace} workspaces={workspaces} settings={settings} onSettingsApplied={handleSettingsApplied} onBack={closeWorkspace} onUpdateWorkspace={updateWorkspace} onOpenWorkspace={openWorkspace} /></ExtensionProvider>
+          <ExtensionProvider><WorkspaceShell workspace={activeWorkspace} workspaces={workspaces} settings={settings} onSettingsApplied={handleSettingsApplied} onBack={closeWorkspace} onUpdateWorkspace={updateWorkspace} onOpenWorkspace={openWorkspace} onOpenWorkspacePicker={handleOpenWorkspacePicker} /></ExtensionProvider>
         </Suspense>
       </div>
     );
