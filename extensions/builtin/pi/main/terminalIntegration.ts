@@ -51,8 +51,14 @@ function stackDockPiSessionId(restoreId: string) {
   return `stackdock.${cleanSessionIdPart(restoreId)}`;
 }
 
+function isWindowsPath(value: string) {
+  return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith('\\\\');
+}
+
 function getStackDockPiSessionsDir() {
-  return path.join(getDataDir(), 'extensions', PI_EXTENSION_ID, 'sessions');
+  const dataDir = getDataDir();
+  const pathApi = isWindowsPath(dataDir) ? path.win32 : path;
+  return pathApi.join(dataDir, 'extensions', PI_EXTENSION_ID, 'sessions');
 }
 
 function ownsPiCommand(command: string) {
