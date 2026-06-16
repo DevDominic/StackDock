@@ -34,8 +34,18 @@ function mimeTypeFor(filePath: string) {
   return mimeByExtension[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream';
 }
 
+function isNodeErrorWithCode(error: unknown, code: string): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === code;
+}
+
 export async function readDirectory(dirPath: string): Promise<DirectoryEntry[]> {
-  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  let entries;
+  try {
+    entries = await fs.readdir(dirPath, { withFileTypes: true });
+  } catch (error) {
+    if (isNodeErrorWithCode(error, 'ENOENT')) return [];
+    throw error;
+  }
   return entries
     .filter((entry) => !noisyFolders.has(entry.name))
     .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name))
