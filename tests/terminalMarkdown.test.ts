@@ -24,6 +24,23 @@ describe('terminal markdown formatter', () => {
     expect(state.inFence).toBe(false);
   });
 
+  it('adds JavaScript syntax colors inside code blocks', () => {
+    const state = createTerminalMarkdownState();
+    const formatted = formatTerminalMarkdownChunk('```js\nconst message = "Hello";\nconsole.log(42); // done\n```\n', state);
+
+    expect(formatted).toContain('\x1b[38;5;81mconst\x1b[0m\x1b[48;5;236;38;5;252m');
+    expect(formatted).toContain('\x1b[38;5;214m"Hello"\x1b[0m\x1b[48;5;236;38;5;252m');
+    expect(formatted).toContain('\x1b[38;5;141m42\x1b[0m\x1b[48;5;236;38;5;252m');
+    expect(formatted).toContain('\x1b[38;5;244m// done\x1b[0m\x1b[48;5;236;38;5;252m');
+  });
+
+  it('preserves existing ANSI colors inside code blocks', () => {
+    const state = createTerminalMarkdownState();
+    const formatted = formatTerminalMarkdownChunk('```js\n\x1b[31mred\x1b[0m\n```\n', state);
+
+    expect(formatted).toContain('\x1b[48;5;236;38;5;252m\x1b[31mred\x1b[0m\x1b[48;5;236;38;5;252m\x1b[0m\n');
+  });
+
   it('keeps fenced code state across chunks', () => {
     const state = createTerminalMarkdownState();
 
@@ -34,6 +51,16 @@ describe('terminal markdown formatter', () => {
     expect(opening).toContain('\x1b[2;36m```bash\x1b[0m\n');
     expect(body).toBe('\x1b[48;5;236;38;5;252mnpm test\x1b[0m\n');
     expect(closing).toContain('\x1b[2;36m```\x1b[0m\n');
+    expect(state.inFence).toBe(false);
+  });
+
+  it('buffers split fence delimiters across live flushes', () => {
+    const state = createTerminalMarkdownState();
+    const write = (input: string) => formatTerminalMarkdownChunk(input, state) + flushTerminalMarkdownState(state);
+    const formatted = write('`') + write('``js') + write('\nconst ok = true;\n') + write('`') + write('``\n');
+
+    expect(formatted).toContain('\x1b[2;36m```js\x1b[0m\n');
+    expect(formatted).toContain('\x1b[48;5;236;38;5;252m\x1b[38;5;81mconst\x1b[0m\x1b[48;5;236;38;5;252m');
     expect(state.inFence).toBe(false);
   });
 
@@ -51,11 +78,27 @@ describe('terminal markdown formatter', () => {
     expect(formatTerminalMarkdownChunk('run `npm test` now\n', state)).toBe('run \x1b[96m`npm test`\x1b[0m now\n');
   });
 
-  it('passes ANSI/control lines through unchanged', () => {
+  it('detects fenced delimiters wrapped in ANSI styling', () => {
     const state = createTerminalMarkdownState();
-    const ansi = '\x1b[31mred `code`\x1b[0m\n';
+    const formatted = formatTerminalMarkdownChunk('\x1b[2m```cmd\x1b[0m\necho hi\n\x1b[2m```\x1b[0m\n', state);
 
-    expect(formatTerminalMarkdownChunk(ansi, state)).toBe(ansi);
+    expect(formatted).toContain('\x1b[2;36m\x1b[2m```cmd\x1b[0m\x1b[0m\n');
+    expect(formatted).toContain('\x1b[48;5;236;38;5;252mecho hi\x1b[0m\n');
+    expect(formatted).toContain('\x1b[2;36m\x1b[2m```\x1b[0m\x1b[0m\n');
+    expect(state.inFence).toBe(false);
+  });
+
+  it('styles inline code on ANSI-styled lines', () => {
+    const state = createTerminalMarkdownState();
+
+    expect(formatTerminalMarkdownChunk('\x1b[31mred `code`\x1b[0m\n', state)).toBe('\x1b[31mred \x1b[96m`code`\x1b[0m\x1b[0m\n');
+  });
+
+  it('passes unsupported control lines through unchanged', () => {
+    const state = createTerminalMarkdownState();
+    const controlled = 'red `code`\x07\n';
+
+    expect(formatTerminalMarkdownChunk(controlled, state)).toBe(controlled);
   });
 
   it('leaves ordinary text unchanged', () => {

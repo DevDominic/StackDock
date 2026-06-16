@@ -24,7 +24,7 @@ function settings(): StackDockSettings {
     ui: { fontFamily: 'sans', fontSize: 13 },
     code: { ligatures: true },
     editor: { fontSize: 13, fontFamily: 'mono', tabSize: 2, wordWrap: 'off' },
-    terminal: { fontSize: 13, fontFamily: 'mono', cursorBlink: true, startAtBottom: true },
+    terminal: { fontSize: 13, fontFamily: 'mono', cursorBlink: true, startAtBottom: true, markdownFormatting: true },
     terminalProfiles: [],
     extensions: { localPackagePaths: [], enabled: [], disabled: [], config: {} },
     keybinds: {},

@@ -162,7 +162,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     let restoredSnapshot = false;
     let replayingSnapshot = false;
     let terminalWriteFrame: number | null = null;
-    const markdownFormattingEnabled = shouldFormatTerminalMarkdown(session);
+    const markdownFormattingEnabled = settings?.terminal.markdownFormatting !== false && shouldFormatTerminalMarkdown(session);
     const markdownState = createTerminalMarkdownState();
     const formatDisplayOutput = (data: string) => markdownFormattingEnabled ? formatTerminalMarkdownChunk(data, markdownState) + flushTerminalMarkdownState(markdownState) : data;
     let terminalWriteInProgress = false;
@@ -307,7 +307,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       if (opened) terminal.dispose();
       if (terminalRef.current === terminal) terminalRef.current = null;
     };
-  }, [session.id, settings?.code.ligatures, settings?.terminal.startAtBottom]);
+  }, [session.id, settings?.code.ligatures, settings?.terminal.startAtBottom, settings?.terminal.markdownFormatting]);
 
   useEffect(() => {
     onAttachmentErrorRef.current = onAttachmentError;
