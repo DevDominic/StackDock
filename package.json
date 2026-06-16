@@ -104,6 +104,7 @@
         "deb"
       ],
       "category": "Development",
+      "maintainer": "DevDominic <DevDominic@users.noreply.github.com>",
       "syncDesktopName": true,
       "icon": "build/icon.png"
     }
