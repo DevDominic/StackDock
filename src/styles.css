@@ -205,6 +205,16 @@ button.active-toggle { border-color: var(--active-border); background: var(--act
 .window-control:hover { background: var(--hover); border: none; }
 .window-control:active { transform: none; box-shadow: none; }
 .window-control.close:hover { background: #e81123; color: #fff; }
+html[data-window-controls-position="left"] .window-controls { margin-left: 0; margin-right: auto; }
+html[data-window-controls-position="left"] .window-titlebar-drag { padding-left: 96px; padding-right: 24px; }
+html[data-window-controls-position="left"] .window-titlebar-copy { max-width: min(760px, calc(100vw - 140px)); }
+html[data-window-platform="macos"] .window-titlebar-brand { display: none; }
+html[data-window-platform="macos"] .window-controls.macos { align-items: center; gap: 8px; padding: 0 12px; }
+html[data-window-platform="macos"] .window-controls.macos .window-control { width: 12px; height: 12px; min-height: 12px; padding: 0; border: 1px solid rgba(0, 0, 0, 0.18); border-radius: 999px; color: transparent; font-size: 0; box-shadow: none; }
+html[data-window-platform="macos"] .window-controls.macos .window-control.close { background: #ff5f57; }
+html[data-window-platform="macos"] .window-controls.macos .window-control.minimize { background: #febc2e; }
+html[data-window-platform="macos"] .window-controls.macos .window-control.maximize { background: #28c840; }
+html[data-window-platform="macos"] .window-controls.macos .window-control:hover { filter: brightness(0.95); }
 html[data-window-controls="native"] .window-controls { display: none; }
 html[data-window-controls="native"] .window-titlebar { height: 43px; border-bottom: 0; }
 html[data-window-controls="native"] .window-titlebar::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; height: 1px; background: var(--border); pointer-events: none; }
@@ -292,6 +302,10 @@ html[data-window-controls="native"] .workspace-titlebar::after { right: 0; }
 .topbar-left { justify-content: flex-start; }
 .topbar-right { justify-content: flex-end; align-self: stretch; }
 .topbar-actions { justify-content: flex-end; padding-right: 6px; }
+html[data-window-controls-position="left"] .compact-topbar { padding-left: 90px; }
+html[data-window-controls-position="left"] .workspace-titlebar .window-controls { position: absolute; left: 0; top: 0; bottom: 1px; z-index: 21; }
+html[data-window-controls-position="left"] .workspace-titlebar .topbar-window-divider { display: none; }
+html[data-window-controls-position="left"] .workspace-titlebar .topbar-left { min-width: 0; }
 .topbar-title { min-width: 0; max-width: min(620px, 42vw); text-align: center; justify-self: center; align-self: center; line-height: 1.05; }
 .topbar-title h2 { font-size: 13px; line-height: 15px; font-weight: 600; }
 .topbar-title .muted { display: block; max-width: min(620px, 42vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--titlebar-inactive-fg); }

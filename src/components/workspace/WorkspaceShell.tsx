@@ -1574,7 +1574,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
             <button className="topbar-icon-btn" onClick={() => { setSettingsInitialTab('general'); setSettingsOpen(true); }} title="Settings" aria-label="Settings"><SettingsIcon /></button>
             <button className="topbar-icon-btn" onClick={() => void api.shell.openPath(workspace.path)} title="Open Folder" aria-label="Open Folder"><FolderOpenIcon /></button>
           </div>
-          <span className="topbar-divider" aria-hidden />
+          <span className="topbar-divider topbar-window-divider" aria-hidden />
           <WindowControls />
         </div>
       </header>

@@ -310,6 +310,16 @@ export interface ReadFileDataUrlResult {
 }
 
 export type WindowControlsStyle = 'native' | 'custom';
+export type WindowPlatform = 'windows' | 'macos' | 'linux' | 'other';
+export type WindowControlsPosition = 'left' | 'right';
+export type WindowControlsVariant = 'windows' | 'macos';
+
+export interface WindowControlsConfig {
+  platform: WindowPlatform;
+  style: WindowControlsStyle;
+  position: WindowControlsPosition;
+  variant: WindowControlsVariant;
+}
 
 export interface WindowTitleBarOverlayOptions {
   color: string;
@@ -326,6 +336,7 @@ export interface StackDockApi {
     closeWindow(): Promise<void>;
     isWindowMaximized(): Promise<boolean>;
     windowControlsStyle(): Promise<WindowControlsStyle>;
+    windowControlsConfig(): Promise<WindowControlsConfig>;
     setTitleBarOverlay(options: WindowTitleBarOverlayOptions): Promise<void>;
     loadRestoreState(): Promise<AppRestoreState>;
     saveRestoreState(state: AppRestoreState): Promise<AppRestoreState>;

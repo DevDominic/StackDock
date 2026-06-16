@@ -16,13 +16,15 @@ import { loadExtensions, resolveExtensionAsset } from './extensionService';
 import { loadAutomation, loadAutomationRaw, saveAutomationRaw } from './automationStore';
 import { inspectAttachmentPath, savePastedImageAttachment } from './attachmentService';
 import { assertAbsolutePath, assertLayoutLike, assertNonEmptyString, assertNumber, assertRestoreStateLike, assertSafeFileName, assertString, assertTerminalAttachmentOptions, assertTerminalAttachmentSource, assertTerminalSessionContext, assertTerminalSessionUpdate, assertWorkspaceLike } from './validation';
+import { getWindowControlsConfig } from '../src/shared/windowControls';
 
 let mainWindow: BrowserWindow | null = null;
 let quittingAfterSnapshotFlush = false;
 let closingAfterTerminalSave = false;
 const watchedWorkspaces = new Map<string, { watcher: FSWatcher; timer: NodeJS.Timeout | null }>();
 const noisyWatchSegments = new Set(['node_modules', 'dist', 'build', 'target', '.cache', '.git']);
-const nativeWindowControls = isWindows11();
+const windowControlsConfig = getWindowControlsConfig(process.platform, os.release());
+const nativeWindowControls = windowControlsConfig.style === 'native';
 
 // Make dev Electron sessions attachable by browser automation tools such as
 // dev-only by default; packaged builds can opt in explicitly with
@@ -37,16 +39,6 @@ try {
   app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 } catch {
   // If temp cache setup fails, Electron falls back to its default cache path.
-}
-
-function isWindows11() {
-  if (process.platform !== 'win32') return false;
-  const build = Number(os.release().split('.')[2] ?? 0);
-  return build >= 22000;
-}
-
-function windowControlsStyle() {
-  return nativeWindowControls ? 'native' : 'custom';
 }
 
 async function createWindow() {
@@ -168,7 +160,8 @@ function registerIpc() {
   });
   ipcMain.handle('app:closeWindow', async () => { mainWindow?.close(); });
   ipcMain.handle('app:isWindowMaximized', async () => mainWindow?.isMaximized() ?? false);
-  ipcMain.handle('app:windowControlsStyle', async () => windowControlsStyle());
+  ipcMain.handle('app:windowControlsStyle', async () => windowControlsConfig.style);
+  ipcMain.handle('app:windowControlsConfig', async () => windowControlsConfig);
   ipcMain.handle('app:setTitleBarOverlay', async (_event, options: unknown) => {
     if (!mainWindow || !nativeWindowControls) return;
     const value = options && typeof options === 'object' ? options as { color?: unknown; symbolColor?: unknown; height?: unknown } : {};

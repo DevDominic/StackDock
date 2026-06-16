@@ -1,12 +1,24 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import type { WindowControlsPosition, WindowPlatform } from '../shared/types';
 
 interface Props {
   title?: string;
   subtitle?: string;
 }
 
+function readWindowControlsLayout(): { platform: WindowPlatform; position: WindowControlsPosition } {
+  const dataset = document.documentElement.dataset;
+  const platform = dataset.windowPlatform;
+  const position = dataset.windowControlsPosition;
+  return {
+    platform: platform === 'macos' || platform === 'linux' || platform === 'other' ? platform : 'windows',
+    position: position === 'left' ? 'left' : 'right',
+  };
+}
+
 export function WindowControls() {
+  const [{ platform, position }] = useState(readWindowControlsLayout);
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
@@ -21,10 +33,24 @@ export function WindowControls() {
     setMaximized(await api.app.toggleMaximizeWindow());
   }
 
+  const isMac = platform === 'macos';
+  const maximizeLabel = maximized ? 'Restore' : isMac ? 'Zoom' : 'Maximize';
+  const controlsClassName = `window-controls ${platform} ${position}`;
+
+  if (isMac) {
+    return (
+      <div className={controlsClassName}>
+        <button className="window-control close" onClick={() => void api.app.closeWindow()} title="Close" aria-label="Close">×</button>
+        <button className="window-control minimize" onClick={() => void api.app.minimizeWindow()} title="Minimize" aria-label="Minimize">—</button>
+        <button className="window-control maximize" onClick={() => void toggleMaximize()} title={maximizeLabel} aria-label={maximizeLabel}>{maximized ? '❐' : '□'}</button>
+      </div>
+    );
+  }
+
   return (
-    <div className="window-controls">
-      <button className="window-control" onClick={() => void api.app.minimizeWindow()} title="Minimize" aria-label="Minimize">—</button>
-      <button className="window-control" onClick={() => void toggleMaximize()} title={maximized ? 'Restore' : 'Maximize'} aria-label={maximized ? 'Restore' : 'Maximize'}>{maximized ? '❐' : '□'}</button>
+    <div className={controlsClassName}>
+      <button className="window-control minimize" onClick={() => void api.app.minimizeWindow()} title="Minimize" aria-label="Minimize">—</button>
+      <button className="window-control maximize" onClick={() => void toggleMaximize()} title={maximizeLabel} aria-label={maximizeLabel}>{maximized ? '❐' : '□'}</button>
       <button className="window-control close" onClick={() => void api.app.closeWindow()} title="Close" aria-label="Close">×</button>
     </div>
   );

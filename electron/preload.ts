@@ -1,17 +1,14 @@
 import { clipboard, contextBridge, ipcRenderer, webUtils } from 'electron';
 import os from 'os';
-import type { StackDockApi, WindowControlsStyle } from '../src/shared/types';
+import type { StackDockApi } from '../src/shared/types';
+import { getWindowControlsConfig } from '../src/shared/windowControls';
 
-function isWindows11() {
-  if (process.platform !== 'win32') return false;
-  const build = Number(os.release().split('.')[2] ?? 0);
-  return build >= 22000;
-}
-
-const controlsStyle: WindowControlsStyle = isWindows11() ? 'native' : 'custom';
+const controlsConfig = getWindowControlsConfig(process.platform, os.release());
 
 function applyWindowControlsStyle() {
-  document.documentElement.dataset.windowControls = controlsStyle;
+  document.documentElement.dataset.windowControls = controlsConfig.style;
+  document.documentElement.dataset.windowPlatform = controlsConfig.platform;
+  document.documentElement.dataset.windowControlsPosition = controlsConfig.position;
 }
 
 if (document.documentElement) applyWindowControlsStyle();
@@ -25,7 +22,8 @@ const api: StackDockApi = {
     toggleMaximizeWindow: () => ipcRenderer.invoke('app:toggleMaximizeWindow'),
     closeWindow: () => ipcRenderer.invoke('app:closeWindow'),
     isWindowMaximized: () => ipcRenderer.invoke('app:isWindowMaximized'),
-    windowControlsStyle: () => Promise.resolve(controlsStyle),
+    windowControlsStyle: () => Promise.resolve(controlsConfig.style),
+    windowControlsConfig: () => Promise.resolve(controlsConfig),
     setTitleBarOverlay: (options) => ipcRenderer.invoke('app:setTitleBarOverlay', options),
     loadRestoreState: () => ipcRenderer.invoke('app:loadRestoreState'),
     saveRestoreState: (state) => ipcRenderer.invoke('app:saveRestoreState', state),
