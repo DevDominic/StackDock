@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import '../../lib/monacoEnvironment';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import { api } from '../../lib/api';
@@ -159,6 +159,22 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
   const activePathRef = useRef<string | null>(null);
   const onChangeFileRef = useRef(onChangeFile);
 
+  const getActiveCodeEditor = useCallback(() => {
+    if (!active || active.mediaKind) return null;
+    if (showAsDiff) {
+      if (diffMode === 'compare-only') return compareModifiedRef.current;
+      return diffEditorRef.current?.getModifiedEditor() ?? null;
+    }
+    return editorRef.current;
+  }, [active?.path, active?.mediaKind, showAsDiff, diffMode]);
+
+  const openFind = useCallback(() => {
+    const editor = getActiveCodeEditor();
+    if (!editor) return;
+    editor.focus();
+    void editor.getAction('actions.find')?.run();
+  }, [getActiveCodeEditor]);
+
   useEffect(() => {
     onChangeFileRef.current = onChangeFile;
   }, [onChangeFile]);
@@ -288,6 +304,12 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
 
   useEffect(() => {
     const onKeyDown = async (event: KeyboardEvent) => {
+      if (!visible) return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f' && active && !active.mediaKind) {
+        event.preventDefault();
+        openFind();
+        return;
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's' && active) {
         event.preventDefault();
         setSaving(true);
@@ -297,7 +319,7 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [active, onSaveFile]);
+  }, [active, onSaveFile, openFind, visible]);
 
   return (
     <section className={`panel editor-panel${showAsDiff ? ' diff-active' : ''}`}>
@@ -322,6 +344,7 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
           {active ? (
             <div className="editor-tab-actions">
               {saving ? <span className="muted tab-saving">Saving…</span> : null}
+              {!active.mediaKind ? <button className="ghost" title="Search in file (Ctrl+F)" onClick={openFind}>Search</button> : null}
               <button className="ghost" onClick={() => api.fs.revealInExplorer(active.path)}>Reveal</button>
             </div>
           ) : null}
