@@ -58,6 +58,16 @@ export async function readDirectory(dirPath: string): Promise<DirectoryEntry[]> 
     }));
 }
 
+export async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch (error) {
+    if (isNodeErrorWithCode(error, 'ENOENT')) return false;
+    throw error;
+  }
+}
+
 export async function readFile(filePath: string): Promise<ReadFileResult> {
   return { path: filePath, content: await fs.readFile(filePath, 'utf8') };
 }

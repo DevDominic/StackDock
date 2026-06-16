@@ -353,6 +353,7 @@ export interface StackDockApi {
     saveLayout(layout: WorkspaceLayout): Promise<void>;
   };
   fs: {
+    pathExists(path: string): Promise<boolean>;
     readDirectory(path: string): Promise<DirectoryEntry[]>;
     readFile(path: string): Promise<ReadFileResult>;
     readFileDataUrl(path: string): Promise<ReadFileDataUrlResult>;

@@ -302,6 +302,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         const tabByPath = new Map<string, OpenFileTab>();
         for (const filePath of paths) {
           try {
+            if (!(await api.fs.pathExists(filePath))) continue;
             const mediaKind = mediaKindForPath(filePath);
             if (mediaKind) {
               const media = await api.fs.readFileDataUrl(filePath);

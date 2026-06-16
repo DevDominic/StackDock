@@ -38,6 +38,7 @@ const api: StackDockApi = {
     saveLayout: (layout) => ipcRenderer.invoke('workspaces:saveLayout', layout),
   },
   fs: {
+    pathExists: (targetPath) => ipcRenderer.invoke('fs:pathExists', targetPath),
     readDirectory: (targetPath) => ipcRenderer.invoke('fs:readDirectory', targetPath),
     readFile: (targetPath) => ipcRenderer.invoke('fs:readFile', targetPath),
     readFileDataUrl: (targetPath) => ipcRenderer.invoke('fs:readFileDataUrl', targetPath),

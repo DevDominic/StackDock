@@ -5,7 +5,7 @@ import { watch, type FSWatcher } from 'fs';
 import os from 'os';
 import path from 'path';
 import { addWorkspace, createWorkspace, listWorkspaces, loadLayout, loadRestoreState, removeWorkspace, saveLayout, saveRestoreState, updateWorkspace } from './workspaceStore';
-import { createFile, createFolder, deletePath, readDirectory, readFile, readFileDataUrl, renamePath, revealInExplorer, writeFile } from './fileService';
+import { createFile, createFolder, deletePath, pathExists, readDirectory, readFile, readFileDataUrl, renamePath, revealInExplorer, writeFile } from './fileService';
 import { addAll, commit, discardFile, fetch, getGitDiff, getGitFileContents, getGitStatus, getIgnoredFiles, listBranches, pull, push, stageFile, switchBranch, unstageFile } from '../extensions/builtin/git/main/gitService';
 import { createTerminal, forgetTerminalSnapshot, getTerminalProfiles, getTerminalSnapshot, killTerminal, loadOpenTerminalState, markTerminalReady, resizeTerminal, saveOpenTerminalState, setTerminalWindow, setVisibleTerminals, updateTerminalSession, writeTerminal } from './terminalManager';
 import { setBridgeWindow, startBrowserBridge } from './browserBridge';
@@ -196,6 +196,7 @@ function registerIpc() {
   ipcMain.handle('workspaces:loadLayout', async (_event, workspaceId: unknown) => loadLayout(assertNonEmptyString(workspaceId, 'workspaceId')));
   ipcMain.handle('workspaces:saveLayout', async (_event, layout) => saveLayout(assertLayoutLike(layout)));
 
+  ipcMain.handle('fs:pathExists', async (_event, targetPath: unknown) => pathExists(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('fs:readDirectory', async (_event, targetPath: unknown) => readDirectory(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('fs:readFile', async (_event, targetPath: unknown) => readFile(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('fs:readFileDataUrl', async (_event, targetPath: unknown) => readFileDataUrl(assertAbsolutePath(targetPath, 'targetPath')));
