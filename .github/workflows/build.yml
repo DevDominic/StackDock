@@ -74,3 +74,4 @@ jobs:
             release/*.dmg
             release/*.exe
           if-no-files-found: error
+          compression-level: 0
