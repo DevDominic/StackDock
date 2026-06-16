@@ -24,7 +24,7 @@
   "type": "commonjs",
   "scripts": {
     "dev": "npm run build && electron . --trace-warnings --agent-browser --built",
-    "clean:dist": "node -e \"const fs=require('fs'); for (const p of ['dist','dist-electron','release','.buildstamp']) fs.rmSync(p,{recursive:true,force:true});\"",
+    "clean:dist": "node -e \"const fs=require('fs'); for (const p of ['dist','dist-electron','.buildstamp']) fs.rmSync(p,{recursive:true,force:true});\"",
     "build": "node scripts/build-if-needed.cjs",
     "build:force": "tsc -p electron/tsconfig.json && vite build",
     "icons:generate": "node scripts/generate-icons.cjs",
@@ -64,9 +64,10 @@
     "asar": {
       "smartUnpack": false
     },
-    "npmRebuild": false,
+    "npmRebuild": true,
     "asarUnpack": [
-      "node_modules/node-pty/prebuilds/**/*"
+      "node_modules/node-pty/prebuilds/**/*",
+      "node_modules/node-pty/build/Release/*.node"
     ],
     "files": [
       "dist/**/*",
@@ -80,7 +81,6 @@
       "!node_modules/node-pty/deps{,/**}",
       "!node_modules/node-pty/third_party{,/**}",
       "!node_modules/node-pty/src{,/**}",
-      "!node_modules/node-pty/build{,/**}",
       "!node_modules/node-pty/**/*.map",
       "!node_modules/node-pty/**/*.ts",
       "!node_modules/node-pty/**/{*.test.js,*.test.js.map}",
