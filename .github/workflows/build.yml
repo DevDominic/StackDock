@@ -22,19 +22,19 @@ jobs:
           - platform: linux
             arch: x64
             os: ubuntu-latest
-            builder_args: --linux AppImage deb --x64
+            builder_args: --linux AppImage --x64
           - platform: macos
             arch: x64
             os: macos-15-intel
-            builder_args: --mac dmg zip --x64
+            builder_args: --mac dmg --x64
           - platform: macos
             arch: arm64
             os: macos-14
-            builder_args: --mac dmg zip --arm64
+            builder_args: --mac dmg --arm64
           - platform: windows
             arch: x64
             os: windows-latest
-            builder_args: --win portable nsis --x64
+            builder_args: --win portable --x64
 
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: false
@@ -65,29 +65,12 @@ jobs:
         shell: bash
         run: npx electron-builder ${{ matrix.builder_args }} --publish never -c.compression=maximum
 
-      - name: Generate checksums
-        shell: bash
-        run: |
-          python - <<'PY'
-          from hashlib import sha256
-          from pathlib import Path
-
-          platform = "${{ matrix.platform }}"
-          arch = "${{ matrix.arch }}"
-          release_dir = Path("release")
-          checksum_path = release_dir / f"SHA256SUMS-{platform}-{arch}.txt"
-          lines = []
-
-          for path in sorted(release_dir.iterdir()):
-              if path.is_file() and path.name != checksum_path.name:
-                  lines.append(f"{sha256(path.read_bytes()).hexdigest()}  {path.name}")
-
-          checksum_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-          PY
-
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: StackDock-${{ matrix.platform }}-${{ matrix.arch }}
-          path: release/*
+          path: |
+            release/*.AppImage
+            release/*.dmg
+            release/*.exe
           if-no-files-found: error

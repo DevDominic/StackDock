@@ -14,9 +14,10 @@ const releaseDir = 'release';
 mkdirSync(releaseDir, { recursive: true });
 
 const checksumName = `SHA256SUMS-${platform}-${arch}.txt`;
+const runnableSuffixes = ['.AppImage', '.dmg', '.exe'];
 const lines = readdirSync(releaseDir)
   .sort((a, b) => a.localeCompare(b))
-  .filter((name) => name !== checksumName)
+  .filter((name) => runnableSuffixes.some((suffix) => name.endsWith(suffix)))
   .filter((name) => statSync(join(releaseDir, name)).isFile())
   .map((name) => {
     const hash = createHash('sha256').update(readFileSync(join(releaseDir, name))).digest('hex');
