@@ -6,6 +6,7 @@ dist/
 dist-electron/
 release/
 .buildstamp
+build/
 
 # Runtime/log artifacts
 *.log

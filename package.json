@@ -1,6 +1,7 @@
 {
   "name": "stackdock",
   "version": "0.1.0",
+  "desktopName": "StackDock",
   "description": "Windows-first Electron workspace manager for terminals, git, file editing, and web tabs.",
   "license": "MIT",
   "author": "Dominic",
@@ -26,10 +27,11 @@
     "clean:dist": "node -e \"const fs=require('fs'); for (const p of ['dist','dist-electron','release','.buildstamp']) fs.rmSync(p,{recursive:true,force:true});\"",
     "build": "node scripts/build-if-needed.cjs",
     "build:force": "tsc -p electron/tsconfig.json && vite build",
-    "build:app": "npm run clean:dist && npm run build && electron-builder --win portable --x64 -c.compression=maximum",
-    "build:installer": "npm run clean:dist && npm run build && electron-builder --win nsis --x64 -c.compression=maximum",
-    "build:web-installer": "npm run clean:dist && npm run build && electron-builder --win nsis-web --x64 -c.compression=maximum",
-    "release:prep": "npm run clean:dist && npm run typecheck && npm test && npm run build:force",
+    "icons:generate": "node scripts/generate-icons.cjs",
+    "build:app": "npm run clean:dist && npm run build && npm run icons:generate && electron-builder --win portable --x64 -c.compression=maximum",
+    "build:installer": "npm run clean:dist && npm run build && npm run icons:generate && electron-builder --win nsis --x64 -c.compression=maximum",
+    "build:web-installer": "npm run clean:dist && npm run build && npm run icons:generate && electron-builder --win nsis-web --x64 -c.compression=maximum",
+    "release:prep": "npm run clean:dist && npm run icons:generate && npm run typecheck && npm test && npm run build:force",
     "release:checksum:linux:x64": "node scripts/checksum-release.cjs linux x64",
     "release:checksum:mac:x64": "node scripts/checksum-release.cjs macos x64",
     "release:checksum:mac:arm64": "node scripts/checksum-release.cjs macos arm64",
@@ -49,10 +51,12 @@
   },
   "build": {
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "appId": "com.stackdock.app",
     "productName": "StackDock",
+    "icon": "build/icon.png",
     "compression": "maximum",
     "electronLanguages": [
       "en-US"
@@ -99,7 +103,9 @@
         "AppImage",
         "deb"
       ],
-      "category": "Development"
+      "category": "Development",
+      "syncDesktopName": true,
+      "icon": "build/icon.png"
     }
   },
   "devDependencies": {
