@@ -28,9 +28,10 @@
     "build": "node scripts/build-if-needed.cjs",
     "build:force": "tsc -p electron/tsconfig.json && vite build",
     "icons:generate": "node scripts/generate-icons.cjs",
-    "build:app": "npm run clean:dist && npm run build && npm run icons:generate && electron-builder --win portable --x64 -c.compression=maximum",
-    "build:installer": "npm run clean:dist && npm run build && npm run icons:generate && electron-builder --win nsis --x64 -c.compression=maximum",
-    "build:web-installer": "npm run clean:dist && npm run build && npm run icons:generate && electron-builder --win nsis-web --x64 -c.compression=maximum",
+    "prepare:node-pty:win": "node scripts/ensure-node-pty-conpty.cjs",
+    "build:app": "npm run clean:dist && npm run build && npm run icons:generate && npm run prepare:node-pty:win && electron-builder --win portable --x64 -c.compression=maximum",
+    "build:installer": "npm run clean:dist && npm run build && npm run icons:generate && npm run prepare:node-pty:win && electron-builder --win nsis --x64 -c.compression=maximum",
+    "build:web-installer": "npm run clean:dist && npm run build && npm run icons:generate && npm run prepare:node-pty:win && electron-builder --win nsis-web --x64 -c.compression=maximum",
     "release:prep": "npm run clean:dist && npm run icons:generate && npm run typecheck && npm test && npm run build:force",
     "release:checksum:linux:x64": "node scripts/checksum-release.cjs linux x64",
     "release:checksum:mac:x64": "node scripts/checksum-release.cjs macos x64",
@@ -39,7 +40,7 @@
     "release:linux:x64": "npm run release:prep && electron-builder --linux AppImage --x64 --publish never -c.compression=maximum",
     "release:mac:x64": "npm run release:prep && electron-builder --mac dmg --x64 --publish never -c.compression=maximum",
     "release:mac:arm64": "npm run release:prep && electron-builder --mac dmg --arm64 --publish never -c.compression=maximum",
-    "release:win:x64": "npm run release:prep && electron-builder --win portable --x64 --publish never -c.compression=maximum",
+    "release:win:x64": "npm run release:prep && npm run prepare:node-pty:win && electron-builder --win portable --x64 --publish never -c.compression=maximum",
     "start": "electron .",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p electron/tsconfig.json --noEmit"
@@ -67,7 +68,7 @@
     "npmRebuild": true,
     "asarUnpack": [
       "node_modules/node-pty/prebuilds/**/*",
-      "node_modules/node-pty/build/Release/*.node"
+      "node_modules/node-pty/build/Release/**/*"
     ],
     "files": [
       "dist/**/*",
