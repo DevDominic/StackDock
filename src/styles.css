@@ -218,8 +218,8 @@ html[data-window-platform="macos"] .window-controls.macos .window-control:hover 
 html[data-window-controls="native"] .window-controls { display: none; }
 html[data-window-controls="native"] .window-titlebar { height: 43px; border-bottom: 0; }
 html[data-window-controls="native"] .window-titlebar::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; height: 1px; background: var(--border); pointer-events: none; }
-html[data-window-controls="native"] .window-titlebar-drag { padding-right: 150px; }
-html[data-window-controls="native"] .topbar-right { padding-right: 138px; }
+html[data-window-controls="native"][data-window-platform="windows"] .window-titlebar-drag { padding-right: 150px; }
+html[data-window-controls="native"][data-window-platform="windows"] .topbar-right { padding-right: 138px; }
 html[data-window-controls="native"] .workspace-titlebar::after { right: 0; }
 .hero, .topbar, .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .hero h1, .topbar h2 { margin: 0; }

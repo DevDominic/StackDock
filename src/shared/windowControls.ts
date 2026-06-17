@@ -17,6 +17,6 @@ export function getWindowControlsConfig(platform: string, release: string): Wind
   const normalizedPlatform = normalizeWindowPlatform(platform);
   if (isWindows11OrNewer(platform, release)) return { platform: 'windows', style: 'native', position: 'right', variant: 'windows' };
   if (normalizedPlatform === 'macos') return { platform: 'macos', style: 'custom', position: 'left', variant: 'macos' };
-  if (normalizedPlatform === 'linux') return { platform: 'linux', style: 'custom', position: 'right', variant: 'windows' };
+  if (normalizedPlatform === 'linux') return { platform: 'linux', style: 'native', position: 'right', variant: 'windows' };
   return { platform: normalizedPlatform, style: 'custom', position: 'right', variant: 'windows' };
 }

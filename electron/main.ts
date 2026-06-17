@@ -49,7 +49,9 @@ async function createWindow() {
     title: 'StackDock',
     autoHideMenuBar: true,
     ...(nativeWindowControls
-      ? { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#1e2227', symbolColor: '#abb2bf', height: 42 } }
+      ? process.platform === 'linux'
+        ? { frame: true }
+        : { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#1e2227', symbolColor: '#abb2bf', height: 42 } }
       : { frame: false }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

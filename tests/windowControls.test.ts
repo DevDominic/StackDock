@@ -21,8 +21,8 @@ describe('window controls platform helpers', () => {
     expect(getWindowControlsConfig('darwin', '23.0.0')).toEqual({ platform: 'macos', style: 'custom', position: 'left', variant: 'macos' });
   });
 
-  it('uses custom right-side controls on Linux', () => {
-    expect(getWindowControlsConfig('linux', '6.8.0')).toEqual({ platform: 'linux', style: 'custom', position: 'right', variant: 'windows' });
+  it('uses native Linux controls so desktop environments draw matching window buttons', () => {
+    expect(getWindowControlsConfig('linux', '6.8.0')).toEqual({ platform: 'linux', style: 'native', position: 'right', variant: 'windows' });
   });
 
   it('uses custom right-side controls on unknown platforms', () => {
