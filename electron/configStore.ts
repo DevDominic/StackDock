@@ -12,6 +12,8 @@ const LEGACY_DEFAULT_UI_FONTS = new Set([
   '"Inter Variable", "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
 ]);
 const LEGACY_DEFAULT_CODE_FONTS = new Set(['Consolas, monospace', '"Consolas", monospace', '"Monaspace Neon", "Cascadia Code", Consolas, monospace']);
+const DEFAULT_THEME_ID = 'stackdock-dark';
+const LEGACY_BUILTIN_THEME_IDS = new Set(['catppuccin-noctis-mocha']);
 
 function normalizeKeybindSettings(raw: unknown, defaults: Record<string, string>) {
   const result: Record<string, string> = { ...defaults };
@@ -79,7 +81,7 @@ export function getDefaultSettings(): StackDockSettings {
   const programFiles = process.env['ProgramFiles'] ?? 'C:\\Program Files';
   return {
     theme: 'dark',
-    themeId: 'catppuccin-noctis-mocha',
+    themeId: DEFAULT_THEME_ID,
     importedThemes: [],
     defaultTerminalProfileId: 'powershell',
     confirmBeforeDiscard: true,
@@ -131,11 +133,12 @@ export async function loadSettings(): Promise<StackDockSettings> {
       : Array.isArray(rawEditor.importedThemes)
         ? rawEditor.importedThemes
         : defaults.importedThemes;
-    const themeId = typeof raw.themeId === 'string' && raw.themeId.trim()
+    const rawThemeId = typeof raw.themeId === 'string' && raw.themeId.trim()
       ? raw.themeId
       : typeof rawEditor.themeId === 'string' && rawEditor.themeId.trim()
         ? rawEditor.themeId
         : defaults.themeId;
+    const themeId = LEGACY_BUILTIN_THEME_IDS.has(rawThemeId) ? defaults.themeId : rawThemeId;
     const rawExtensionConfig = normalizeExtensionConfig(raw.extensions?.config);
     const extensionsConfig = {
       ...defaults.extensions.config,

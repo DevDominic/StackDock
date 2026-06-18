@@ -15,7 +15,6 @@ import 'monaco-editor/esm/vs/basic-languages/rust/rust.contribution.js';
 import 'monaco-editor/esm/vs/basic-languages/shell/shell.contribution.js';
 import 'monaco-editor/esm/vs/basic-languages/xml/xml.contribution.js';
 import 'monaco-editor/esm/vs/basic-languages/yaml/yaml.contribution.js';
-import catppuccinNoctisMochaRaw from './themes/catppuccin-noctis-mocha-color-theme.json?raw';
 import { DEFAULT_THEME_ID, applyTheme, getThemes, parseVsCodeThemeJson as parseUnifiedVsCodeThemeJson, registerTheme as registerUnifiedTheme, registerThemes as registerUnifiedThemes } from './themeSupport';
 import type { ImportedEditorTheme } from '../shared/types';
 
@@ -32,9 +31,7 @@ export interface StackDockEditorTheme {
   colors?: ThemeColors;
 }
 
-const registeredThemes = new Map<string, StackDockEditorTheme>();
 let languagesRegistered = false;
-let themesRegistered = false;
 
 export function languageFor(path: string) {
   const ext = path.split('.').pop()?.toLowerCase();
@@ -65,7 +62,6 @@ export function registerEditorSupport(importedThemes: ImportedEditorTheme[] = []
 }
 
 export function registerEditorTheme(theme: StackDockEditorTheme) {
-  registeredThemes.set(theme.id, theme);
   registerUnifiedTheme(theme as ImportedEditorTheme);
 }
 
@@ -147,61 +143,6 @@ export function createThemeFromCss(id: string, label: string, overrides: Partial
   };
 }
 
-function stripJsonComments(content: string) {
-  let out = '';
-  let inString = false;
-  let escaped = false;
-  for (let i = 0; i < content.length; i++) {
-    const char = content[i];
-    const next = content[i + 1];
-    if (inString) {
-      out += char;
-      if (escaped) escaped = false;
-      else if (char === '\\') escaped = true;
-      else if (char === '"') inString = false;
-      continue;
-    }
-    if (char === '"') { inString = true; out += char; continue; }
-    if (char === '/' && next === '/') {
-      while (i < content.length && content[i] !== '\n') i++;
-      out += '\n';
-      continue;
-    }
-    if (char === '/' && next === '*') {
-      i += 2;
-      while (i < content.length && !(content[i] === '*' && content[i + 1] === '/')) i++;
-      i++;
-      continue;
-    }
-    out += char;
-  }
-  return removeTrailingJsonCommas(out);
-}
-
-function removeTrailingJsonCommas(content: string) {
-  let out = '';
-  let inString = false;
-  let escaped = false;
-  for (let i = 0; i < content.length; i++) {
-    const char = content[i];
-    if (inString) {
-      out += char;
-      if (escaped) escaped = false;
-      else if (char === '\\') escaped = true;
-      else if (char === '"') inString = false;
-      continue;
-    }
-    if (char === '"') { inString = true; out += char; continue; }
-    if (char === ',') {
-      let j = i + 1;
-      while (j < content.length && /\s/.test(content[j])) j++;
-      if (content[j] === '}' || content[j] === ']') continue;
-    }
-    out += char;
-  }
-  return out;
-}
-
 function slug(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64) || crypto.randomUUID();
 }
@@ -247,13 +188,6 @@ function tokenColorsToRules(tokenColors: unknown): monaco.editor.ITokenThemeRule
     }
   }
   return rules;
-}
-
-function registerThemes() {
-  if (themesRegistered) return;
-  themesRegistered = true;
-  registerEditorTheme(convertVsCodeThemeToMonacoTheme(JSON.parse(stripJsonComments(catppuccinNoctisMochaRaw)), DEFAULT_EDITOR_THEME_ID) as StackDockEditorTheme);
-  registerEditorTheme(createThemeFromCss('stackdock-dark', 'StackDock Dark'));
 }
 
 function registerLanguages() {

@@ -1,9 +1,8 @@
 import './monacoEnvironment';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
-import catppuccinNoctisMochaRaw from './themes/catppuccin-noctis-mocha-color-theme.json?raw';
 import type { EditorThemeRule, StackDockTheme } from '../shared/types';
 
-export const DEFAULT_THEME_ID = 'catppuccin-noctis-mocha';
+export const DEFAULT_THEME_ID = 'stackdock-dark';
 export const DEFAULT_EDITOR_THEME_ID = DEFAULT_THEME_ID;
 
 type ThemeColors = Record<string, string>;
@@ -21,26 +20,6 @@ export interface StackDockResolvedTheme {
 
 const registeredThemes = new Map<string, StackDockResolvedTheme>();
 let builtinsRegistered = false;
-
-const CATPPUCCIN_NOCTIS_MOCHA_OVERRIDES: ThemeColors = {
-  // Upstream theme keeps focusBorder transparent and button.background very close
-  // to panels. StackDock uses those colors as interactive accents, so give the
-  // built-in a real accent and clearer button states.
-  'focusBorder': '#89b4fa',
-  'contrastActiveBorder': '#89b4fa',
-  'activityBarBadge.background': '#89b4fa',
-  'activityBarBadge.foreground': '#11111b',
-  'button.background': '#89b4fa',
-  'button.foreground': '#11111b',
-  'button.hoverBackground': '#74c7ec',
-  'button.border': '#89b4fa',
-  'button.secondaryBackground': '#313244',
-  'button.secondaryForeground': '#cdd6f4',
-  'button.secondaryHoverBackground': '#45475a',
-  'list.activeSelectionBackground': '#313244',
-  'list.activeSelectionForeground': '#cdd6f4',
-  'tab.activeBorderTop': '#89b4fa',
-};
 
 const STACKDOCK_DARK: BuiltinTheme = {
   id: 'stackdock-dark',
@@ -106,8 +85,6 @@ export function registerTheme(theme: StackDockTheme): void {
 export function registerThemes(importedThemes: StackDockTheme[] = []): void {
   if (!builtinsRegistered) {
     builtinsRegistered = true;
-    const catppuccinNoctisMocha = convertVsCodeThemeToMonacoTheme(JSON.parse(stripJsonComments(catppuccinNoctisMochaRaw)), DEFAULT_THEME_ID);
-    registerTheme({ ...catppuccinNoctisMocha, colors: { ...catppuccinNoctisMocha.colors, ...CATPPUCCIN_NOCTIS_MOCHA_OVERRIDES } });
     registerTheme(STACKDOCK_DARK);
   }
   for (const theme of importedThemes) registerTheme(theme);

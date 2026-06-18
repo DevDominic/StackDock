@@ -89,4 +89,4 @@ StackDock is released under the MIT License. See `LICENSE`.
 
 ## Credits
 
-Default theme: [Catppuccin Noctis](https://github.com/alexdauenhauer/catppuccin-noctis) by alexdauenhauer, used under the MIT License. The bundled license is in `third-party/catppuccin-noctis/LICENSE.md`.
+Default theme: StackDock Dark.
