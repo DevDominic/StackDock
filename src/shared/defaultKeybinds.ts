@@ -17,7 +17,7 @@ export const DEFAULT_KEYBINDS: Record<string, string> = {
 
 export const BUILTIN_KEYBIND_COMMANDS = [
   ['stackdock.commandPalette.open', 'Open Command Palette'],
-  ['stackdock.sessions.switcher.open', 'Open Session Switcher'],
+  ['stackdock.sessions.switcher.open', 'Quick Open Files/Sessions'],
   ['stackdock.terminal.new', 'New Terminal'],
   ['stackdock.view.toggleTerminal', 'Toggle Terminal/Main View'],
   ['stackdock.view.toggleSidebar', 'Toggle Sidebar'],

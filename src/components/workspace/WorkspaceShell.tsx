@@ -259,37 +259,71 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       setAutomation(loadedAutomation);
       const setup = loadedAutomation.workspaces[workspace.id];
       const setupProfile = setup?.defaultTerminalProfile && terminalProfiles.some((profile) => profile.id === setup?.defaultTerminalProfile) ? setup.defaultTerminalProfile : null;
-      // Recreate the workspace's terminals (or open one default terminal) and
-      // remember the first so previously-open files can be restored onto it.
+      // Recreate terminals from the last clean shutdown. This restores every
+      // persisted workspace session into the global Sessions sidebar, not only
+      // the last active workspace, then falls back to this workspace's saved
+      // layout/default terminal when no persisted tab exists for it.
       let firstSessionId: string | null = sessionsRef.current[0]?.id ?? null;
       let createdSessions = false;
       try {
-        const persistedWorkspaceTerminals = (persistedTerminals?.tabs ?? []).filter((session): session is TerminalPersistedTab => session.workspaceId === workspace.id || session.workspacePath === workspace.path);
-        const restoreById = new Map<string, WorkspaceLayout['terminals'][number] | TerminalPersistedTab>();
-        for (const session of loadedLayout?.terminals ?? []) restoreById.set(session.restoreId ?? session.id, session);
-        for (const session of persistedWorkspaceTerminals) restoreById.set(session.restoreId ?? session.id, session);
-        const terminalsToRestore = [...restoreById.values()];
+        const persistedTabs = persistedTerminals?.tabs ?? [];
+        const restoredRestoreIds = new Set<string>();
+        let restoredCurrentWorkspace = false;
+        let restoredActiveRuntimeId: string | null = null;
+        const persistedWorkspaceTerminals = persistedTabs.filter((session): session is TerminalPersistedTab => session.workspaceId === workspace.id || session.workspacePath === workspace.path);
         const persistedActiveRestoreId = persistedWorkspaceTerminals[persistedWorkspaceTerminals.length - 1]?.restoreId;
-        if (!sessionsRef.current.length && terminalsToRestore.length) {
-          let restoredActiveRuntimeId: string | null = null;
+
+        if (!useSessionStore.getState().sessions.length && persistedTabs.length) {
+          for (const session of persistedTabs) {
+            const targetWorkspace = (session.workspaceId ? workspaces.find((item) => item.id === session.workspaceId) : null)
+              ?? (session.workspacePath ? workspaces.find((item) => item.path === session.workspacePath) : null);
+            if (!targetWorkspace) continue;
+            const snapshot = session.restoreId ? await api.terminal.snapshot(session.restoreId).catch(() => null) : null;
+            const resumeCommand = session.resumeStartupCommand || session.resumeState?.resumeCommand || snapshot?.resumeState?.resumeCommand;
+            const startupCommand = resumeCommand || session.startupCommand;
+            const created = await sessionStore.createSession({ workspaceId: targetWorkspace.id, workspaceName: targetWorkspace.name, workspacePath: targetWorkspace.path, profileId: session.profileId, cwd: session.cwd, name: session.name, startupCommand, restoreId: session.restoreId });
+            const restoredSession = { ...created, originalStartupCommand: session.originalStartupCommand ?? session.startupCommand, resumeState: session.resumeState ?? snapshot?.resumeState, restoredFromSnapshot: true, resumeStartupCommand: session.resumeStartupCommand ?? '', splitGroupId: session.splitGroupId, splitDirection: session.splitDirection, splitGroupOrder: session.splitGroupOrder };
+            sessionStore.replaceSession(created.id, restoredSession);
+            restoredRestoreIds.add(session.restoreId ?? session.id);
+            createdSessions = true;
+            if (targetWorkspace.id === workspace.id) {
+              restoredCurrentWorkspace = true;
+              firstSessionId ??= restoredSession.id;
+              if (session.restoreId && (session.restoreId === loadedLayout?.activeTerminalRestoreId || session.restoreId === persistedActiveRestoreId)) restoredActiveRuntimeId = restoredSession.id;
+              if (session.id === loadedLayout?.activeTerminalRuntimeId) restoredActiveRuntimeId = restoredSession.id;
+            }
+          }
+        }
+
+        const restoreById = new Map<string, WorkspaceLayout['terminals'][number] | TerminalPersistedTab>();
+        for (const session of loadedLayout?.terminals ?? []) {
+          const key = session.restoreId ?? session.id;
+          if (!restoredRestoreIds.has(key)) restoreById.set(key, session);
+        }
+        for (const session of persistedWorkspaceTerminals) {
+          const key = session.restoreId ?? session.id;
+          if (!restoredRestoreIds.has(key)) restoreById.set(key, session);
+        }
+        const terminalsToRestore = [...restoreById.values()];
+        if (!sessionsRef.current.length && !restoredCurrentWorkspace && terminalsToRestore.length) {
           for (const session of terminalsToRestore) {
             const snapshot = session.restoreId ? await api.terminal.snapshot(session.restoreId).catch(() => null) : null;
             const resumeCommand = 'resumeStartupCommand' in session ? session.resumeStartupCommand : session.resumeState?.resumeCommand ?? snapshot?.resumeState?.resumeCommand;
             const startupCommand = resumeCommand || session.startupCommand;
             const created = await sessionStore.createSession({ workspaceId: workspace.id, workspaceName: workspace.name, workspacePath: workspace.path, profileId: session.profileId, cwd: session.cwd, name: session.name, startupCommand, restoreId: session.restoreId });
-            const restoredSession = { ...created, originalStartupCommand: session.originalStartupCommand ?? session.startupCommand, resumeState: session.resumeState ?? snapshot?.resumeState, restoredFromSnapshot: true, ...('resumeStartupCommand' in session ? { resumeStartupCommand: session.resumeStartupCommand ?? '' } : {}), splitGroupId: session.splitGroupId, splitDirection: session.splitDirection };
+            const restoredSession = { ...created, originalStartupCommand: session.originalStartupCommand ?? session.startupCommand, resumeState: session.resumeState ?? snapshot?.resumeState, restoredFromSnapshot: true, ...('resumeStartupCommand' in session ? { resumeStartupCommand: session.resumeStartupCommand ?? '' } : {}), splitGroupId: session.splitGroupId, splitDirection: session.splitDirection, splitGroupOrder: session.splitGroupOrder };
             sessionStore.replaceSession(created.id, restoredSession);
             if (session.restoreId && (session.restoreId === loadedLayout?.activeTerminalRestoreId || session.restoreId === persistedActiveRestoreId)) restoredActiveRuntimeId = restoredSession.id;
             if (session.id === loadedLayout?.activeTerminalRuntimeId) restoredActiveRuntimeId = restoredSession.id;
             firstSessionId ??= restoredSession.id;
             createdSessions = true;
           }
-          if (restoredActiveRuntimeId) firstSessionId = restoredActiveRuntimeId;
-        } else if (!sessionsRef.current.length && terminalProfiles[0]) {
+        } else if (!sessionsRef.current.length && !restoredCurrentWorkspace && terminalProfiles[0]) {
           const created = await sessionStore.createSession({ workspaceId: workspace.id, workspaceName: workspace.name, workspacePath: workspace.path, profileId: setupProfile ?? terminalProfiles[0].id, cwd: workspace.path, name: 'Terminal', startupCommand: setup?.newSessionCommand });
           firstSessionId ??= created.id;
           createdSessions = true;
         }
+        if (restoredActiveRuntimeId) firstSessionId = restoredActiveRuntimeId;
       } catch (error) {
         showToast(getErrorMessage(error, 'Could not create terminal'), 'error');
       }
@@ -1288,7 +1322,11 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }
 
   function setViewVisible(viewId: string, visible: boolean) {
-    const current = mergedLayout.extensions?.visibleViewIds ?? [];
+    // If this workspace has not written extension visibility yet, start from
+    // the currently visible (legacy panel-derived) views. Otherwise clicking a
+    // second activity icon (e.g. Source Control) replaces Explorer instead of
+    // stacking the two views.
+    const current = mergedLayout.extensions?.visibleViewIds ?? visibleActivityViewIds;
     const next = visible ? [...new Set([...current, viewId])] : current.filter((id) => id !== viewId);
     updateExtensionState({ visibleViewIds: next });
   }
@@ -1355,6 +1393,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     },
     gitActions: {
       error: gitError,
+      clearError: () => setGitError(null),
       selectedFile: selectedGitFile,
       selectedStagedPaths: selectedStagedGitPaths,
       selectedChangePaths: selectedChangeGitPaths,
@@ -1740,12 +1779,9 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       <SessionSwitcher
         open={sessionSwitcherOpen}
         sessions={allSessions}
-        workspaces={workspaces}
         activeSessionId={sessionStore.activeSessionId}
-        activeWorkspaceId={workspace.id}
         onSelect={(id) => { const target = allSessions.find((session) => session.id === id); sessionStore.setActiveSession(id); if (target && target.workspaceId !== workspace.id) void onOpenWorkspace(target.workspaceId); }}
-        onOpenWorkspace={onOpenWorkspace}
-        onPickWorkspace={onOpenWorkspacePicker}
+        onOpenFile={(path) => void openFile(path)}
         onClose={() => setSessionSwitcherOpen(false)}
       />
       {settingsOpen && settings ? <SettingsModal settings={settings} currentWorkspaceId={workspace.id} initialTab={settingsInitialTab} onSave={async (next) => { const saved = await api.settings.save(next); setSettings(saved); applyTheme(saved.themeId, saved.importedThemes); onSettingsApplied?.(saved); setProfiles(await api.terminal.profiles()); }} onAutomationSaved={(config) => setAutomation(config)} onRunCommand={(command) => void runPaletteCommand(command)} onClose={() => setSettingsOpen(false)} /> : null}

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent
 import { Terminal, type ILink, type ITerminalAddon } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { LigaturesAddon } from '@xterm/addon-ligatures';
-import { WebglAddon } from '@xterm/addon-webgl';
 import { sanitizeSnapshotReplay } from '../../shared/terminalSnapshot';
 import type { StackDockSettings, TerminalAttachment, TerminalAttachmentSource, TerminalSession } from '../../shared/types';
 import { api } from '../../lib/api';
@@ -132,6 +131,10 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     // from sending the key to the PTY (no stray ^P), while the DOM event still
     // bubbles to the window handler that opens the session switcher.
     terminal.attachCustomKeyEventHandler((event) => {
+      if (event.type === 'keydown' && event.key === 'Enter' && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        void api.terminal.write(session.id, '\x1b[13;2u');
+        return false;
+      }
       if (event.type === 'keydown' && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'p') {
         return false;
       }
@@ -141,22 +144,6 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     terminal.loadAddon(fitAddon as unknown as ITerminalAddon);
     fitAddonRef.current = fitAddon;
     const ligaturesAddon = ligaturesEnabled ? new LigaturesAddon({ fontFeatureSettings: CODE_FONT_FEATURES }) : null;
-    let webglAddon: WebglAddon | null = null;
-    const loadWebglRenderer = () => {
-      try {
-        const addon = new WebglAddon();
-        // GPU context loss (driver reset, too many contexts, etc.): dispose the
-        // addon and xterm falls back to the DOM renderer on its own.
-        addon.onContextLoss(() => {
-          addon.dispose();
-          if (webglAddon === addon) webglAddon = null;
-        });
-        terminal.loadAddon(addon as unknown as ITerminalAddon);
-        webglAddon = addon;
-      } catch {
-        // WebGL unavailable (headless GPU, blocklisted driver); DOM renderer remains.
-      }
-    };
     terminalRef.current = terminal;
 
     let restoredSnapshot = false;
@@ -274,7 +261,6 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       if (disposed || !mountRef.current) return;
       terminal.open(mountRef.current);
       opened = true;
-      loadWebglRenderer();
       if (ligaturesAddon) terminal.loadAddon(ligaturesAddon as unknown as ITerminalAddon);
       observer = new ResizeObserver(() => window.requestAnimationFrame(() => { void resizeTerminal(); }));
       observer.observe(mountRef.current);
@@ -299,8 +285,6 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       disposeExit();
       dataDisposable.dispose();
       linkProvider.dispose();
-      webglAddon?.dispose();
-      webglAddon = null;
       ligaturesAddon?.dispose();
       fitAddon.dispose();
       if (fitAddonRef.current === fitAddon) fitAddonRef.current = null;

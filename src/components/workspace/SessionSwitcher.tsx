@@ -1,127 +1,113 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Workspace, WorkspaceTerminalSession } from '../../shared/types';
+import type { DirectoryEntry, WorkspaceTerminalSession } from '../../shared/types';
+import { api } from '../../lib/api';
 
 interface Props {
   open: boolean;
   sessions: WorkspaceTerminalSession[];
-  workspaces: Workspace[];
   activeSessionId: string | null;
-  activeWorkspaceId: string | null;
   onSelect(id: string): void;
-  onOpenWorkspace(id: string): Promise<void>;
-  onPickWorkspace(): Promise<boolean>;
+  onOpenFile(path: string): void;
   onClose(): void;
 }
 
-type SwitcherMode = 'sessions' | 'workspaces';
-type SessionItem = { kind: 'session'; session: WorkspaceTerminalSession } | { kind: 'open-workspaces' };
-type WorkspaceItem = { kind: 'workspace'; workspace: Workspace } | { kind: 'pick-workspace' };
+type SessionItem = { kind: 'session'; session: WorkspaceTerminalSession };
+type FileItem = { kind: 'file'; entry: DirectoryEntry };
+type SwitcherItem = SessionItem | FileItem;
 
-// Quick session switcher (Ctrl+P): fuzzy-ish substring search across every
-// active terminal session — filter by typing, move with the arrow keys, and
-// Enter (or click) to switch to that session.
-export function SessionSwitcher({ open, sessions, workspaces, activeSessionId, activeWorkspaceId, onSelect, onOpenWorkspace, onPickWorkspace, onClose }: Props) {
+const MAX_FILE_RESULTS = 200;
+
+function matchesFile(entry: DirectoryEntry, query: string) {
+  return `${entry.name} ${entry.path}`.toLowerCase().includes(query);
+}
+
+function relativePath(rootPath: string, path: string) {
+  return path.slice(rootPath.length).replace(/^[\\/]/, '');
+}
+
+// Quick open (Ctrl+P): blank input switches terminal sessions; typing searches
+// files under the active session's current folder/workspace and opens Enter hit.
+export function SessionSwitcher({ open, sessions, activeSessionId, onSelect, onOpenFile, onClose }: Props) {
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(0);
-  const [mode, setMode] = useState<SwitcherMode>('sessions');
-  const [openingWorkspace, setOpeningWorkspace] = useState(false);
+  const [fileResults, setFileResults] = useState<DirectoryEntry[]>([]);
+  const [searchingFiles, setSearchingFiles] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
+  const activeSession = useMemo(() => sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null, [activeSessionId, sessions]);
+  const fileRoot = activeSession?.cwd || activeSession?.workspacePath || '';
+  const normalizedQuery = query.trim().toLowerCase();
+
   const filteredSessions = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return sessions;
-    return sessions.filter((session) =>
-      [session.name, session.workspaceName, session.cwd].some((field) => field?.toLowerCase().includes(needle)),
-    );
-  }, [sessions, query]);
+    if (normalizedQuery) return [];
+    return sessions;
+  }, [normalizedQuery, sessions]);
 
-  const filteredWorkspaces = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const sorted = [...workspaces].sort((a, b) => {
-      if (a.id === activeWorkspaceId) return -1;
-      if (b.id === activeWorkspaceId) return 1;
-      return new Date(b.lastOpenedAt ?? b.createdAt).getTime() - new Date(a.lastOpenedAt ?? a.createdAt).getTime();
-    });
-    if (!needle) return sorted;
-    return sorted.filter((workspace) => [workspace.name, workspace.path].some((field) => field.toLowerCase().includes(needle)));
-  }, [activeWorkspaceId, query, workspaces]);
+  const items = useMemo<SwitcherItem[]>(() => (
+    normalizedQuery
+      ? fileResults.map((entry) => ({ kind: 'file' as const, entry }))
+      : filteredSessions.map((session) => ({ kind: 'session' as const, session }))
+  ), [fileResults, filteredSessions, normalizedQuery]);
 
-  const sessionItems = useMemo<SessionItem[]>(() => [...filteredSessions.map((session) => ({ kind: 'session' as const, session })), { kind: 'open-workspaces' }], [filteredSessions]);
-  const workspaceItems = useMemo<WorkspaceItem[]>(() => [...filteredWorkspaces.map((workspace) => ({ kind: 'workspace' as const, workspace })), { kind: 'pick-workspace' }], [filteredWorkspaces]);
-  const itemCount = mode === 'sessions' ? sessionItems.length : workspaceItems.length;
-
-  // When the switcher opens, start the highlight on the current session so a
-  // bare Enter is a no-op rather than a surprise jump.
+  // When switcher opens, highlight current session so bare Enter is no-op-ish.
   useEffect(() => {
     if (!open) return;
-    setMode('sessions');
     setQuery('');
+    setFileResults([]);
+    setSearchingFiles(false);
     const current = sessions.findIndex((session) => session.id === activeSessionId);
     setIndex(current >= 0 ? current : 0);
-  }, [open]);
+  }, [activeSessionId, open, sessions]);
 
-  useEffect(() => { setIndex((value) => Math.min(value, Math.max(0, itemCount - 1))); }, [itemCount]);
+  useEffect(() => { setIndex((value) => Math.min(value, Math.max(0, items.length - 1))); }, [items.length]);
 
-  function showWorkspaces() {
-    setMode('workspaces');
-    setQuery('');
-    setIndex(0);
-  }
-
-  function backToSessions() {
-    setMode('sessions');
-    setQuery('');
-    const current = sessions.findIndex((session) => session.id === activeSessionId);
-    setIndex(current >= 0 ? current : 0);
-  }
-
-  async function pickWorkspace() {
-    if (openingWorkspace) return;
-    setOpeningWorkspace(true);
-    try {
-      if (await onPickWorkspace()) onClose();
-    } finally {
-      setOpeningWorkspace(false);
-    }
-  }
-
-  async function selectWorkspace(id: string) {
-    await onOpenWorkspace(id);
-    onClose();
-  }
-
-  function activateCurrent() {
-    if (mode === 'sessions') {
-      const item = sessionItems[index];
-      if (!item) return;
-      if (item.kind === 'open-workspaces') { showWorkspaces(); return; }
-      onSelect(item.session.id);
-      onClose();
+  useEffect(() => {
+    if (!open || !normalizedQuery || !fileRoot) {
+      setFileResults([]);
+      setSearchingFiles(false);
       return;
     }
-    const item = workspaceItems[index];
+    let cancelled = false;
+    setSearchingFiles(true);
+    const timer = window.setTimeout(async () => {
+      const results: DirectoryEntry[] = [];
+      const visit = async (folder: string, depth = 0) => {
+        if (cancelled || results.length >= MAX_FILE_RESULTS || depth > 10) return;
+        let entries: DirectoryEntry[] = [];
+        try { entries = await api.fs.readDirectory(folder); } catch { return; }
+        for (const entry of entries) {
+          if (entry.isFile && matchesFile(entry, normalizedQuery)) results.push(entry);
+          if (entry.isDirectory) await visit(entry.path, depth + 1);
+          if (cancelled || results.length >= MAX_FILE_RESULTS) break;
+        }
+      };
+      await visit(fileRoot);
+      if (!cancelled) { setFileResults(results); setSearchingFiles(false); }
+    }, 180);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [fileRoot, normalizedQuery, open]);
+
+  function activateCurrent() {
+    const item = items[index];
     if (!item) return;
-    if (item.kind === 'pick-workspace') { void pickWorkspace(); return; }
-    void selectWorkspace(item.workspace.id);
+    if (item.kind === 'session') onSelect(item.session.id);
+    else onOpenFile(item.entry.path);
+    onClose();
   }
 
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        if (mode === 'workspaces') backToSessions();
-        else onClose();
-      }
-      if (event.key === 'ArrowDown') { event.preventDefault(); setIndex((value) => Math.min(value + 1, itemCount - 1)); }
+      if (event.key === 'Escape') { event.preventDefault(); onClose(); }
+      if (event.key === 'ArrowDown') { event.preventDefault(); setIndex((value) => Math.min(value + 1, items.length - 1)); }
       if (event.key === 'ArrowUp') { event.preventDefault(); setIndex((value) => Math.max(value - 1, 0)); }
       if (event.key === 'Enter') { event.preventDefault(); activateCurrent(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [activeSessionId, index, itemCount, mode, onClose, open, sessionItems, workspaceItems]);
+  }, [index, items, onClose, open]);
 
-  // Keep the highlighted row scrolled into view as the selection moves.
+  // Keep highlighted row visible as selection moves.
   useEffect(() => {
     if (!open) return;
     listRef.current?.querySelector('.launcher-item.active')?.scrollIntoView({ block: 'nearest' });
@@ -131,9 +117,25 @@ export function SessionSwitcher({ open, sessions, workspaces, activeSessionId, a
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div className="launcher" onMouseDown={(event) => event.stopPropagation()}>
-        <input autoFocus value={query} onChange={(event) => { setQuery(event.target.value); setIndex(0); }} placeholder={mode === 'sessions' ? 'Switch session' : 'Open workspace'} />
+        <input autoFocus value={query} onChange={(event) => { setQuery(event.target.value); setIndex(0); }} placeholder="Switch session or type file name" />
         <div className="launcher-list" ref={listRef}>
-          {mode === 'sessions' ? sessionItems.map((item, itemIndex) => item.kind === 'session' ? (
+          {normalizedQuery ? (
+            <>
+              {searchingFiles ? <div className="muted pad">Searching files...</div> : null}
+              {!searchingFiles && !items.length ? <div className="muted pad">No matching files in active session.</div> : null}
+              {items.map((item, itemIndex) => item.kind === 'file' ? (
+                <button
+                  key={item.entry.path}
+                  className={itemIndex === index ? 'launcher-item active' : 'launcher-item'}
+                  onMouseEnter={() => setIndex(itemIndex)}
+                  onClick={() => { onOpenFile(item.entry.path); onClose(); }}
+                >
+                  <span>{item.entry.name}</span>
+                  <small>{relativePath(fileRoot, item.entry.path)}</small>
+                </button>
+              ) : null)}
+            </>
+          ) : items.map((item, itemIndex) => item.kind === 'session' ? (
             <button
               key={item.session.id}
               className={itemIndex === index ? 'launcher-item active' : 'launcher-item'}
@@ -146,41 +148,7 @@ export function SessionSwitcher({ open, sessions, workspaces, activeSessionId, a
               </span>
               <small>{item.session.workspaceName} · {item.session.cwd}</small>
             </button>
-          ) : (
-            <button
-              key="open-workspaces"
-              className={itemIndex === index ? 'launcher-item active' : 'launcher-item'}
-              onMouseEnter={() => setIndex(itemIndex)}
-              onClick={showWorkspaces}
-            >
-              <span>Open Workspace…</span>
-              <small>Show workspaces</small>
-            </button>
-          )) : workspaceItems.map((item, itemIndex) => item.kind === 'workspace' ? (
-            <button
-              key={item.workspace.id}
-              className={itemIndex === index ? 'launcher-item active' : 'launcher-item'}
-              onMouseEnter={() => setIndex(itemIndex)}
-              onClick={() => void selectWorkspace(item.workspace.id)}
-            >
-              <span>
-                {item.workspace.name}
-                {item.workspace.id === activeWorkspaceId ? <small className="session-switcher-current"> current</small> : null}
-              </span>
-              <small>{item.workspace.path}</small>
-            </button>
-          ) : (
-            <button
-              key="pick-workspace"
-              className={itemIndex === index ? 'launcher-item active' : 'launcher-item'}
-              disabled={openingWorkspace}
-              onMouseEnter={() => setIndex(itemIndex)}
-              onClick={() => void pickWorkspace()}
-            >
-              <span>{openingWorkspace ? 'Opening…' : 'Choose Workspace Folder…'}</span>
-              <small>Pick folder from disk</small>
-            </button>
-          ))}
+          ) : null)}
         </div>
       </div>
     </div>
