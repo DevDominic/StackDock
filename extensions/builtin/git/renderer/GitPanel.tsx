@@ -8,6 +8,7 @@ interface Props {
   status: GitStatus | null;
   error?: string | null;
   selectedFile: GitFileStatus | null;
+  onClearError(): void;
   selectedStagedPaths: string[];
   selectedChangePaths: string[];
   onSelectFile(file: GitFileStatus, staged: boolean, event?: MouseEvent<HTMLButtonElement>, groupFiles?: GitFileStatus[]): void;
@@ -52,7 +53,7 @@ function splitPath(path: string) {
     : { dir: '', name: normalized };
 }
 
-export function GitPanel({ status, error, selectedFile, selectedStagedPaths, selectedChangePaths, onSelectFile, onStage, onStageSelected, onStageAll, onUnstage, onUnstageSelected, onDiscard, onDiscardSelected, onCommit, onSwitchBranch, onFetch, onPull, onPullMerge, onPush, onAbortMerge, onRefresh }: Props) {
+export function GitPanel({ status, error, selectedFile, selectedStagedPaths, selectedChangePaths, onSelectFile, onStage, onStageSelected, onStageAll, onUnstage, onUnstageSelected, onDiscard, onDiscardSelected, onCommit, onSwitchBranch, onFetch, onPull, onPullMerge, onPush, onAbortMerge, onRefresh, onClearError }: Props) {
   const conflicts = status?.files.filter((file) => file.conflicted) ?? [];
   const staged = status?.files.filter((file) => file.staged && !file.untracked && !file.conflicted) ?? [];
   const unstaged = status?.files.filter((file) => (file.unstaged || file.untracked) && !file.conflicted) ?? [];
@@ -74,7 +75,12 @@ export function GitPanel({ status, error, selectedFile, selectedStagedPaths, sel
           {status?.isRepo ? <GitRemoteMenu onFetch={onFetch} onPull={onPull} onPullMerge={onPullMerge} onPush={onPush} /> : null}
         </div>
       </div>
-      {error ? <div className="banner error git-error">{error}</div> : null}
+      {error ? (
+        <div className="banner error git-error" role="alert">
+          <span>{error}</span>
+          <button className="git-error-close" type="button" onClick={onClearError} title="Dismiss error" aria-label="Dismiss git error">×</button>
+        </div>
+      ) : null}
       {!status?.isRepo ? <div className="muted pad">Not a git repo.</div> : null}
       {status?.isRepo ? (
         <>

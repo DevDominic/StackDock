@@ -9,6 +9,7 @@ export const gitExtension: NativeExtension = {
     <GitPanel
       status={ctx.git}
       error={ctx.gitActions.error}
+      onClearError={ctx.gitActions.clearError}
       selectedFile={ctx.gitActions.selectedFile}
       selectedStagedPaths={ctx.gitActions.selectedStagedPaths}
       selectedChangePaths={ctx.gitActions.selectedChangePaths}

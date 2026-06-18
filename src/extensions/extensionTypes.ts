@@ -38,6 +38,7 @@ export interface WorkspaceExtensionContext {
   defaultProfileId?: string;
   gitActions: {
     error: string | null;
+    clearError(): void;
     selectedFile: GitFileStatus | null;
     selectedStagedPaths: string[];
     selectedChangePaths: string[];

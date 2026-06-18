@@ -1,4 +1,4 @@
-.git-panel { height: 100%; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding-bottom: 8px; }
+.git-panel { height: 100%; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-bottom: 8px; }
 .sidebar-stack .git-panel { height: 100%; min-height: 0; }
 .git-panel > * { flex: 0 0 auto; }
 
@@ -84,7 +84,10 @@
 .git-row-undo:hover, .git-row-undo:focus-visible { color: var(--danger); background: var(--error-bg); border-color: var(--danger-border-soft); }
 
 .git-group-title { padding: 10px 14px 6px; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; }
-.git-error { margin: 8px 12px; }
+.git-error { margin: 8px 12px; display: flex; align-items: flex-start; gap: 8px; }
+.git-error span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.git-error-close { flex: 0 0 auto; width: 22px; height: 22px; min-height: 22px; padding: 0; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--error-fg); font-size: 18px; line-height: 1; box-shadow: none; opacity: .75; }
+.git-error-close:hover, .git-error-close:focus-visible { opacity: 1; background: color-mix(in srgb, var(--error-fg) 14%, transparent); border-color: var(--danger-border-soft); outline: none; }
 .git-actions { border-top: 1px solid var(--border); margin-top: 6px; padding: 9px 14px; align-items: center; }
 .git-batch-actions { display: flex; flex-wrap: nowrap; gap: 6px; min-height: 42px; background: color-mix(in srgb, var(--bg-panel) 88%, transparent); }
 .git-batch-actions.is-active { position: sticky; bottom: 0; z-index: 4; box-shadow: 0 -8px 18px color-mix(in srgb, var(--bg) 72%, transparent); }
