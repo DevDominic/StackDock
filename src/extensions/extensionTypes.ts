@@ -55,7 +55,10 @@ export interface WorkspaceExtensionContext {
     switchBranch(branch: string): void | Promise<void>;
     fetch(): void | Promise<void>;
     pull(): void | Promise<void>;
+    pullMerge(): void | Promise<void>;
+    abortMerge(): void | Promise<void>;
     push(): void | Promise<void>;
+    pushInTerminal(): void | Promise<void>;
   };
   headlessActions: {
     terminate(id: string): void | Promise<void>;

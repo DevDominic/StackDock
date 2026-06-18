@@ -1,4 +1,4 @@
-import type { MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { GitFileStatus, GitStatus } from '../../../../src/shared/types';
 import { FileIcon } from '../../../../src/components/workspace/fileIcons';
 
@@ -20,16 +20,23 @@ interface Props {
   onDiscardSelected(paths: string[]): void;
   onCommit(message: string): void;
   onSwitchBranch(branch: string): void;
+  onFetch(): void;
+  onPull(): void;
+  onPullMerge(): void;
+  onPush(): void;
+  onAbortMerge(): void;
   onRefresh(): void;
 }
 
 function statusText(file: GitFileStatus) {
+  if (file.conflicted) return file.conflictStatus || '!';
   if (file.untracked) return 'U';
   const code = (file.worktreeStatus.trim() || file.indexStatus.trim() || 'M').toUpperCase();
   return code === 'A' || code === 'D' || code === 'R' ? code : 'M';
 }
 
 function statusClass(file: GitFileStatus) {
+  if (file.conflicted) return 'git-conflict';
   if (file.untracked) return 'git-untracked';
   const code = statusText(file);
   if (code === 'A') return 'git-added';
@@ -45,9 +52,10 @@ function splitPath(path: string) {
     : { dir: '', name: normalized };
 }
 
-export function GitPanel({ status, error, selectedFile, selectedStagedPaths, selectedChangePaths, onSelectFile, onStage, onStageSelected, onStageAll, onUnstage, onUnstageSelected, onDiscard, onDiscardSelected, onCommit, onSwitchBranch, onRefresh }: Props) {
-  const staged = status?.files.filter((file) => file.staged && !file.untracked) ?? [];
-  const unstaged = status?.files.filter((file) => file.unstaged || file.untracked) ?? [];
+export function GitPanel({ status, error, selectedFile, selectedStagedPaths, selectedChangePaths, onSelectFile, onStage, onStageSelected, onStageAll, onUnstage, onUnstageSelected, onDiscard, onDiscardSelected, onCommit, onSwitchBranch, onFetch, onPull, onPullMerge, onPush, onAbortMerge, onRefresh }: Props) {
+  const conflicts = status?.files.filter((file) => file.conflicted) ?? [];
+  const staged = status?.files.filter((file) => file.staged && !file.untracked && !file.conflicted) ?? [];
+  const unstaged = status?.files.filter((file) => (file.unstaged || file.untracked) && !file.conflicted) ?? [];
   const branches = status?.branches ?? [];
   const branchOptions = status?.branch && !branches.includes(status.branch) ? [status.branch, ...branches] : branches;
   const activeSelection: GitSelectionGroup | null = selectedStagedPaths.length ? 'staged' : selectedChangePaths.length ? 'changes' : null;
@@ -57,8 +65,13 @@ export function GitPanel({ status, error, selectedFile, selectedStagedPaths, sel
       <div className="panel-title row">
         <span>Source Control</span>
         <div className="row mini-row">
-          <button className="ghost" onClick={onRefresh}>Refresh</button>
-          <button className="ghost" onClick={onStageAll} disabled={!unstaged.length}>Stage All</button>
+          <button className="icon-btn git-header-btn" onClick={onRefresh} title="Refresh" aria-label="Refresh">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5V5h-2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+          <button className="icon-btn git-header-btn" onClick={onStageAll} disabled={!unstaged.length} title="Stage all changes" aria-label="Stage all changes">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+          </button>
+          {status?.isRepo ? <GitRemoteMenu onFetch={onFetch} onPull={onPull} onPullMerge={onPullMerge} onPush={onPush} /> : null}
         </div>
       </div>
       {error ? <div className="banner error git-error">{error}</div> : null}
@@ -72,6 +85,12 @@ export function GitPanel({ status, error, selectedFile, selectedStagedPaths, sel
             </select>
             <span>{status.files.length} {status.files.length === 1 ? 'change' : 'changes'}</span>
           </div>
+
+          {status.operation === 'merge' ? <div className="git-merge-banner">
+            <div>{status.mergeReady ? 'Merge ready: commit to finish the merge.' : 'Merge in progress: resolve conflicts, stage resolved files, then commit.'}</div>
+            <button className="git-action git-discard" onClick={onAbortMerge}>Abort Merge</button>
+          </div> : null}
+          {conflicts.length ? <GitGroup title="Conflicts" group="changes" files={conflicts} selectedFile={selectedFile} selectedPaths={selectedChangePaths} onSelectFile={(file, event, files) => onSelectFile(file, false, event, files)} onStage={onStage} onUndo={onDiscard} /> : null}
           {staged.length ? <GitGroup title="Staged" group="staged" files={staged} selectedFile={selectedFile} selectedPaths={selectedStagedPaths} onSelectFile={(file, event, files) => onSelectFile(file, true, event, files)} onUndo={onUnstage} /> : null}
           <GitGroup title="Changes" group="changes" files={unstaged} selectedFile={selectedFile} selectedPaths={selectedChangePaths} onSelectFile={(file, event, files) => onSelectFile(file, false, event, files)} onStage={onStage} onUndo={onDiscard} />
           <div className={`git-actions git-batch-actions${activeSelection ? ' is-active' : ''}`}>
@@ -80,7 +99,7 @@ export function GitPanel({ status, error, selectedFile, selectedStagedPaths, sel
             {activeSelection === 'changes' ? <button className="git-action git-discard" onClick={() => onDiscardSelected(selectedChangePaths)}>Discard Selected ({selectedChangePaths.length})</button> : null}
             {!activeSelection ? <span className="muted git-selection-hint">Select changed files to stage, unstage, or discard together.</span> : null}
           </div>
-          <CommitBox onCommit={onCommit} />
+          <CommitBox onCommit={onCommit} onPush={onPush} merge={status.operation === 'merge'} />
         </>
       ) : null}
     </aside>
@@ -119,11 +138,59 @@ function GitGroup({ title, group, files, selectedFile, selectedPaths, onSelectFi
   );
 }
 
-function CommitBox({ onCommit }: { onCommit(message: string): void }) {
+function GitRemoteMenu({ onFetch, onPull, onPullMerge, onPush }: { onFetch(): void; onPull(): void; onPullMerge(): void; onPush(): void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (event: Event) => { if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDocClick); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+  const run = (action: () => void) => () => { setOpen(false); action(); };
+  return (
+    <div className="git-menu" ref={ref}>
+      <button className="icon-btn git-header-btn" aria-haspopup="menu" aria-expanded={open} title="Remote actions" aria-label="Remote actions" onClick={() => setOpen((value) => !value)}>
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="3.5" cy="8" r="1.3" /><circle cx="8" cy="8" r="1.3" /><circle cx="12.5" cy="8" r="1.3" /></svg>
+      </button>
+      {open ? (
+        <div className="git-menu-pop" role="menu">
+          <button role="menuitem" className="git-menu-item" onClick={run(onFetch)}>
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2v7m0 0L5.2 6.2M8 9l2.8-2.8M3 12.5h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <span>Fetch</span>
+          </button>
+          <button role="menuitem" className="git-menu-item" onClick={run(onPull)}>
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2.5v8m0 0L4.5 7M8 10.5 11.5 7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <span>Pull</span>
+          </button>
+          <button role="menuitem" className="git-menu-item" onClick={run(onPullMerge)}>
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="4.5" cy="4" r="1.7" stroke="currentColor" strokeWidth="1.3" /><circle cx="11.5" cy="12" r="1.7" stroke="currentColor" strokeWidth="1.3" /><path d="M4.5 5.7v2.3a3 3 0 0 0 3 3h2.3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <span>Pull Merge</span>
+          </button>
+          <div className="git-menu-sep" />
+          <button role="menuitem" className="git-menu-item" onClick={run(onPush)}>
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 13.5v-8m0 0L4.5 9M8 5.5 11.5 9M3 3.5h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <span>Push</span>
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CommitBox({ onCommit, onPush, merge }: { onCommit(message: string): void; onPush(): void; merge: boolean }) {
   return (
     <div className="commit-box pad">
       <textarea id="commit-message" placeholder="Commit message" rows={3} />
-      <button className="primary" onClick={() => { const input = document.getElementById('commit-message') as HTMLTextAreaElement | null; if (!input?.value.trim()) return; onCommit(input.value.trim()); input.value = ''; }}>Commit</button>
+      <div className="commit-actions">
+        <button className="primary commit-btn" onClick={() => { const input = document.getElementById('commit-message') as HTMLTextAreaElement | null; if (!input?.value.trim()) return; onCommit(input.value.trim()); input.value = ''; }}>{merge ? 'Commit Merge' : 'Commit'}</button>
+        <button className="commit-push-btn" onClick={onPush} title="Push to remote">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 13.5v-8m0 0L4.5 9M8 5.5 11.5 9M3 3.5h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <span>Push</span>
+        </button>
+      </div>
     </div>
   );
 }

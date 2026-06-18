@@ -22,6 +22,11 @@ export const gitExtension: NativeExtension = {
       onDiscardSelected={ctx.gitActions.discardSelected}
       onCommit={ctx.gitActions.commit}
       onSwitchBranch={ctx.gitActions.switchBranch}
+      onFetch={ctx.gitActions.fetch}
+      onPull={ctx.gitActions.pull}
+      onPullMerge={ctx.gitActions.pullMerge}
+      onPush={ctx.gitActions.push}
+      onAbortMerge={ctx.gitActions.abortMerge}
       onRefresh={ctx.actions.refreshGit}
     />
   ),
@@ -42,7 +47,10 @@ export const gitExtension: NativeExtension = {
       { id: 'git-commit-staged', label: 'Git: Commit Staged...', description: staged ? `${staged} staged ${staged === 1 ? 'file' : 'files'}` : 'Commit current index', run: () => undefined, prompt: { placeholder: 'Commit message', run: gitActions.commitStaged } },
       { id: 'git-fetch', label: 'Git: Fetch', description: 'Fetch from remote', run: gitActions.fetch },
       { id: 'git-pull', label: 'Git: Pull', description: 'Pull current branch with --ff-only', run: gitActions.pull },
+      { id: 'git-pull-merge', label: 'Git: Pull (Merge)', description: 'Pull and create/continue a merge if needed', run: gitActions.pullMerge },
+      ...(git.operation === 'merge' ? [{ id: 'git-abort-merge', label: 'Git: Abort Merge', description: 'Abort current merge', run: gitActions.abortMerge }] : []),
       { id: 'git-push', label: 'Git: Push', description: 'Push current branch', run: gitActions.push },
+      { id: 'git-push-terminal', label: 'Git: Push in Terminal', description: 'Run git push in an integrated terminal', run: gitActions.pushInTerminal },
       ...((git.branches ?? []).filter((branch) => branch !== git.branch).map((branch) => ({ id: `git-switch:${branch}`, label: `Git: Switch Branch: ${branch}`, description: `Checkout ${branch}`, run: () => gitActions.switchBranch(branch) }))),
       { id: 'refresh-git', label: 'Git: Refresh', run: actions.refreshGit },
     ];

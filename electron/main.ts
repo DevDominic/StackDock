@@ -6,7 +6,7 @@ import os from 'os';
 import path from 'path';
 import { addWorkspace, createWorkspace, listWorkspaces, loadLayout, loadRestoreState, removeWorkspace, saveLayout, saveRestoreState, updateWorkspace } from './workspaceStore';
 import { createFile, createFolder, deletePath, pathExists, readDirectory, readFile, readFileDataUrl, renamePath, revealInExplorer, writeFile } from './fileService';
-import { addAll, commit, discardFile, fetch, getGitDiff, getGitFileContents, getGitStatus, getIgnoredFiles, listBranches, pull, push, stageFile, switchBranch, unstageFile } from '../extensions/builtin/git/main/gitService';
+import { abortMerge, addAll, commit, discardFile, fetch, getGitDiff, getGitFileContents, getGitStatus, getIgnoredFiles, listBranches, pull, pullMerge, push, stageFile, switchBranch, unstageFile } from '../extensions/builtin/git/main/gitService';
 import { createTerminal, forgetTerminalSnapshot, getTerminalProfiles, getTerminalSnapshot, killTerminal, loadOpenTerminalState, markTerminalReady, resizeTerminal, saveOpenTerminalState, setTerminalWindow, setVisibleTerminals, updateTerminalSession, writeTerminal } from './terminalManager';
 import { setBridgeWindow, startBrowserBridge } from './browserBridge';
 import { ensureDataDirs } from './storage';
@@ -234,6 +234,8 @@ function registerIpc() {
   ipcMain.handle('git:switchBranch', async (_event, targetPath: unknown, branch: unknown) => switchBranch(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(branch, 'branch')));
   ipcMain.handle('git:push', async (_event, targetPath: unknown) => push(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('git:pull', async (_event, targetPath: unknown) => pull(assertAbsolutePath(targetPath, 'targetPath')));
+  ipcMain.handle('git:pullMerge', async (_event, targetPath: unknown) => pullMerge(assertAbsolutePath(targetPath, 'targetPath')));
+  ipcMain.handle('git:abortMerge', async (_event, targetPath: unknown) => abortMerge(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('git:fetch', async (_event, targetPath: unknown) => fetch(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('git:ignored', async (_event, targetPath: unknown, paths: unknown) => getIgnoredFiles(assertAbsolutePath(targetPath, 'targetPath'), Array.isArray(paths) ? paths.map((item) => assertNonEmptyString(item, 'path')) : []));
 

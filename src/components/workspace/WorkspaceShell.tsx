@@ -1225,18 +1225,55 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     if (branch) void performGitBranchSwitch(branch);
   }
 
-  async function runGitRemoteAction(kind: 'fetch' | 'pull' | 'push') {
-    if (!requireTrusted(`running git ${kind}`)) return;
-    if (gitConfig.confirmBeforeRemoteActions !== false && (kind === 'pull' || kind === 'push') && !(await promptDialog.confirm({ title: `Run git ${kind}?`, message: `Workspace: ${workspace.name}\nThis will ${kind === 'push' ? 'update the remote repository' : 'modify local files'}.`, confirmLabel: kind[0].toUpperCase() + kind.slice(1), icon: '⎇' }))) return;
+  type GitRemoteKind = 'fetch' | 'pull' | 'pullMerge' | 'push';
+
+  function isGitTerminalAuthError(error: unknown) {
+    const message = getErrorMessage(error, '');
+    return /Authentication failed|Credentials are incorrect or have expired|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|Repository not found.*(Authentication|auth|credential|permission)/i.test(message);
+  }
+
+  async function runGitInTerminal(kind: GitRemoteKind) {
+    if (!requireTrusted(`running git ${kind} in terminal`)) return;
+    const commands: Record<GitRemoteKind, string> = { fetch: 'git fetch', pull: 'git pull --ff-only', pullMerge: 'git pull --no-rebase --no-edit', push: 'git push' };
+    await createTerminal(undefined, `Git ${kind === 'pullMerge' ? 'Pull Merge' : kind}`, commands[kind], workspace.path);
+    showToast('Git command started in terminal. Press Refresh after it completes.', 'info');
+  }
+
+  async function runGitRemoteAction(kind: GitRemoteKind) {
+    const label = kind === 'pullMerge' ? 'pull merge' : kind;
+    if (!requireTrusted(`running git ${label}`)) return;
+    if (gitConfig.confirmBeforeRemoteActions !== false && (kind === 'pull' || kind === 'pullMerge' || kind === 'push') && !(await promptDialog.confirm({ title: `Run git ${label}?`, message: `Workspace: ${workspace.name}\nThis will ${kind === 'push' ? 'update the remote repository' : 'modify local files'}.`, confirmLabel: label[0].toUpperCase() + label.slice(1), icon: '⎇' }))) return;
     try {
       setGitError(null);
       await api.git[kind](workspace.path);
       await refreshGit();
-      if (kind === 'pull') setRefreshToken((token) => token + 1);
-      showToast(`${kind[0].toUpperCase()}${kind.slice(1)} complete`, 'success');
+      if (kind === 'pull' || kind === 'pullMerge') setRefreshToken((token) => token + 1);
+      showToast(`Git ${label} complete`, 'success');
+    } catch (error) {
+      await refreshGit();
+      const message = getErrorMessage(error, `Git ${label} failed`);
+      setGitError(message);
+      if (isGitTerminalAuthError(error)) {
+        const confirmed = await promptDialog.confirm({ title: `Git ${label} needs terminal authentication`, message: `${message}\n\nRun it in a terminal?`, confirmLabel: 'Run in Terminal', icon: '⎇' });
+        if (confirmed) await runGitInTerminal(kind);
+      } else {
+        showToast(message, 'error');
+      }
+    }
+  }
+
+  async function abortGitMerge() {
+    if (!requireTrusted('aborting merge')) return;
+    if (!(await promptDialog.confirm({ title: 'Abort merge?', message: 'This will stop the current merge and restore pre-merge state where possible.', confirmLabel: 'Abort Merge', danger: true, icon: '⚠' }))) return;
+    try {
+      setGitError(null);
+      await api.git.abortMerge(workspace.path);
+      await refreshGit();
+      setRefreshToken((token) => token + 1);
+      showToast('Merge aborted', 'success');
     } catch (error) {
       showGitError(error);
-      showToast(getErrorMessage(error, `Git ${kind} failed`), 'error');
+      showToast(getErrorMessage(error, 'Could not abort merge'), 'error');
     }
   }
 
@@ -1335,7 +1372,10 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       switchBranch: switchGitBranch,
       fetch: () => runGitRemoteAction('fetch'),
       pull: () => runGitRemoteAction('pull'),
+      pullMerge: () => runGitRemoteAction('pullMerge'),
+      abortMerge: abortGitMerge,
       push: () => runGitRemoteAction('push'),
+      pushInTerminal: () => runGitInTerminal('push'),
     },
     sessionActions: {
       create: async (target, profileId) => { const setup = automation?.workspaces[target.id]; const profile = profiles.find((item) => item.id === profileId); const startupCommand = resolveTerminalStartupCommand({ profileStartupCommand: profile?.startupCommand, workspaceStartupCommand: setup?.newSessionCommand }); await sessionStore.createSession({ workspaceId: target.id, workspaceName: target.name, workspacePath: target.path, profileId, cwd: target.path, name: 'Terminal', startupCommand }); if (target.id !== workspace.id) await onOpenWorkspace(target.id); },

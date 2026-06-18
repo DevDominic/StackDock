@@ -254,6 +254,8 @@ export interface GitFileStatus {
   staged: boolean;
   unstaged: boolean;
   untracked: boolean;
+  conflicted: boolean;
+  conflictStatus?: string;
 }
 
 export interface GitStatus {
@@ -262,6 +264,10 @@ export interface GitStatus {
   branches?: string[];
   ahead?: number;
   behind?: number;
+  operation?: 'merge' | 'rebase' | 'cherry-pick';
+  conflicts?: number;
+  mergeReady?: boolean;
+  remoteErrorKind?: 'auth' | 'terminal-required' | 'other';
   files: GitFileStatus[];
 }
 
@@ -382,6 +388,8 @@ export interface StackDockApi {
     switchBranch(path: string, branch: string): Promise<void>;
     push(path: string): Promise<void>;
     pull(path: string): Promise<void>;
+    pullMerge(path: string): Promise<void>;
+    abortMerge(path: string): Promise<void>;
     fetch(path: string): Promise<void>;
     ignored(path: string, paths: string[]): Promise<string[]>;
   };

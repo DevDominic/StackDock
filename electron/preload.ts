@@ -67,6 +67,8 @@ const api: StackDockApi = {
     switchBranch: (targetPath, branch) => ipcRenderer.invoke('git:switchBranch', targetPath, branch),
     push: (targetPath) => ipcRenderer.invoke('git:push', targetPath),
     pull: (targetPath) => ipcRenderer.invoke('git:pull', targetPath),
+    pullMerge: (targetPath) => ipcRenderer.invoke('git:pullMerge', targetPath),
+    abortMerge: (targetPath) => ipcRenderer.invoke('git:abortMerge', targetPath),
     fetch: (targetPath) => ipcRenderer.invoke('git:fetch', targetPath),
     ignored: (targetPath, paths) => ipcRenderer.invoke('git:ignored', targetPath, paths),
   },

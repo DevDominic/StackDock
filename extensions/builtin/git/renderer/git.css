@@ -40,6 +40,21 @@
 .git-badge.git-modified { color: var(--git-modified); }
 .git-badge.git-untracked, .git-badge.git-added { color: var(--git-untracked); }
 .git-badge.git-deleted { color: var(--git-deleted); }
+.git-panel .git-file.git-conflict .git-path-dir,
+.git-panel .git-file.git-conflict .git-path-separator,
+.git-panel .git-file.git-conflict .git-path-name,
+.git-badge.git-conflict { color: var(--danger); }
+.git-file.git-conflict { background: color-mix(in srgb, var(--error-bg) 36%, transparent); }
+/* Header overflow menu (VSCode-style … button) holding remote actions. */
+.git-menu { position: relative; display: inline-flex; }
+.git-menu-pop { position: absolute; top: calc(100% + 5px); right: 0; z-index: 30; min-width: 168px; padding: 5px; display: flex; flex-direction: column; gap: 1px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); box-shadow: 0 12px 30px rgba(0, 0, 0, .45); }
+.git-menu-item { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 30px; padding: 0 10px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--text); font-size: 12px; font-weight: 500; text-align: left; box-shadow: none; cursor: pointer; }
+.git-menu-item svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--muted); }
+.git-menu-item:hover { background: var(--button-hover-bg); border-color: transparent; }
+.git-menu-item:hover svg { color: var(--text); }
+.git-menu-sep { height: 1px; margin: 4px 6px; background: var(--border); }
+.git-merge-banner { margin: 0 12px 8px; padding: 10px; border: 1px solid var(--danger-border-soft); border-radius: 10px; background: var(--error-bg); color: var(--text); display: flex; flex-direction: column; gap: 8px; font-size: 12px; line-height: 1.35; }
+.git-merge-banner button { align-self: flex-start; }
 
 /* Git list (matches file explorer density). */
 .git-file { width: 100%; }
@@ -48,8 +63,11 @@
 .git-file.selected.active { background: color-mix(in srgb, var(--accent-soft) 86%, var(--primary) 14%); }
 .git-panel .panel-title { padding: 12px 14px 8px; border: none; background: transparent; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); align-items: center; gap: 10px; }
 .git-panel .panel-title > span { min-width: 0; flex: 1; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.git-panel .panel-title .mini-row { flex: 0 0 auto; min-width: 0; align-items: center; gap: 6px; flex-wrap: nowrap; }
-.git-panel .panel-title button { min-width: 0; min-height: 28px; height: 28px; padding: 0 10px; font-size: 11px; line-height: 1; text-transform: none; letter-spacing: 0; white-space: nowrap; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; background: var(--bg-elevated); border-color: var(--border-strong); }
+.git-panel .panel-title .mini-row { flex: 0 0 auto; min-width: 0; align-items: center; gap: 4px; flex-wrap: nowrap; }
+.git-panel .panel-title .git-header-btn { width: 28px; height: 28px; min-width: 28px; padding: 0; border-radius: 8px; background: var(--ghost-bg); border: 1px solid var(--border); color: var(--muted); box-shadow: none; }
+.git-panel .panel-title .git-header-btn svg { width: 15px; height: 15px; }
+.git-panel .panel-title .git-header-btn:hover { color: var(--text); background: var(--button-hover-bg); border-color: var(--border-strong); }
+.git-panel .panel-title .git-header-btn:disabled { opacity: .4; pointer-events: none; }
 .git-summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 14px 12px; color: var(--muted); font-size: 12px; }
 .git-branch-select { min-width: 0; max-width: 65%; height: 30px; background: var(--bg-elevated); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 0 8px; font-size: 12px; color-scheme: dark; }
 .git-branch-select:hover { border-color: var(--border-strong); background: var(--surface); }
@@ -67,8 +85,6 @@
 
 .git-group-title { padding: 10px 14px 6px; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; }
 .git-error { margin: 8px 12px; }
-.git-panel .panel-title .ghost { background: var(--ghost-bg); border-color: var(--border); color: var(--text); box-shadow: none; }
-.git-panel .panel-title .ghost:hover { background: var(--button-hover-bg); border-color: var(--button-hover-border); }
 .git-actions { border-top: 1px solid var(--border); margin-top: 6px; padding: 9px 14px; align-items: center; }
 .git-batch-actions { display: flex; flex-wrap: nowrap; gap: 6px; min-height: 42px; background: color-mix(in srgb, var(--bg-panel) 88%, transparent); }
 .git-batch-actions.is-active { position: sticky; bottom: 0; z-index: 4; box-shadow: 0 -8px 18px color-mix(in srgb, var(--bg) 72%, transparent); }
@@ -83,10 +99,15 @@
 .git-actions button.git-discard { background: transparent; border: 1px solid var(--danger-border-soft); color: var(--danger); opacity: .6; box-shadow: none; font-weight: 500; }
 .git-actions button.git-discard:hover { opacity: 1; background: var(--error-bg); border-color: var(--danger); color: var(--danger); }
 .git-actions button.git-discard:active { opacity: 1; background: var(--danger); border-color: var(--danger); color: var(--primary-fg); }
-.commit-box { padding: 10px 14px 14px; }
+.commit-box { padding: 10px 14px 20px; }
 .commit-box textarea { width: 100%; background: var(--bg-panel); color: inherit; border: 1px solid var(--border); border-radius: 10px; padding: 10px; resize: vertical; }
 .commit-box textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--accent-soft); }
-.commit-box button { display: block; margin: 8px 0 0 auto; min-height: 30px; padding: 5px 12px; font-size: 12px; }
+.commit-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 8px; }
+.commit-box .commit-btn { flex: 0 1 auto; min-height: 32px; padding: 6px 18px; font-size: 12px; }
+.commit-box .commit-push-btn { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 6px 12px; font-size: 12px; font-weight: 600; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg-elevated); color: var(--text); box-shadow: none; }
+.commit-box .commit-push-btn svg { width: 14px; height: 14px; }
+.commit-box .commit-push-btn:hover { border-color: var(--primary); background: var(--button-hover-bg); color: var(--text); }
+.commit-box .commit-push-btn:active { background: var(--active); transform: translateY(1px); }
 
 .statusbar-branch { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
 .statusbar-sync { font-variant-numeric: tabular-nums; }
