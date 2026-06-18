@@ -94,7 +94,7 @@ Important files:
 Purpose: Main workspace panels and content tabs.
 Important files (paths are repo-relative; there is no top-level `workspace/` folder):
 
-* `src/components/workspace/WorkspaceShell.tsx` — main layout, panels, extensions, terminal/editor/web/git command wiring.
+* `src/components/workspace/WorkspaceShell.tsx` — main layout, panels, extensions, and terminal/editor/web orchestration; git-specific UI/service/parser code lives under `extensions/builtin/git/`.
 * `src/components/workspace/EditorPanel.tsx` — Monaco editor and file tabs.
 * `src/components/workspace/TerminalPanel.tsx` — xterm view bound to pty session output/input.
 * `src/components/workspace/WebTabPanel.tsx` — in-app webview tabs.
@@ -124,7 +124,7 @@ Important files:
 
 * `mainRegistry.ts` — main-process registry for extension-owned terminal integrations.
 * `builtin/explorer/` — file-tree view extension.
-* `builtin/git/` — source-control UI plus git service/parser.
+* `builtin/git/` — all source-control/git-owned code: renderer UI, commands/actions integration, git service, and parser. Keep git implementation here rather than under `src/`.
 * `builtin/headless/` — headless command run list/output panel.
 * `builtin/sessions/` — global sessions sidebar and settings.
 * `builtin/workspace-status/` — workspace status contribution/settings.
@@ -162,7 +162,7 @@ Important files:
 Purpose: Third-party notices/licenses for bundled assets.
 Important files:
 
-* `catppuccin-noctis/LICENSE.md` — bundled default theme license.
+* No bundled third-party theme assets are required for the default StackDock Dark theme.
 
 ## Important Files
 
@@ -187,7 +187,7 @@ Important files:
 * Terminal flow: `WorkspaceShell`/`sessionStore` creates session -> `electron/terminalManager.ts` spawns `node-pty` -> output events through preload -> `TerminalPanel` renders xterm and sends input back.
 * Headless command flow: palette command with `headless` -> terminal created hidden -> `terminalManager` wraps command + exit -> live output updates `sessionStore.headlessRuns` -> headless extension displays output -> result toast on completion.
 * Editor/file flow: Explorer or workspace actions -> `WorkspaceShell.openFile` -> file API in `fileService` -> `EditorPanel` edits -> save via file API.
-* Git flow: Git extension UI -> workspace context actions in `WorkspaceShell` -> git API handlers -> `extensions/builtin/git/main/gitService.ts` and parser.
+* Git flow: Git extension UI/actions in `extensions/builtin/git/renderer` -> workspace context/API bridge -> git API handlers -> `extensions/builtin/git/main/gitService.ts` and parser. Git-related implementation belongs under `extensions/builtin/git/`, not `src/`.
 * Extension flow: `electron/extensionService.ts` loads manifests -> renderer registry/provider resolves enabled contributions -> `WorkspaceShell` renders native views or iframe `ExtensionFrame` for local packages.
 * Persistence flow: Electron userData JSON via `storage.ts`; settings/config/automation/workspaces/layouts/snapshots are separate service-owned files.
 * Build/package flow: `npm run build` -> `scripts/build-if-needed.cjs` -> `npm run build:force` when stale -> `tsc -p electron/tsconfig.json` + `vite build` -> `dist-electron` + `dist`; builder scripts package to `release`.
@@ -204,7 +204,7 @@ Important files:
 | `sessionStore.ts` (renderer) | Terminal/headless session state. | Global across workspaces. |
 | `ExtensionProvider` / `registry.tsx` | Renderer extension registration and context. | Built-ins are native React modules. |
 | `ExtensionFrame.tsx` | Local extension iframe host. | Local JS must stay sandboxed. |
-| `gitService.ts` / `gitParser.ts` | Git commands and status parsing. | Extension-owned backend code. |
+| `extensions/builtin/git/main/gitService.ts` / `extensions/builtin/git/main/gitParser.ts` | Git commands and status parsing. | Extension-owned backend code; git implementation should not be placed under `src/`. |
 | `themeSupport.ts` | VS Code theme mapping to Monaco/app CSS vars. | Large, change carefully. |
 | `configStore.ts` | Settings persistence and defaults. | Drives UI/theme/terminal profiles/extensions. |
 | `automationStore.ts` | Palette commands and workspace automation. | Headless/autoStart flags normalized here. |
