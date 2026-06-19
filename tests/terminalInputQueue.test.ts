@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { TerminalCommandIntegration } from '../electron/terminalIntegration';
 import { transformTerminalInput } from '../electron/terminalInput';
 import type { TerminalSession, TerminalSnapshot } from '../src/shared/types';
@@ -76,13 +76,19 @@ describe('terminal input write queue', () => {
     };
     const entry = createEntry([integration]);
 
-    await queuedWrite(entry, 'o');
-    await queuedWrite(entry, 'k');
-    await queuedWrite(entry, '\r');
-    await queuedWrite(entry, 'n');
-    await queuedWrite(entry, '\r');
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      await queuedWrite(entry, 'o');
+      await queuedWrite(entry, 'k');
+      await queuedWrite(entry, '\r');
+      await queuedWrite(entry, 'n');
+      await queuedWrite(entry, '\r');
 
-    expect(entry.writes.join('')).toBe('ok\rn\r');
+      expect(entry.writes.join('')).toBe('ok\rn\r');
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it('recovers the queue after a failed write task', async () => {
