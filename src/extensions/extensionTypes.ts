@@ -50,6 +50,7 @@ export interface WorkspaceExtensionContext {
     unstageSelected(paths: string[]): void | Promise<void>;
     discard(path: string): void | Promise<void>;
     discardSelected(paths: string[]): void | Promise<void>;
+    ignore(path: string): void | Promise<void>;
     commit(message: string): void | Promise<void>;
     commitStaged(message: string): void | Promise<void>;
     stageAllAndCommit(message: string): void | Promise<void>;

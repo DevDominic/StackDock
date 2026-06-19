@@ -21,6 +21,7 @@ export const gitExtension: NativeExtension = {
       onUnstageSelected={ctx.gitActions.unstageSelected}
       onDiscard={ctx.gitActions.discard}
       onDiscardSelected={ctx.gitActions.discardSelected}
+      onIgnore={ctx.gitActions.ignore}
       onCommit={ctx.gitActions.commit}
       onSwitchBranch={ctx.gitActions.switchBranch}
       onFetch={ctx.gitActions.fetch}

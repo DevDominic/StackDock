@@ -383,6 +383,7 @@ export interface StackDockApi {
     stage(path: string, filePath: string): Promise<void>;
     unstage(path: string, filePath: string): Promise<void>;
     discard(path: string, filePath: string): Promise<void>;
+    ignore(path: string, filePath: string): Promise<void>;
     commit(path: string, message: string): Promise<void>;
     addAll(path: string): Promise<void>;
     switchBranch(path: string, branch: string): Promise<void>;

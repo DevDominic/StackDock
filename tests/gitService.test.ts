@@ -4,7 +4,7 @@ import os from 'os';
 import path from 'path';
 import { promisify } from 'util';
 import { describe, expect, it } from 'vitest';
-import { getGitStatus } from '../extensions/builtin/git/main/gitService';
+import { getGitStatus, ignoreFile } from '../extensions/builtin/git/main/gitService';
 
 const execFileAsync = promisify(execFile);
 
@@ -27,6 +27,17 @@ async function makeConflictRepo() {
   await git(dir, ['merge', 'side']).catch(() => undefined);
   return dir;
 }
+
+describe('gitService ignore support', () => {
+  it('adds repository-relative paths to .gitignore once', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'stackdock-git-ignore-'));
+    await git(dir, ['init']);
+    await ignoreFile(dir, 'nested/file[1].txt');
+    await ignoreFile(dir, path.join(dir, 'nested', 'file[1].txt'));
+    const contents = await fs.readFile(path.join(dir, '.gitignore'), 'utf8');
+    expect(contents).toBe('/nested/file\\[1\\].txt\n');
+  });
+});
 
 describe('gitService merge state', () => {
   it('detects unresolved merge conflicts', async () => {

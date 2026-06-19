@@ -152,6 +152,25 @@ export async function getGitFileContents(cwd: string, filePath: string, staged =
 export async function stageFile(cwd: string, filePath: string) { await runGit(cwd, ['add', '--', filePath]); }
 export async function unstageFile(cwd: string, filePath: string) { await runGit(cwd, ['restore', '--staged', '--', filePath]); }
 export async function discardFile(cwd: string, filePath: string) { await runGit(cwd, ['restore', '--', filePath]); }
+
+function toGitIgnorePattern(cwd: string, filePath: string) {
+  const relative = path.relative(cwd, path.isAbsolute(filePath) ? filePath : path.join(cwd, filePath)).replace(/\\/g, '/');
+  if (!relative || relative.startsWith('../') || path.isAbsolute(relative)) throw new Error('Path must be inside the repository');
+  return `/${relative.replace(/\[/g, '\\[').replace(/\]/g, '\\]')}`;
+}
+
+export async function ignoreFile(cwd: string, filePath: string) {
+  const pattern = toGitIgnorePattern(cwd, filePath);
+  const gitignorePath = path.join(cwd, '.gitignore');
+  let existing = '';
+  try { existing = await fs.readFile(gitignorePath, 'utf8'); } catch { existing = ''; }
+  const lines = existing.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!lines.includes(pattern)) {
+    const prefix = existing && !existing.endsWith('\n') ? '\n' : '';
+    await fs.appendFile(gitignorePath, `${prefix}${pattern}\n`, 'utf8');
+  }
+}
+
 export async function commit(cwd: string, message: string) { await runGit(cwd, ['commit', '-m', message]); }
 export async function addAll(cwd: string) { await runGit(cwd, ['add', '.']); }
 

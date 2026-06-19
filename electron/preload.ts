@@ -62,6 +62,7 @@ const api: StackDockApi = {
     stage: (targetPath, filePath) => ipcRenderer.invoke('git:stage', targetPath, filePath),
     unstage: (targetPath, filePath) => ipcRenderer.invoke('git:unstage', targetPath, filePath),
     discard: (targetPath, filePath) => ipcRenderer.invoke('git:discard', targetPath, filePath),
+    ignore: (targetPath, filePath) => ipcRenderer.invoke('git:ignore', targetPath, filePath),
     commit: (targetPath, message) => ipcRenderer.invoke('git:commit', targetPath, message),
     addAll: (targetPath) => ipcRenderer.invoke('git:addAll', targetPath),
     switchBranch: (targetPath, branch) => ipcRenderer.invoke('git:switchBranch', targetPath, branch),

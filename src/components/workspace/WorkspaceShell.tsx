@@ -1198,6 +1198,16 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     } catch (error) { showGitError(error); }
   }
 
+  async function ignore(path: string) {
+    if (!requireTrusted('updating .gitignore')) return;
+    try {
+      setGitError(null);
+      await api.git.ignore(workspace.path, path);
+      await refreshGit();
+      showToast(`Added ${path} to .gitignore`, 'success');
+    } catch (error) { showGitError(error); }
+  }
+
   async function commit(message: string) {
     if (!requireTrusted('committing git changes')) return;
     try { setGitError(null); await api.git.commit(workspace.path, message); await refreshGit(); showToast('Commit created', 'success'); } catch (error) { showGitError(error); showToast(getErrorMessage(error, 'Commit failed'), 'error'); }
@@ -1405,6 +1415,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       unstageSelected: unstagePaths,
       discard,
       discardSelected: discardPaths,
+      ignore,
       commit,
       commitStaged,
       stageAllAndCommit,

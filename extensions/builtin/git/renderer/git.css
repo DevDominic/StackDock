@@ -53,6 +53,10 @@
 .git-menu-item:hover { background: var(--button-hover-bg); border-color: transparent; }
 .git-menu-item:hover svg { color: var(--text); }
 .git-menu-sep { height: 1px; margin: 4px 6px; background: var(--border); }
+.git-context-menu { position: fixed; z-index: 1000; min-width: 170px; padding: 5px; display: flex; flex-direction: column; gap: 1px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); box-shadow: 0 12px 30px rgba(0, 0, 0, .45); }
+.git-context-menu .git-menu-item { min-height: 28px; }
+.git-menu-item.danger { color: var(--danger); }
+.git-menu-item.danger:hover { background: var(--error-bg); color: var(--danger); }
 .git-merge-banner { margin: 0 12px 8px; padding: 10px; border: 1px solid var(--danger-border-soft); border-radius: 10px; background: var(--error-bg); color: var(--text); display: flex; flex-direction: column; gap: 8px; font-size: 12px; line-height: 1.35; }
 .git-merge-banner button { align-self: flex-start; }
 

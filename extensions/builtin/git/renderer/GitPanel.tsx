@@ -19,6 +19,7 @@ interface Props {
   onUnstageSelected(paths: string[]): void;
   onDiscard(path: string): void;
   onDiscardSelected(paths: string[]): void;
+  onIgnore(path: string): void;
   onCommit(message: string): void;
   onSwitchBranch(branch: string): void;
   onFetch(): void;
@@ -53,7 +54,7 @@ function splitPath(path: string) {
     : { dir: '', name: normalized };
 }
 
-export function GitPanel({ status, error, selectedFile, selectedStagedPaths, selectedChangePaths, onSelectFile, onStage, onStageSelected, onStageAll, onUnstage, onUnstageSelected, onDiscard, onDiscardSelected, onCommit, onSwitchBranch, onFetch, onPull, onPullMerge, onPush, onAbortMerge, onRefresh, onClearError }: Props) {
+export function GitPanel({ status, error, selectedFile, selectedStagedPaths, selectedChangePaths, onSelectFile, onStage, onStageSelected, onStageAll, onUnstage, onUnstageSelected, onDiscard, onDiscardSelected, onIgnore, onCommit, onSwitchBranch, onFetch, onPull, onPullMerge, onPush, onAbortMerge, onRefresh, onClearError }: Props) {
   const conflicts = status?.files.filter((file) => file.conflicted) ?? [];
   const staged = status?.files.filter((file) => file.staged && !file.untracked && !file.conflicted) ?? [];
   const unstaged = status?.files.filter((file) => (file.unstaged || file.untracked) && !file.conflicted) ?? [];
@@ -96,9 +97,9 @@ export function GitPanel({ status, error, selectedFile, selectedStagedPaths, sel
             <div>{status.mergeReady ? 'Merge ready: commit to finish the merge.' : 'Merge in progress: resolve conflicts, stage resolved files, then commit.'}</div>
             <button className="git-action git-discard" onClick={onAbortMerge}>Abort Merge</button>
           </div> : null}
-          {conflicts.length ? <GitGroup title="Conflicts" group="changes" files={conflicts} selectedFile={selectedFile} selectedPaths={selectedChangePaths} onSelectFile={(file, event, files) => onSelectFile(file, false, event, files)} onStage={onStage} onUndo={onDiscard} /> : null}
-          {staged.length ? <GitGroup title="Staged" group="staged" files={staged} selectedFile={selectedFile} selectedPaths={selectedStagedPaths} onSelectFile={(file, event, files) => onSelectFile(file, true, event, files)} onUndo={onUnstage} /> : null}
-          <GitGroup title="Changes" group="changes" files={unstaged} selectedFile={selectedFile} selectedPaths={selectedChangePaths} onSelectFile={(file, event, files) => onSelectFile(file, false, event, files)} onStage={onStage} onUndo={onDiscard} />
+          {conflicts.length ? <GitGroup title="Conflicts" group="changes" files={conflicts} selectedFile={selectedFile} selectedPaths={selectedChangePaths} onSelectFile={(file, event, files) => onSelectFile(file, false, event, files)} onStage={onStage} onUndo={onDiscard} onIgnore={onIgnore} /> : null}
+          {staged.length ? <GitGroup title="Staged" group="staged" files={staged} selectedFile={selectedFile} selectedPaths={selectedStagedPaths} onSelectFile={(file, event, files) => onSelectFile(file, true, event, files)} onUndo={onUnstage} onIgnore={onIgnore} /> : null}
+          <GitGroup title="Changes" group="changes" files={unstaged} selectedFile={selectedFile} selectedPaths={selectedChangePaths} onSelectFile={(file, event, files) => onSelectFile(file, false, event, files)} onStage={onStage} onUndo={onDiscard} onIgnore={onIgnore} />
           <div className={`git-actions git-batch-actions${activeSelection ? ' is-active' : ''}`}>
             {activeSelection === 'staged' ? <button className="git-action ghost" onClick={() => onUnstageSelected(selectedStagedPaths)}>Unstage Selected ({selectedStagedPaths.length})</button> : null}
             {activeSelection === 'changes' ? <button className="git-action git-stage" onClick={() => onStageSelected(selectedChangePaths)}>Stage Selected ({selectedChangePaths.length})</button> : null}
@@ -112,8 +113,19 @@ export function GitPanel({ status, error, selectedFile, selectedStagedPaths, sel
   );
 }
 
-function GitGroup({ title, group, files, selectedFile, selectedPaths, onSelectFile, onStage, onUndo }: { title: string; group: GitSelectionGroup; files: GitFileStatus[]; selectedFile: GitFileStatus | null; selectedPaths: string[]; onSelectFile(file: GitFileStatus, event: MouseEvent<HTMLButtonElement>, files: GitFileStatus[]): void; onStage?(path: string): void; onUndo(path: string): void }) {
+function GitGroup({ title, group, files, selectedFile, selectedPaths, onSelectFile, onStage, onUndo, onIgnore }: { title: string; group: GitSelectionGroup; files: GitFileStatus[]; selectedFile: GitFileStatus | null; selectedPaths: string[]; onSelectFile(file: GitFileStatus, event: MouseEvent<HTMLButtonElement>, files: GitFileStatus[]): void; onStage?(path: string): void; onUndo(path: string): void; onIgnore(path: string): void }) {
   const selected = new Set(selectedPaths);
+  const [menu, setMenu] = useState<{ file: GitFileStatus; x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
+    window.addEventListener('mousedown', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('mousedown', close); window.removeEventListener('scroll', close, true); window.removeEventListener('keydown', onKey); };
+  }, [menu]);
+  const runMenu = (action: () => void) => (event: MouseEvent<HTMLButtonElement>) => { event.stopPropagation(); setMenu(null); action(); };
   return (
     <div className="git-group">
       <div className="git-group-title">{title} ({files.length})</div>
@@ -124,7 +136,7 @@ function GitGroup({ title, group, files, selectedFile, selectedPaths, onSelectFi
           const isSelected = selected.has(file.path);
           const isActive = selectedFile?.path === file.path;
           return (
-            <button key={`${title}:${file.path}`} className={`tree-row git-file ${cls}${isSelected ? ' selected' : ''}${isActive ? ' active' : ''}`} title={file.path} onClick={(event) => onSelectFile(file, event, files)}>
+            <button key={`${title}:${file.path}`} className={`tree-row git-file ${cls}${isSelected ? ' selected' : ''}${isActive ? ' active' : ''}`} title={file.path} onClick={(event) => onSelectFile(file, event, files)} onContextMenu={(event) => { event.preventDefault(); onSelectFile(file, event, files); setMenu({ file, x: event.clientX, y: event.clientY }); }}>
               <span className="tree-twisty" />
               <FileIcon name={name} isDirectory={false} expanded={false} />
               <span className="git-path">
@@ -140,6 +152,15 @@ function GitGroup({ title, group, files, selectedFile, selectedPaths, onSelectFi
           );
         })}
       </div>
+      {menu ? (
+        <div className="git-context-menu" role="menu" style={{ left: menu.x, top: menu.y }} onMouseDown={(event) => event.stopPropagation()}>
+          {group === 'changes' ? <button role="menuitem" className="git-menu-item" onClick={runMenu(() => onStage?.(menu.file.path))}>Stage</button> : null}
+          {group === 'staged' ? <button role="menuitem" className="git-menu-item" onClick={runMenu(() => onUndo(menu.file.path))}>Unstage</button> : null}
+          {group === 'changes' && !menu.file.untracked ? <button role="menuitem" className="git-menu-item" onClick={runMenu(() => onUndo(menu.file.path))}>Revert Changes</button> : null}
+          {group === 'changes' ? <button role="menuitem" className="git-menu-item danger" onClick={runMenu(() => onUndo(menu.file.path))}>{menu.file.untracked ? 'Discard File' : 'Discard Changes'}</button> : null}
+          <button role="menuitem" className="git-menu-item" onClick={runMenu(() => onIgnore(menu.file.path))}>Ignore</button>
+        </div>
+      ) : null}
     </div>
   );
 }
