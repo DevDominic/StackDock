@@ -56,6 +56,19 @@ function terminalThemeFromCss() {
   };
 }
 
+function getCliCursorVisibilityState(data: string, previousTail: string) {
+  const text = `${previousTail}${data}`;
+  const altEnter = /\x1b\[\?(?:47|1047|1048|1049)h/.test(text);
+  const altExit = /\x1b\[\?(?:47|1047|1048|1049)l/.test(text);
+  const cursorHidden = /\x1b\[\?25l/.test(text);
+  const cursorShown = /\x1b\[\?25h/.test(text);
+  return {
+    altScreen: altEnter ? true : altExit ? false : undefined,
+    appCursorHidden: cursorHidden ? true : cursorShown ? false : undefined,
+    tail: text.slice(-32),
+  };
+}
+
 export function TerminalPanel({ sessions, activeId, onOpenLink, settings, isVisible = true, onAttachmentError }: Props) {
   const active = sessions.find((session) => session.id === activeId) ?? sessions[0] ?? null;
   const visibleSessions = active?.splitGroupId ? sessions.filter((session) => session.splitGroupId === active.splitGroupId) : active ? [active] : [];
@@ -91,6 +104,8 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
   const [dragOver, setDragOver] = useState(false);
   const [attachmentStatus, setAttachmentStatus] = useState<string | null>(null);
   const [terminalMenu, setTerminalMenu] = useState<{ x: number; y: number; canCopy: boolean; canPaste: boolean } | null>(null);
+  const [hideTerminalCursor, setHideTerminalCursor] = useState(false);
+  const cliCursorStateRef = useRef({ altScreen: false, appCursorHidden: false, tail: '' });
   const onOpenLinkRef = useRef(onOpenLink);
   const onAttachmentErrorRef = useRef(onAttachmentError);
   onOpenLinkRef.current = onOpenLink;
@@ -218,6 +233,14 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
 
     const disposeData = api.onTerminalData(({ id, data }) => {
       if (id !== session.id) return;
+      const nextCliCursorState = getCliCursorVisibilityState(data, cliCursorStateRef.current.tail);
+      cliCursorStateRef.current = {
+        altScreen: nextCliCursorState.altScreen ?? cliCursorStateRef.current.altScreen,
+        appCursorHidden: nextCliCursorState.appCursorHidden ?? cliCursorStateRef.current.appCursorHidden,
+        tail: nextCliCursorState.tail,
+      };
+      const shouldHideCursor = cliCursorStateRef.current.altScreen || cliCursorStateRef.current.appCursorHidden;
+      setHideTerminalCursor((current) => current === shouldHideCursor ? current : shouldHideCursor);
       const displayData = formatDisplayOutput(data);
       if (!restoredSnapshot) queuedLiveOutput.push(displayData);
       else enqueueTerminalWrite(displayData);
@@ -283,6 +306,8 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       terminalWriteQueue = [];
       disposeData();
       disposeExit();
+      cliCursorStateRef.current = { altScreen: false, appCursorHidden: false, tail: '' };
+      setHideTerminalCursor(false);
       dataDisposable.dispose();
       linkProvider.dispose();
       ligaturesAddon?.dispose();
@@ -545,7 +570,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
 
   return (
     <div
-      className={`${focused ? 'terminal-shell focused' : 'terminal-shell'}${dragOver ? ' attachment-drag-over' : ''}`}
+      className={`${focused ? 'terminal-shell focused' : 'terminal-shell'}${dragOver ? ' attachment-drag-over' : ''}${hideTerminalCursor ? ' hide-terminal-cursor' : ''}`}
       onDragEnter={handleDragOver}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

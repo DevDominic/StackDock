@@ -520,6 +520,11 @@ html[data-window-controls-position="left"] .workspace-titlebar .topbar-left { mi
 .terminal-mount { flex: 1; min-height: 0; padding: 8px 8px 20px; overflow: hidden; font-family: var(--code-font); font-weight: var(--code-font-weight); font-stretch: var(--code-font-width); font-feature-settings: var(--code-font-features); font-variation-settings: var(--code-font-variations); }
 .terminal-xterm-inner { width: 100%; height: 100%; overflow: hidden; }
 .terminal-xterm-inner .xterm { height: 100%; width: 100%; overflow: hidden; font-family: var(--code-font); font-weight: var(--code-font-weight); font-stretch: var(--code-font-width); font-feature-settings: var(--code-font-features); font-variation-settings: var(--code-font-variations); }
+.terminal-shell.hide-terminal-cursor .xterm-cursor-layer,
+.terminal-shell.hide-terminal-cursor .xterm-cursor,
+.terminal-shell.hide-terminal-cursor .xterm-helper-textarea { caret-color: transparent !important; }
+.terminal-shell.hide-terminal-cursor .xterm-cursor-layer,
+.terminal-shell.hide-terminal-cursor .xterm-cursor { opacity: 0 !important; visibility: hidden !important; }
 .terminal-xterm-inner .xterm-viewport { scrollbar-gutter: stable; background-color: var(--terminal-bg); }
 .terminal-xterm-inner .xterm-viewport::-webkit-scrollbar { width: 12px; }
 .terminal-xterm-inner .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
