@@ -6,13 +6,13 @@ import os from 'os';
 import path from 'path';
 import { addWorkspace, createWorkspace, listWorkspaces, loadLayout, loadRestoreState, removeWorkspace, saveLayout, saveRestoreState, updateWorkspace } from './workspaceStore';
 import { createFile, createFolder, deletePath, pathExists, readDirectory, readFile, readFileDataUrl, renamePath, revealInExplorer, writeFile } from './fileService';
-import { abortMerge, addAll, commit, discardFile, fetch, getGitDiff, getGitFileContents, getGitStatus, getIgnoredFiles, ignoreFile, listBranches, pull, pullMerge, push, stageFile, switchBranch, unstageFile } from '../extensions/builtin/git/main/gitService';
 import { createTerminal, forgetTerminalSnapshot, getTerminalProfiles, getTerminalSnapshot, killTerminal, loadOpenTerminalState, markTerminalReady, resizeTerminal, saveOpenTerminalState, setTerminalWindow, setVisibleTerminals, updateTerminalSession, writeTerminal } from './terminalManager';
 import { setBridgeWindow, startBrowserBridge } from './browserBridge';
 import { ensureDataDirs } from './storage';
 import { logError } from './log';
 import { getDefaultSettings, loadSettings, saveSettings } from './configStore';
-import { loadExtensions, resolveExtensionAsset } from './extensionService';
+import { ensureExtensionsLoaded, loadExtensions, resolveExtensionAsset } from './extensionService';
+import { ExtensionHost } from './extensionHost';
 import { loadAutomation, loadAutomationRaw, saveAutomationRaw } from './automationStore';
 import { inspectAttachmentPath, savePastedImageAttachment } from './attachmentService';
 import { assertAbsolutePath, assertLayoutLike, assertNonEmptyString, assertNumber, assertRestoreStateLike, assertSafeFileName, assertString, assertTerminalAttachmentOptions, assertTerminalAttachmentSource, assertTerminalSessionContext, assertTerminalSessionUpdate, assertWorkspaceLike } from './validation';
@@ -25,6 +25,7 @@ const watchedWorkspaces = new Map<string, { watcher: FSWatcher; timer: NodeJS.Ti
 const noisyWatchSegments = new Set(['node_modules', 'dist', 'build', 'target', '.cache', '.git']);
 const windowControlsConfig = getWindowControlsConfig(process.platform, os.release());
 const nativeWindowControls = windowControlsConfig.style === 'native';
+const extensionHost = new ExtensionHost();
 
 // Make dev Electron sessions attachable by browser automation tools such as
 // dev-only by default; packaged builds can opt in explicitly with
@@ -222,23 +223,12 @@ function registerIpc() {
     if (result) throw new Error(result); // shell.openPath resolves with an error string on failure
   });
 
-  ipcMain.handle('git:status', async (_event, targetPath: unknown) => getGitStatus(assertAbsolutePath(targetPath, 'targetPath')));
-  ipcMain.handle('git:branches', async (_event, targetPath: unknown) => listBranches(assertAbsolutePath(targetPath, 'targetPath')));
-  ipcMain.handle('git:diff', async (_event, targetPath: unknown, filePath?: unknown, staged?: boolean) => getGitDiff(assertAbsolutePath(targetPath, 'targetPath'), filePath == null ? undefined : assertNonEmptyString(filePath, 'filePath'), staged));
-  ipcMain.handle('git:fileContents', async (_event, targetPath: unknown, filePath: unknown, staged?: boolean) => getGitFileContents(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(filePath, 'filePath'), staged));
-  ipcMain.handle('git:stage', async (_event, targetPath: unknown, filePath: unknown) => stageFile(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(filePath, 'filePath')));
-  ipcMain.handle('git:unstage', async (_event, targetPath: unknown, filePath: unknown) => unstageFile(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(filePath, 'filePath')));
-  ipcMain.handle('git:discard', async (_event, targetPath: unknown, filePath: unknown) => discardFile(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(filePath, 'filePath')));
-  ipcMain.handle('git:ignore', async (_event, targetPath: unknown, filePath: unknown) => ignoreFile(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(filePath, 'filePath')));
-  ipcMain.handle('git:commit', async (_event, targetPath: unknown, message: unknown) => commit(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(message, 'message')));
-  ipcMain.handle('git:addAll', async (_event, targetPath: unknown) => addAll(assertAbsolutePath(targetPath, 'targetPath')));
-  ipcMain.handle('git:switchBranch', async (_event, targetPath: unknown, branch: unknown) => switchBranch(assertAbsolutePath(targetPath, 'targetPath'), assertNonEmptyString(branch, 'branch')));
-  ipcMain.handle('git:push', async (_event, targetPath: unknown) => push(assertAbsolutePath(targetPath, 'targetPath')));
-  ipcMain.handle('git:pull', async (_event, targetPath: unknown) => pull(assertAbsolutePath(targetPath, 'targetPath')));
-  ipcMain.handle('git:pullMerge', async (_event, targetPath: unknown) => pullMerge(assertAbsolutePath(targetPath, 'targetPath')));
-  ipcMain.handle('git:abortMerge', async (_event, targetPath: unknown) => abortMerge(assertAbsolutePath(targetPath, 'targetPath')));
-  ipcMain.handle('git:fetch', async (_event, targetPath: unknown) => fetch(assertAbsolutePath(targetPath, 'targetPath')));
-  ipcMain.handle('git:ignored', async (_event, targetPath: unknown, paths: unknown) => getIgnoredFiles(assertAbsolutePath(targetPath, 'targetPath'), Array.isArray(paths) ? paths.map((item) => assertNonEmptyString(item, 'path')) : []));
+  ipcMain.handle('extensions:invoke', async (_event, extensionId: unknown, command: unknown, args?: unknown) => {
+    const extension = assertNonEmptyString(extensionId, 'extensionId');
+    const rpcCommand = assertNonEmptyString(command, 'command');
+    if (args != null && !Array.isArray(args)) throw new Error('args must be an array');
+    return extensionHost.invoke(extension, rpcCommand, args ?? []);
+  });
 
   ipcMain.handle('settings:load', async () => loadSettings());
   ipcMain.handle('settings:defaults', async () => getDefaultSettings());
@@ -309,6 +299,8 @@ app.whenReady().then(async () => {
   } catch (error) {
     void logError('startBrowserBridge', error); // bridge failure must never block startup
   }
+  const settings = await loadSettings();
+  await extensionHost.activateBundledExtensions(await ensureExtensionsLoaded(settings));
   registerIpc();
   await createWindow();
 

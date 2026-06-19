@@ -1,5 +1,6 @@
 import type { MouseEvent, ReactNode } from 'react';
 import type { ExtensionConfigPrimitive, ExtensionManifest, ExtensionStatusBarContribution, ExtensionViewContribution, GitFileStatus, GitStatus, HeadlessCommandRun, StackDockSettings, TerminalProfile, TerminalSplitSide, Workspace, WorkspaceTerminalSession } from '../shared/types';
+import type { ExtensionRendererContext } from './runtimeTypes';
 
 export interface ExtensionCommand {
   id: string;
@@ -90,6 +91,7 @@ export interface ExtensionSettingsContext {
 
 export interface NativeExtension {
   manifest: ExtensionManifest;
+  activateRenderer?(ctx: ExtensionRendererContext): NativeExtension;
   renderView?(contribution: ExtensionViewContribution, ctx: WorkspaceExtensionContext): ReactNode;
   renderStatusBar?(contribution: ExtensionStatusBarContribution, ctx: WorkspaceExtensionContext): ReactNode;
   renderSettings?(ctx: ExtensionSettingsContext): ReactNode;

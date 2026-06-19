@@ -1,12 +1,7 @@
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
-import type { ExtensionListResult, ExtensionLoadError, ExtensionManifest, ExtensionTerminalCommandHookContribution, StackDockSettings, TerminalCommandHookSource } from '../src/shared/types';
-import { explorerExtensionManifest } from '../extensions/builtin/explorer/manifest';
-import { gitExtensionManifest } from '../extensions/builtin/git/manifest';
-import { sessionsExtensionManifest } from '../extensions/builtin/sessions/manifest';
-import { headlessExtensionManifest } from '../extensions/builtin/headless/manifest';
-import { workspaceStatusExtensionManifest } from '../extensions/builtin/workspace-status/manifest';
-import { piExtensionManifest } from '../extensions/builtin/pi/manifest';
+import type { ExtensionListResult, ExtensionLoadError, ExtensionManifest, ExtensionSource, ExtensionTerminalCommandHookContribution, StackDockSettings, TerminalCommandHookSource } from '../src/shared/types';
 
 const MANIFEST_FILE = 'stackdock.extension.json';
 const TERMINAL_COMMAND_HOOK_CAPABILITY = 'terminal-command-hook';
@@ -18,8 +13,35 @@ const packageRoots = new Map<string, string>();
 let loadedExtensionsCache: ExtensionManifest[] = getBundledExtensionManifests();
 let loadedExtensionPathKey: string | null = null;
 
+export function getBundledExtensionRoots(): string[] {
+  const roots = [path.resolve(__dirname, '../extensions/builtin'), path.resolve(process.cwd(), 'extensions/builtin')];
+  const extensionRoots: string[] = [];
+  const seen = new Set<string>();
+  for (const root of roots) {
+    if (!fsSync.existsSync(root)) continue;
+    for (const item of fsSync.readdirSync(root, { withFileTypes: true })) {
+      if (!item.isDirectory()) continue;
+      const extensionRoot = path.join(root, item.name);
+      if (!fsSync.existsSync(path.join(extensionRoot, MANIFEST_FILE))) continue;
+      if (seen.has(item.name)) continue;
+      seen.add(item.name);
+      extensionRoots.push(extensionRoot);
+    }
+  }
+  return extensionRoots;
+}
+
 export function getBundledExtensionManifests(): ExtensionManifest[] {
-  return [explorerExtensionManifest, gitExtensionManifest, sessionsExtensionManifest, headlessExtensionManifest, workspaceStatusExtensionManifest, piExtensionManifest];
+  const manifests: ExtensionManifest[] = [];
+  for (const root of getBundledExtensionRoots()) {
+    try {
+      const raw = JSON.parse(fsSync.readFileSync(path.join(root, MANIFEST_FILE), 'utf8')) as unknown;
+      manifests.push(normalizeManifest(raw, root, 'bundled'));
+    } catch {
+      // Bundled manifest errors surface during async load where error collection exists.
+    }
+  }
+  return manifests;
 }
 
 function validId(id: string) { return /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id); }
@@ -43,20 +65,24 @@ function validateTerminalCommandHook(raw: unknown, capabilities: string[] | unde
   return { id, match, appendArgs, sources: sources as TerminalCommandHookSource[] | undefined, description: typeof source.description === 'string' ? source.description.trim() : undefined };
 }
 
-function normalizeManifest(raw: unknown, root: string): ExtensionManifest {
+function normalizeManifest(raw: unknown, root: string, sourceType: ExtensionSource = 'local'): ExtensionManifest {
   if (!raw || typeof raw !== 'object') throw new Error('Manifest must be object');
   const source = raw as ExtensionManifest;
   const id = asString(source.id, 'id');
   if (!validId(id)) throw new Error(`Invalid extension id ${id}`);
+  if (source.main) validateEntry(root, source.main);
+  if (source.renderer) validateEntry(root, source.renderer);
   const manifest: ExtensionManifest = {
     id,
     name: asString(source.name, 'name'),
     version: asString(source.version, 'version'),
     description: typeof source.description === 'string' ? source.description : undefined,
     defaultEnabled: source.defaultEnabled === true,
-    source: 'local',
+    source: sourceType,
     packagePath: root,
     capabilities: Array.isArray(source.capabilities) ? source.capabilities.filter((item): item is string => typeof item === 'string') : undefined,
+    main: typeof source.main === 'string' ? source.main : undefined,
+    renderer: typeof source.renderer === 'string' ? source.renderer : undefined,
     contributes: { views: [], statusBar: [], configuration: source.contributes?.configuration, terminalCommandHooks: [] },
   };
   const seen = new Set<string>();
@@ -65,14 +91,14 @@ function normalizeManifest(raw: unknown, root: string): ExtensionManifest {
     if (seen.has(viewId)) throw new Error(`Duplicate contribution id ${viewId}`);
     seen.add(viewId);
     if (view.entry) validateEntry(root, view.entry);
-    manifest.contributes!.views!.push({ ...view, id: viewId, extensionId: id, native: false, location: view.location ?? 'activity' });
+    manifest.contributes!.views!.push({ ...view, id: viewId, extensionId: id, native: sourceType === 'bundled' ? view.native !== false : false, location: view.location ?? 'activity' });
   }
   for (const item of source.contributes?.statusBar ?? []) {
     const itemId = asString(item.id, 'statusBar.id');
     if (seen.has(itemId)) throw new Error(`Duplicate contribution id ${itemId}`);
     seen.add(itemId);
     if (item.entry) validateEntry(root, item.entry);
-    manifest.contributes!.statusBar!.push({ ...item, id: itemId, extensionId: id, native: false, side: item.side ?? 'left' });
+    manifest.contributes!.statusBar!.push({ ...item, id: itemId, extensionId: id, native: sourceType === 'bundled' ? item.native !== false : false, side: item.side ?? 'left' });
   }
   for (const item of source.contributes?.terminalCommandHooks ?? []) {
     const hook = validateTerminalCommandHook(item, manifest.capabilities);
@@ -80,6 +106,7 @@ function normalizeManifest(raw: unknown, root: string): ExtensionManifest {
     seen.add(hook.id);
     manifest.contributes!.terminalCommandHooks!.push(hook);
   }
+  packageRoots.set(id, root);
   return manifest;
 }
 
@@ -93,7 +120,15 @@ function validateEntry(root: string, entry: string) {
 export async function loadExtensions(settings: StackDockSettings): Promise<ExtensionListResult> {
   packageRoots.clear();
   const errors: ExtensionLoadError[] = [];
-  const extensions = [...getBundledExtensionManifests()];
+  const extensions: ExtensionManifest[] = [];
+  for (const root of getBundledExtensionRoots()) {
+    try {
+      const raw = JSON.parse(await fs.readFile(path.join(root, MANIFEST_FILE), 'utf8')) as unknown;
+      extensions.push(normalizeManifest(raw, root, 'bundled'));
+    } catch (error) {
+      errors.push({ packagePath: root, message: error instanceof Error ? error.message : String(error) });
+    }
+  }
   const seenIds = new Set(extensions.map((item) => item.id));
   for (const packagePath of settings.extensions.localPackagePaths) {
     try {
@@ -101,7 +136,7 @@ export async function loadExtensions(settings: StackDockSettings): Promise<Exten
       const stat = await fs.stat(root);
       if (!stat.isDirectory()) throw new Error('Extension package path must be a directory');
       const raw = JSON.parse(await fs.readFile(path.join(root, MANIFEST_FILE), 'utf8')) as unknown;
-      const manifest = normalizeManifest(raw, root);
+      const manifest = normalizeManifest(raw, root, 'local');
       if (seenIds.has(manifest.id)) throw new Error(`Duplicate extension id ${manifest.id}`);
       seenIds.add(manifest.id);
       packageRoots.set(manifest.id, root);

@@ -26,7 +26,7 @@
     "dev": "npm run build && electron . --trace-warnings --agent-browser --built",
     "clean:dist": "node -e \"const fs=require('fs'); for (const p of ['dist','dist-electron','.buildstamp']) fs.rmSync(p,{recursive:true,force:true});\"",
     "build": "node scripts/build-if-needed.cjs",
-    "build:force": "tsc -p electron/tsconfig.json && vite build",
+    "build:force": "tsc -p electron/tsconfig.json && node scripts/copy-extension-assets.cjs && vite build",
     "icons:generate": "node scripts/generate-icons.cjs",
     "prepare:node-pty:win": "node scripts/ensure-node-pty-conpty.cjs",
     "build:app": "npm run clean:dist && npm run build && npm run icons:generate && npm run prepare:node-pty:win && electron-builder --win portable --x64 -c.compression=maximum",

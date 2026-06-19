@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
-const inputs = ['src', 'electron', 'extensions', 'index.html', 'package.json', 'package-lock.json', 'tsconfig.json', 'vite.config.ts', 'electron/tsconfig.json', 'scripts/build-if-needed.cjs'];
+const inputs = ['src', 'electron', 'extensions', 'index.html', 'package.json', 'package-lock.json', 'tsconfig.json', 'vite.config.ts', 'electron/tsconfig.json', 'scripts/build-if-needed.cjs', 'scripts/copy-extension-assets.cjs'];
 const outputs = ['dist', 'dist-electron'];
 const stampFile = '.buildstamp';
 const forceArgs = new Set(['--force', '-f']);

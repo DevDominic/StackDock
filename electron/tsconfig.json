@@ -12,6 +12,6 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["./**/*.ts", "../src/shared/**/*.ts"],
-  "exclude": ["../src"]
+  "include": ["./**/*.ts", "../src/shared/**/*.ts", "../extensions/**/*.ts"],
+  "exclude": ["../src", "../extensions/**/renderer/**"]
 }

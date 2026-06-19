@@ -27,7 +27,7 @@ export interface ExtensionConfigField { key: string; label: string; type: 'boole
 export interface ExtensionConfigurationContribution { title?: string; fields: ExtensionConfigField[]; }
 export type TerminalCommandHookSource = 'interactive' | 'startup' | 'resume' | 'headless' | 'programmatic';
 export interface ExtensionTerminalCommandHookContribution { id: string; match: string; sources?: TerminalCommandHookSource[]; appendArgs: string; description?: string; }
-export interface ExtensionManifest { id: string; name: string; version: string; description?: string; defaultEnabled?: boolean; source?: ExtensionSource; packagePath?: string; capabilities?: string[]; contributes?: { views?: ExtensionViewContribution[]; statusBar?: ExtensionStatusBarContribution[]; configuration?: ExtensionConfigurationContribution; terminalCommandHooks?: ExtensionTerminalCommandHookContribution[] }; }
+export interface ExtensionManifest { id: string; name: string; version: string; description?: string; defaultEnabled?: boolean; source?: ExtensionSource; packagePath?: string; capabilities?: string[]; main?: string; renderer?: string; contributes?: { views?: ExtensionViewContribution[]; statusBar?: ExtensionStatusBarContribution[]; configuration?: ExtensionConfigurationContribution; terminalCommandHooks?: ExtensionTerminalCommandHookContribution[] }; }
 export interface ExtensionLoadError { extensionId?: string; packagePath?: string; message: string; }
 export interface ExtensionListResult { extensions: ExtensionManifest[]; errors: ExtensionLoadError[]; }
 export interface ExtensionSettings { localPackagePaths: string[]; disabled: string[]; enabled: string[]; config: Record<string, Record<string, ExtensionConfigPrimitive>>; }
@@ -409,6 +409,7 @@ export interface StackDockApi {
     reload(): Promise<ExtensionListResult>;
     addLocalPackage(path: string): Promise<ExtensionListResult>;
     removeLocalPackage(path: string): Promise<ExtensionListResult>;
+    invoke(extensionId: string, command: string, args?: unknown[]): Promise<unknown>;
   };
   attachments: {
     getPathForFile(file: unknown): string;

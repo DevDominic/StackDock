@@ -14,6 +14,13 @@ function applyWindowControlsStyle() {
 if (document.documentElement) applyWindowControlsStyle();
 else window.addEventListener('DOMContentLoaded', applyWindowControlsStyle, { once: true });
 
+function invokeExtension(extensionId: string, command: string, args: unknown[] = []) {
+  if (typeof extensionId !== 'string' || !extensionId.trim()) return Promise.reject(new Error('extensionId must be non-empty'));
+  if (typeof command !== 'string' || !command.trim()) return Promise.reject(new Error('command must be non-empty'));
+  if (!Array.isArray(args)) return Promise.reject(new Error('args must be an array'));
+  return ipcRenderer.invoke('extensions:invoke', extensionId, command, args);
+}
+
 const api: StackDockApi = {
   app: {
     pickWorkspaceFolder: () => ipcRenderer.invoke('app:pickWorkspaceFolder'),
@@ -55,23 +62,24 @@ const api: StackDockApi = {
     openPath: (targetPath) => ipcRenderer.invoke('shell:openPath', targetPath),
   },
   git: {
-    status: (targetPath) => ipcRenderer.invoke('git:status', targetPath),
-    branches: (targetPath) => ipcRenderer.invoke('git:branches', targetPath),
-    diff: (targetPath, filePath, staged) => ipcRenderer.invoke('git:diff', targetPath, filePath, staged),
-    fileContents: (targetPath, filePath, staged) => ipcRenderer.invoke('git:fileContents', targetPath, filePath, staged),
-    stage: (targetPath, filePath) => ipcRenderer.invoke('git:stage', targetPath, filePath),
-    unstage: (targetPath, filePath) => ipcRenderer.invoke('git:unstage', targetPath, filePath),
-    discard: (targetPath, filePath) => ipcRenderer.invoke('git:discard', targetPath, filePath),
-    ignore: (targetPath, filePath) => ipcRenderer.invoke('git:ignore', targetPath, filePath),
-    commit: (targetPath, message) => ipcRenderer.invoke('git:commit', targetPath, message),
-    addAll: (targetPath) => ipcRenderer.invoke('git:addAll', targetPath),
-    switchBranch: (targetPath, branch) => ipcRenderer.invoke('git:switchBranch', targetPath, branch),
-    push: (targetPath) => ipcRenderer.invoke('git:push', targetPath),
-    pull: (targetPath) => ipcRenderer.invoke('git:pull', targetPath),
-    pullMerge: (targetPath) => ipcRenderer.invoke('git:pullMerge', targetPath),
-    abortMerge: (targetPath) => ipcRenderer.invoke('git:abortMerge', targetPath),
-    fetch: (targetPath) => ipcRenderer.invoke('git:fetch', targetPath),
-    ignored: (targetPath, paths) => ipcRenderer.invoke('git:ignored', targetPath, paths),
+    // TODO: Deprecated compatibility shim; use extensions.invoke('stackdock.git', ...).
+    status: (targetPath) => invokeExtension('stackdock.git', 'status', [targetPath]),
+    branches: (targetPath) => invokeExtension('stackdock.git', 'branches', [targetPath]),
+    diff: (targetPath, filePath, staged) => invokeExtension('stackdock.git', 'diff', [targetPath, filePath, staged]),
+    fileContents: (targetPath, filePath, staged) => invokeExtension('stackdock.git', 'fileContents', [targetPath, filePath, staged]),
+    stage: (targetPath, filePath) => invokeExtension('stackdock.git', 'stage', [targetPath, filePath]),
+    unstage: (targetPath, filePath) => invokeExtension('stackdock.git', 'unstage', [targetPath, filePath]),
+    discard: (targetPath, filePath) => invokeExtension('stackdock.git', 'discard', [targetPath, filePath]),
+    ignore: (targetPath, filePath) => invokeExtension('stackdock.git', 'ignore', [targetPath, filePath]),
+    commit: (targetPath, message) => invokeExtension('stackdock.git', 'commit', [targetPath, message]),
+    addAll: (targetPath) => invokeExtension('stackdock.git', 'addAll', [targetPath]),
+    switchBranch: (targetPath, branch) => invokeExtension('stackdock.git', 'switchBranch', [targetPath, branch]),
+    push: (targetPath) => invokeExtension('stackdock.git', 'push', [targetPath]),
+    pull: (targetPath) => invokeExtension('stackdock.git', 'pull', [targetPath]),
+    pullMerge: (targetPath) => invokeExtension('stackdock.git', 'pullMerge', [targetPath]),
+    abortMerge: (targetPath) => invokeExtension('stackdock.git', 'abortMerge', [targetPath]),
+    fetch: (targetPath) => invokeExtension('stackdock.git', 'fetch', [targetPath]),
+    ignored: (targetPath, paths) => invokeExtension('stackdock.git', 'ignored', [targetPath, paths]),
   },
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
@@ -88,6 +96,7 @@ const api: StackDockApi = {
     reload: () => ipcRenderer.invoke('extensions:reload'),
     addLocalPackage: (targetPath) => ipcRenderer.invoke('extensions:addLocalPackage', targetPath),
     removeLocalPackage: (targetPath) => ipcRenderer.invoke('extensions:removeLocalPackage', targetPath),
+    invoke: invokeExtension,
   },
   attachments: {
     getPathForFile: (file) => webUtils.getPathForFile(file as Parameters<typeof webUtils.getPathForFile>[0]),
