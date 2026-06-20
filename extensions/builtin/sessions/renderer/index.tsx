@@ -16,6 +16,7 @@ export const sessionsExtension: NativeExtension = {
         workspaces={ctx.workspaces}
         activeWorkspaceId={ctx.workspace.id}
         activeSessionId={ctx.activeSessionId}
+        highlightedSessionIds={ctx.highlightedSessionIds}
         sessions={ctx.allSessions}
         profiles={ctx.profiles}
         defaultProfileId={ctx.defaultProfileId}

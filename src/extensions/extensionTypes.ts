@@ -17,6 +17,7 @@ export interface WorkspaceExtensionContext {
   sessions: WorkspaceTerminalSession[];
   allSessions: WorkspaceTerminalSession[];
   activeSessionId: string | null;
+  highlightedSessionIds: string[];
   headlessRuns: HeadlessCommandRun[];
   isRepo: boolean;
   refreshToken: number;

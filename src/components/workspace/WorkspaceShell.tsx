@@ -151,6 +151,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const sessions = allSessions.filter((session) => session.workspaceId === workspace.id);
   const activeTerminalId = sessions.some((session) => session.id === sessionStore.activeSessionId) ? sessionStore.activeSessionId : sessions[0]?.id ?? null;
   const [htmlPreviewBySession, setHtmlPreviewBySession] = useState<Record<string, string | null>>({});
+  const [highlightedSessionIds, setHighlightedSessionIds] = useState<string[]>([]);
   // Open editor/web tabs are tracked per terminal session: each session keeps
   // its own tab set, so switching sessions swaps the visible tabs and a brand
   // new session starts as just the terminal. The terminal is always tab #1; all
@@ -210,6 +211,10 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   useEffect(() => {
     sessionsRef.current = sessions;
   }, [sessions]);
+
+  useEffect(() => {
+    if (activeTerminalId) clearSessionAttention(activeTerminalId);
+  }, [activeTerminalId]);
 
   function requireTrusted(action: string) {
     if (workspaceTrusted) return true;
@@ -819,6 +824,25 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     });
   }
 
+  function markSessionAttention(sessionId: string) {
+    setHighlightedSessionIds((ids) => ids.includes(sessionId) ? ids : [...ids, sessionId]);
+  }
+
+  function clearSessionAttention(sessionId: string) {
+    setHighlightedSessionIds((ids) => ids.filter((id) => id !== sessionId));
+  }
+
+  function activateSession(sessionId: string) {
+    const hadAttention = highlightedSessionIds.includes(sessionId);
+    clearSessionAttention(sessionId);
+    if (hadAttention) {
+      patchSession(sessionId, (prev) => prev.activeWeb && prev.openLinks.some((link) => link.id === prev.activeWeb) ? { ...prev, activeKind: 'web' } : prev);
+    }
+    const target = allSessions.find((session) => session.id === sessionId);
+    sessionStore.setActiveSession(sessionId);
+    if (target && target.workspaceId !== workspace.id) void onOpenWorkspace(target.workspaceId);
+  }
+
   // Browser opens captured from terminal tools (via the loopback bridge). Respect
   // the external-browser setting so CLI/browser consent prompts do what they say.
   function openCapturedLink(url: string, sessionId?: string) {
@@ -831,21 +855,22 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       : null;
     const targetSessionId = target?.id ?? activeTerminalId;
     if (!targetSessionId) return;
+    const targetIsActive = targetSessionId === activeTerminalId && (!target || target.workspaceId === workspace.id);
     const mode = settings?.capturedLinkOpenMode ?? 'tab';
     const split = mode === 'tab' ? null : (mode.replace('split-', '') as 'right' | 'left' | 'up' | 'down');
     patchSession(targetSessionId, (prev) => {
       const existing = prev.openLinks.find((link) => link.url === url);
-      const base = split
-        ? { ...prev, webSplit: split }
-        : { ...prev, activeKind: 'web' as const };
-      if (existing) return { ...base, activeWeb: existing.id };
-      const tab: WebTab = { id: crypto.randomUUID(), url, name: linkLabel(url) };
+      const tabId = existing?.id ?? crypto.randomUUID();
+      const base = targetIsActive
+        ? split
+          ? { ...prev, webSplit: split }
+          : { ...prev, activeKind: 'web' as const }
+        : prev;
+      if (existing) return { ...base, activeWeb: tabId };
+      const tab: WebTab = { id: tabId, url, name: linkLabel(url) };
       return { ...base, openLinks: [...prev.openLinks, tab], activeWeb: tab.id };
     });
-    if (target) {
-      sessionStore.setActiveSession(target.id);
-      if (target.workspaceId !== workspace.id) void onOpenWorkspace(target.workspaceId);
-    }
+    if (!targetIsActive) markSessionAttention(targetSessionId);
   }
 
   function closeLink(id: string) {
@@ -1372,6 +1397,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     sessions,
     allSessions,
     activeSessionId: activeTerminalId,
+    highlightedSessionIds,
     headlessRuns,
     isRepo,
     refreshToken,
@@ -1386,7 +1412,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       openGit: () => { const gitView = activityContributions.find((view) => view.icon === 'git'); if (gitView) openView(gitView.id); },
       refreshGit,
       revealFolder: (targetPath = workspace.path) => void api.fs.revealInExplorer(targetPath),
-      selectSession: (id) => { const target = allSessions.find((session) => session.id === id); sessionStore.setActiveSession(id); if (target && target.workspaceId !== workspace.id) void onOpenWorkspace(target.workspaceId); },
+      selectSession: activateSession,
       createSession: () => createTerminal(undefined, 'Terminal', ''),
     },
     workspaces,

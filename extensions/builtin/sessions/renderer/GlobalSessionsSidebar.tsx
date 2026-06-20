@@ -9,6 +9,7 @@ interface Props {
   workspaces: Workspace[];
   activeWorkspaceId: string;
   activeSessionId: string | null;
+  highlightedSessionIds: string[];
   sessions: WorkspaceTerminalSession[];
   profiles: TerminalProfile[];
   defaultProfileId?: string;
@@ -26,7 +27,7 @@ interface Props {
   onDetachSession(id: string): void;
 }
 
-export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSessionId, sessions, profiles, defaultProfileId, emptySessionsVisible, showSessionCwdForAll, onCreateSession, onSelectSession, onOpenWorkspace, onCloseSession, onRenameSession, onRestartSession, onDuplicateSession, onSetCwd, onSplitSession, onDetachSession }: Props) {
+export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSessionId, highlightedSessionIds, sessions, profiles, defaultProfileId, emptySessionsVisible, showSessionCwdForAll, onCreateSession, onSelectSession, onOpenWorkspace, onCloseSession, onRenameSession, onRestartSession, onDuplicateSession, onSetCwd, onSplitSession, onDetachSession }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number; width: number } | null>(null);
   const [actionMenu, setActionMenu] = useState<{ session: WorkspaceTerminalSession; x: number; y: number } | null>(null);
@@ -130,10 +131,11 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
 
   function renderSession(session: WorkspaceTerminalSession, index: number) {
     const active = session.id === activeSessionId;
+    const highlighted = highlightedSessionIds.includes(session.id);
     return (
       <div
         key={session.id}
-        className={`global-session-card${active ? ' active' : ''}${draggingSessionId === session.id ? ' dragging' : ''}`}
+        className={`global-session-card${active ? ' active' : ''}${highlighted ? ' attention' : ''}${draggingSessionId === session.id ? ' dragging' : ''}`}
         draggable
         onDragStart={(event) => {
           setDraggingSessionId(session.id);
