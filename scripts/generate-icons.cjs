@@ -9,11 +9,11 @@ const SVG_PATH = path.join(BUILD_DIR, 'icon.svg');
 const PNG_PATH = path.join(BUILD_DIR, 'icon.png');
 const SIZE = 1024;
 
-if (!fs.existsSync(SVG_PATH)) {
-  throw new Error(`Missing icon source: ${path.relative(ROOT, SVG_PATH)}`);
-}
-
 fs.mkdirSync(BUILD_DIR, { recursive: true });
+
+if (!fs.existsSync(SVG_PATH)) {
+  fs.writeFileSync(SVG_PATH, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE}" role="img" aria-label="StackDock icon"><rect width="${SIZE}" height="${SIZE}" rx="220" fill="#111827"/><path d="M336 442 L438 512 L336 582" fill="none" stroke="#38BDF8" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/><path d="M480 604 H688" fill="none" stroke="#A78BFA" stroke-width="44" stroke-linecap="round"/></svg>\n`);
+}
 
 const pixels = Buffer.alloc(SIZE * SIZE * 4);
 

@@ -11,8 +11,14 @@ function extensionEnabled(settings: StackDockSettings, extensionId: string, defa
   return enabled;
 }
 
-export function getBundledTerminalProfiles(): TerminalProfile[] {
-  return [piTerminalProfile];
+function defaultShellForPlatform(platform = process.platform) {
+  if (platform === 'win32') return 'cmd.exe';
+  if (platform === 'darwin') return '/bin/zsh';
+  return process.env.SHELL || '/bin/bash';
+}
+
+export function getBundledTerminalProfiles(platform = process.platform): TerminalProfile[] {
+  return [{ ...piTerminalProfile, shell: defaultShellForPlatform(platform), args: platform === 'win32' ? [] : ['--login'] }];
 }
 
 function renderHookTemplate(template: string, command: string, ctx: TerminalCommandHookContext) {

@@ -38,16 +38,55 @@ function migrateCodeFont(fontFamily?: string) {
   return value;
 }
 
-function normalizeTerminalProfiles(profiles: TerminalProfile[] | undefined, fallback: TerminalProfile[]) {
+function normalizeTerminalProfile(profile: TerminalProfile): TerminalProfile {
+  const startupCommand = profile.startupCommand?.trim();
+  return {
+    ...profile,
+    args: Array.isArray(profile.args) ? profile.args : [],
+    startupCommand: startupCommand || undefined,
+  };
+}
+
+function isWindowsShell(shell: string) {
+  return /^[A-Za-z]:[\\/]/.test(shell) || shell.includes('\\') || /(?:^|[\\/])(?:powershell|pwsh|cmd|wsl)\.exe$/i.test(shell) || /\.exe$/i.test(shell);
+}
+
+function normalizeTerminalProfiles(profiles: TerminalProfile[] | undefined, fallback: TerminalProfile[], platform = process.platform) {
   if (!profiles?.length) return fallback;
-  return profiles.map((profile) => {
-    const startupCommand = profile.startupCommand?.trim();
-    return {
-      ...profile,
-      args: Array.isArray(profile.args) ? profile.args : [],
-      startupCommand: startupCommand || undefined,
-    };
-  });
+  const normalized = profiles.map(normalizeTerminalProfile);
+  if (platform !== 'win32') {
+    const fallbackIds = new Set(fallback.map((profile) => profile.id));
+    const legacyWindowsIds = new Set(['powershell', 'cmd', 'git-bash', 'wsl']);
+    const retained = normalized.filter((profile) => !fallbackIds.has(profile.id) && !legacyWindowsIds.has(profile.id) && !isWindowsShell(profile.shell));
+    return [...fallback, ...retained];
+  }
+  return normalized;
+}
+
+function getDefaultTerminalProfiles(platform = process.platform): TerminalProfile[] {
+  const bundled = getBundledTerminalProfiles(platform);
+  if (platform === 'darwin') {
+    return [
+      { id: 'zsh', name: 'Zsh', shell: '/bin/zsh', args: ['--login'] },
+      { id: 'bash', name: 'Bash', shell: '/bin/bash', args: ['--login'] },
+      ...bundled,
+    ];
+  }
+  if (platform !== 'win32') {
+    return [
+      { id: 'bash', name: 'Bash', shell: process.env.SHELL || '/bin/bash', args: ['--login'] },
+      { id: 'sh', name: 'sh', shell: '/bin/sh', args: [] },
+      ...bundled,
+    ];
+  }
+  const programFiles = process.env['ProgramFiles'] ?? 'C:\\Program Files';
+  return [
+    { id: 'powershell', name: 'PowerShell', shell: 'powershell.exe', args: ['-NoLogo', '-NoExit'] },
+    { id: 'cmd', name: 'Command Prompt', shell: 'cmd.exe', args: [] },
+    ...bundled,
+    { id: 'git-bash', name: 'Git Bash', shell: `${programFiles}\\Git\\bin\\bash.exe`, args: ['--login', '-i'] },
+    { id: 'wsl', name: 'WSL', shell: 'wsl.exe', args: [] },
+  ];
 }
 
 function isConfigPrimitive(value: unknown): value is ExtensionConfigPrimitive {
@@ -77,13 +116,13 @@ function getBundledExtensionConfigDefaults(): Record<string, Record<string, Exte
   return defaults;
 }
 
-export function getDefaultSettings(): StackDockSettings {
-  const programFiles = process.env['ProgramFiles'] ?? 'C:\\Program Files';
+export function getDefaultSettings(platform = process.platform): StackDockSettings {
+  const terminalProfiles = getDefaultTerminalProfiles(platform);
   return {
     theme: 'dark',
     themeId: DEFAULT_THEME_ID,
     importedThemes: [],
-    defaultTerminalProfileId: 'powershell',
+    defaultTerminalProfileId: terminalProfiles[0]?.id,
     confirmBeforeDiscard: true,
     emptySessionsVisible: false,
     showSessionCwdForAll: false,
@@ -109,13 +148,7 @@ export function getDefaultSettings(): StackDockSettings {
         'stackdock.workspaceStatus': { showPath: true },
       },
     },
-    terminalProfiles: [
-      { id: 'powershell', name: 'PowerShell', shell: 'powershell.exe', args: ['-NoLogo', '-NoExit'] },
-      { id: 'cmd', name: 'Command Prompt', shell: 'cmd.exe', args: [] },
-      ...getBundledTerminalProfiles(),
-      { id: 'git-bash', name: 'Git Bash', shell: `${programFiles}\\Git\\bin\\bash.exe`, args: ['--login', '-i'] },
-      { id: 'wsl', name: 'WSL', shell: 'wsl.exe', args: [] },
-    ],
+    terminalProfiles,
   };
 }
 
@@ -159,9 +192,14 @@ export async function loadSettings(): Promise<StackDockSettings> {
         ...rawExtensionConfig['stackdock.workspaceStatus'],
       },
     };
+    const terminalProfiles = normalizeTerminalProfiles(raw.terminalProfiles, defaults.terminalProfiles);
+    const defaultTerminalProfileId = typeof raw.defaultTerminalProfileId === 'string' && terminalProfiles.some((profile) => profile.id === raw.defaultTerminalProfileId)
+      ? raw.defaultTerminalProfileId
+      : defaults.defaultTerminalProfileId;
     return {
       ...defaults,
       ...raw,
+      defaultTerminalProfileId,
       themeId,
       importedThemes,
       ui: {
@@ -183,7 +221,7 @@ export async function loadSettings(): Promise<StackDockSettings> {
       emptySessionsVisible: extensionsConfig['stackdock.sessions'].emptySessionsVisible === true,
       showSessionCwdForAll: extensionsConfig['stackdock.sessions'].showSessionCwdForAll === true,
       gitRefreshIntervalSeconds: Math.max(1, Number(extensionsConfig['stackdock.git'].refreshIntervalSeconds) || defaults.gitRefreshIntervalSeconds),
-      terminalProfiles: normalizeTerminalProfiles(raw.terminalProfiles, defaults.terminalProfiles),
+      terminalProfiles,
       keybinds: normalizeKeybindSettings(raw.keybinds, defaults.keybinds),
       extensions: {
         localPackagePaths: Array.isArray(raw.extensions?.localPackagePaths) ? raw.extensions.localPackagePaths.filter((item): item is string => typeof item === 'string') : defaults.extensions.localPackagePaths,
