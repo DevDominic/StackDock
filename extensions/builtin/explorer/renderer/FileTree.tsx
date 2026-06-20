@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react';
 
 const FILE_TREE_REFRESH_DEBOUNCE_MS = 500;
 import type { DirectoryEntry, GitFileStatus } from '../../../../src/shared/types';
@@ -25,7 +25,7 @@ type IgnoredLookup = (entry: DirectoryEntry) => boolean;
 const EXPLORER_PATH_MIME = 'application/x-stackdock-explorer-path';
 const MAX_SEARCH_RESULTS = 200;
 
-interface ContextTarget { entry: DirectoryEntry | null; x: number; y: number; }
+interface ContextTarget { entry: DirectoryEntry | null; entries?: DirectoryEntry[]; x: number; y: number; }
 interface NodeProps {
   entry: DirectoryEntry;
   depth: number;
@@ -33,6 +33,10 @@ interface NodeProps {
   gitLookup: GitLookup;
   ignoredLookup: IgnoredLookup;
   onOpenFile(path: string): void;
+  selectedPaths: Set<string>;
+  onSelectEntry(entry: DirectoryEntry, event: MouseEvent<HTMLButtonElement>, groupEntries: DirectoryEntry[]): boolean;
+  getDragEntries(entry: DirectoryEntry): DirectoryEntry[];
+  onMoveEntries(entries: DirectoryEntry[], targetFolder: string): Promise<void>;
   onContextMenu(target: ContextTarget): void;
   loadChildren(path: string): Promise<DirectoryEntry[]>;
 }
@@ -42,6 +46,20 @@ function parentPath(path: string) { return path.replace(/[\\/][^\\/]+$/, ''); }
 function normalizePath(p: string) { return p.replace(/\\/g, '/').replace(/\/+$/, ''); }
 function isHtmlFile(path: string) { return /\.html?$/i.test(path); }
 function matchesSearch(entry: DirectoryEntry, query: string) { return `${entry.name} ${entry.path}`.toLowerCase().includes(query); }
+function describeEntries(entries: DirectoryEntry[]) { return `${entries.length} selected ${entries.length === 1 ? 'item' : 'items'}`; }
+function dragPayload(entries: DirectoryEntry[]) { return JSON.stringify({ entries: entries.map((entry) => ({ path: entry.path, name: entry.name, isDirectory: entry.isDirectory, isFile: entry.isFile, hidden: entry.hidden })) }); }
+function entriesFromDrag(event: DragEvent) {
+  const raw = event.dataTransfer.getData(EXPLORER_PATH_MIME);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as { entries?: DirectoryEntry[]; path?: string; isDirectory?: boolean };
+    if (Array.isArray(parsed.entries)) return parsed.entries.filter((entry) => typeof entry.path === 'string' && typeof entry.name === 'string');
+    if (typeof parsed.path === 'string') return [{ path: parsed.path, name: parsed.path.split(/[\\/]/).pop() ?? parsed.path, isDirectory: parsed.isDirectory === true, isFile: parsed.isDirectory !== true, hidden: false }];
+  } catch {
+    return [];
+  }
+  return [];
+}
 
 function decorateGit(file: GitFileStatus): GitDecoration {
   if (file.untracked) return { letter: 'U', cls: 'git-untracked' };
@@ -66,7 +84,7 @@ function buildGitLookup(rootPath: string, gitFiles: GitFileStatus[]): GitLookup 
   };
 }
 
-function FileNode({ entry, depth, version, gitLookup, ignoredLookup, onOpenFile, onContextMenu, loadChildren }: NodeProps) {
+function FileNode({ entry, depth, version, gitLookup, ignoredLookup, onOpenFile, selectedPaths, onSelectEntry, getDragEntries, onMoveEntries, onContextMenu, loadChildren }: NodeProps) {
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<DirectoryEntry[] | null>(null);
 
@@ -80,26 +98,42 @@ function FileNode({ entry, depth, version, gitLookup, ignoredLookup, onOpenFile,
     return () => { active = false; };
   }, [version, expanded, entry.path, loadChildren]);
 
-  const toggle = async () => {
+  const toggle = async (event: MouseEvent<HTMLButtonElement>) => {
+    if (onSelectEntry(entry, event, children ?? [])) return;
     if (!entry.isDirectory) { onOpenFile(entry.path); return; }
     const next = !expanded;
     setExpanded(next);
     if (next && children === null) setChildren(await loadChildren(entry.path));
   };
 
-  const handleContextMenu = (event: React.MouseEvent) => {
+  const handleContextMenu = (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
     onContextMenu({ entry, x: event.clientX, y: event.clientY });
   };
 
+  const handleDragOver = (event: DragEvent<HTMLButtonElement>) => {
+    if (!entry.isDirectory || !event.dataTransfer.types.includes(EXPLORER_PATH_MIME)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (event: DragEvent<HTMLButtonElement>) => {
+    if (!entry.isDirectory) return;
+    const entries = entriesFromDrag(event);
+    if (!entries.length) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void onMoveEntries(entries, entry.path);
+  };
+
   const git = gitLookup(entry);
   const ignored = ignoredLookup(entry);
-  const rowClass = ['tree-row', git?.cls, ignored ? 'git-ignored' : ''].filter(Boolean).join(' ');
+  const rowClass = ['tree-row', selectedPaths.has(entry.path) ? 'selected' : '', git?.cls, ignored ? 'git-ignored' : ''].filter(Boolean).join(' ');
 
   return (
     <div>
-      <button className={rowClass} style={{ paddingLeft: 6 + depth * 12 }} onClick={toggle} onContextMenu={handleContextMenu} draggable onDragStart={(event) => { event.dataTransfer.setData(EXPLORER_PATH_MIME, JSON.stringify({ path: entry.path, isDirectory: entry.isDirectory })); event.dataTransfer.effectAllowed = 'copy'; }}>
+      <button className={rowClass} style={{ paddingLeft: 6 + depth * 12 }} onClick={toggle} onContextMenu={handleContextMenu} onDragOver={handleDragOver} onDrop={handleDrop} draggable onDragStart={(event) => { event.dataTransfer.setData(EXPLORER_PATH_MIME, dragPayload(getDragEntries(entry))); event.dataTransfer.effectAllowed = 'move'; }}>
         <span className="tree-twisty">{entry.isDirectory ? (expanded ? '▾' : '▸') : ''}</span>
         <FileIcon name={entry.name} isDirectory={entry.isDirectory} expanded={expanded} />
         <span className="tree-label">{entry.name}</span>
@@ -107,7 +141,7 @@ function FileNode({ entry, depth, version, gitLookup, ignoredLookup, onOpenFile,
       </button>
       {entry.isDirectory && expanded && children ? (
         <div>
-          {children.map((child) => <FileNode key={child.path} entry={child} depth={depth + 1} version={version} gitLookup={gitLookup} ignoredLookup={ignoredLookup} onOpenFile={onOpenFile} onContextMenu={onContextMenu} loadChildren={loadChildren} />)}
+          {children.map((child) => <FileNode key={child.path} entry={child} depth={depth + 1} version={version} gitLookup={gitLookup} ignoredLookup={ignoredLookup} onOpenFile={onOpenFile} selectedPaths={selectedPaths} onSelectEntry={(target, event) => onSelectEntry(target, event, children)} getDragEntries={getDragEntries} onMoveEntries={onMoveEntries} onContextMenu={onContextMenu} loadChildren={loadChildren} />)}
         </div>
       ) : null}
     </div>
@@ -125,11 +159,14 @@ export function FileTree({ rootPath, gitFiles, canAddToContext, onOpenFile, onPr
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<DirectoryEntry[]>([]);
   const [searching, setSearching] = useState(false);
+  const [selectedEntries, setSelectedEntries] = useState<DirectoryEntry[]>([]);
+  const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const previousRootPathRef = useRef(rootPath);
   const ignoredLookup = useMemo<IgnoredLookup>(() => (entry) => ignoredPaths.has(normalizePath(entry.path).toLowerCase()), [ignoredPaths]);
+  const selectedPaths = useMemo(() => new Set(selectedEntries.map((entry) => entry.path)), [selectedEntries]);
   const promptDialog = usePromptDialog();
   const rememberIgnored = async (entries: DirectoryEntry[]) => {
     if (!entries.length) return;
@@ -258,8 +295,104 @@ export function FileTree({ rootPath, gitFiles, canAddToContext, onOpenFile, onPr
     setSearchOpen(false);
   }
 
+  function selectEntry(entry: DirectoryEntry, event: MouseEvent<HTMLButtonElement>, groupEntries: DirectoryEntry[]) {
+    const multiKey = event.ctrlKey || event.metaKey;
+    if (!multiKey && !event.shiftKey) {
+      setSelectedEntries([entry]);
+      setLastSelectedPath(entry.path);
+      return false;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.shiftKey && lastSelectedPath) {
+      const start = groupEntries.findIndex((item) => item.path === lastSelectedPath);
+      const end = groupEntries.findIndex((item) => item.path === entry.path);
+      if (start >= 0 && end >= 0) {
+        const [from, to] = start < end ? [start, end] : [end, start];
+        const range = groupEntries.slice(from, to + 1);
+        setSelectedEntries((current) => {
+          const next = new Map(current.map((item) => [item.path, item]));
+          for (const item of range) next.set(item.path, item);
+          return [...next.values()];
+        });
+      } else {
+        setSelectedEntries([entry]);
+      }
+    } else if (multiKey) {
+      setSelectedEntries((current) => current.some((item) => item.path === entry.path) ? current.filter((item) => item.path !== entry.path) : [...current, entry]);
+      setLastSelectedPath(entry.path);
+    }
+    return true;
+  }
+
+  function openContextMenu(target: ContextTarget) {
+    if (!target.entry) {
+      setSelectedEntries([]);
+      setMenu(target);
+      return;
+    }
+    const entries = selectedPaths.has(target.entry.path) ? selectedEntries : [target.entry];
+    if (!selectedPaths.has(target.entry.path)) {
+      setSelectedEntries([target.entry]);
+      setLastSelectedPath(target.entry.path);
+    }
+    setMenu({ ...target, entries });
+  }
+
+  const menuEntries = menu?.entries ?? (menu?.entry ? [menu.entry] : []);
+  const hasMultiSelection = menuEntries.length > 1;
+
+  async function addEntriesToContext(entries: DirectoryEntry[]) {
+    for (const entry of entries) await onAddPathToContext(entry.isDirectory ? entry.path : parentPath(entry.path));
+    setMenu(null);
+  }
+
+  async function removeEntries(entries: DirectoryEntry[]) {
+    if (!entries.length) return;
+    const title = entries.length === 1 ? `Delete ${entries[0].name}?` : `Delete ${entries.length} selected items?`;
+    if (!(await promptDialog.confirm({ title, message: 'This removes item(s) from disk.', confirmLabel: 'Delete', danger: true }))) return;
+    for (const entry of entries) {
+      await api.fs.deletePath(entry.path);
+      await onDeletedPath(entry.path);
+    }
+    setSelectedEntries((current) => current.filter((entry) => !entries.some((item) => item.path === entry.path)));
+    await afterAction();
+  }
+
+  function dragEntriesFor(entry: DirectoryEntry) {
+    return selectedPaths.has(entry.path) ? selectedEntries : [entry];
+  }
+
+  async function moveEntries(entries: DirectoryEntry[], targetFolder: string) {
+    const targetRoot = normalizePath(targetFolder).toLowerCase();
+    const uniqueEntries = [...new Map(entries.map((entry) => [normalizePath(entry.path).toLowerCase(), entry])).values()]
+      .filter((entry) => !entries.some((candidate) => candidate.isDirectory && normalizePath(entry.path).toLowerCase().startsWith(`${normalizePath(candidate.path).toLowerCase()}/`)));
+    const movable = uniqueEntries.filter((entry) => {
+      const source = normalizePath(entry.path).toLowerCase();
+      if (normalizePath(parentPath(entry.path)).toLowerCase() === targetRoot) return false;
+      if (entry.isDirectory && (targetRoot === source || targetRoot.startsWith(`${source}/`))) return false;
+      return true;
+    });
+    if (!movable.length) return;
+
+    for (const entry of movable) {
+      const target = joinPath(targetFolder, entry.name);
+      if (await api.fs.pathExists(target)) {
+        const overwrite = await promptDialog.confirm({ title: `${entry.name} already exists`, message: 'Replace the existing item at the destination?', confirmLabel: 'Replace', danger: true });
+        if (!overwrite) continue;
+        await api.fs.deletePath(target);
+      }
+      await api.fs.renamePath(entry.path, target);
+      await onDeletedPath(entry.path);
+    }
+    setSelectedEntries([]);
+    setLastSelectedPath(null);
+    await afterAction();
+  }
+
   return (
-    <aside className="panel file-tree" onContextMenu={(event) => { event.preventDefault(); setMenu({ entry: null, x: event.clientX, y: event.clientY }); }}>
+    <aside className="panel file-tree" onContextMenu={(event) => { event.preventDefault(); openContextMenu({ entry: null, x: event.clientX, y: event.clientY }); }}>
       <div className="panel-title row">
         <span>Files</span>
         <span className="panel-title-actions">
@@ -274,32 +407,33 @@ export function FileTree({ rootPath, gitFiles, canAddToContext, onOpenFile, onPr
         </div>
       ) : null}
       {loading ? <div className="muted pad">Loading...</div> : null}
-      <div className="tree-list">
+      <div className="tree-list" onDragOver={(event) => { if (!event.dataTransfer.types.includes(EXPLORER_PATH_MIME)) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }} onDrop={(event) => { const entries = entriesFromDrag(event); if (!entries.length) return; event.preventDefault(); void moveEntries(entries, rootPath); }}>
         {searchActive ? (
           <>
             {searching ? <div className="muted pad">Searching...</div> : null}
             {!searching && !searchResults.length ? <div className="muted pad">No matches.</div> : null}
             {searchResults.map((entry) => (
-              <button key={entry.path} className="tree-row search-result" title={entry.path} onClick={() => entry.isDirectory ? onOpenTerminalHere(entry.path) : onOpenFile(entry.path)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setMenu({ entry, x: event.clientX, y: event.clientY }); }} draggable onDragStart={(event) => { event.dataTransfer.setData(EXPLORER_PATH_MIME, JSON.stringify({ path: entry.path, isDirectory: entry.isDirectory })); event.dataTransfer.effectAllowed = 'copy'; }}>
+              <button key={entry.path} className={`tree-row search-result${selectedPaths.has(entry.path) ? ' selected' : ''}`} title={entry.path} onClick={(event) => { if (selectEntry(entry, event, searchResults)) return; entry.isDirectory ? onOpenTerminalHere(entry.path) : onOpenFile(entry.path); }} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); openContextMenu({ entry, x: event.clientX, y: event.clientY }); }} onDragOver={(event) => { if (!entry.isDirectory || !event.dataTransfer.types.includes(EXPLORER_PATH_MIME)) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }} onDrop={(event) => { if (!entry.isDirectory) return; const entries = entriesFromDrag(event); if (!entries.length) return; event.preventDefault(); event.stopPropagation(); void moveEntries(entries, entry.path); }} draggable onDragStart={(event) => { event.dataTransfer.setData(EXPLORER_PATH_MIME, dragPayload(dragEntriesFor(entry))); event.dataTransfer.effectAllowed = 'move'; }}>
                 <FileIcon name={entry.name} isDirectory={entry.isDirectory} expanded={false} />
                 <span className="tree-label">{entry.name}</span>
                 <small className="tree-search-path">{entry.path.slice(rootPath.length).replace(/^[\\/]/, '')}</small>
               </button>
             ))}
           </>
-        ) : rootChildren.map((entry) => <FileNode key={entry.path} entry={entry} depth={0} version={treeVersion} gitLookup={gitLookup} ignoredLookup={ignoredLookup} onOpenFile={onOpenFile} onContextMenu={setMenu} loadChildren={loadChildren} />)}
+        ) : rootChildren.map((entry) => <FileNode key={entry.path} entry={entry} depth={0} version={treeVersion} gitLookup={gitLookup} ignoredLookup={ignoredLookup} onOpenFile={onOpenFile} selectedPaths={selectedPaths} onSelectEntry={(target, event) => selectEntry(target, event, rootChildren)} getDragEntries={dragEntriesFor} onMoveEntries={moveEntries} onContextMenu={openContextMenu} loadChildren={loadChildren} />)}
       </div>
       {menu ? (
         <div ref={menuRef} className="context-menu" style={{ top: menu.y, left: menu.x }} onMouseDown={(event) => event.stopPropagation()} onContextMenu={(event) => event.stopPropagation()}>
-          {menu.entry?.isDirectory ? <button className="context-menu-item" onClick={() => { onOpenTerminalHere(menu.entry!.path); setMenu(null); }}>Open terminal here</button> : null}
-          {menu.entry ? <button className="context-menu-item" disabled={!canAddToContext} onClick={() => { void onAddPathToContext(menu.entry!.isDirectory ? menu.entry!.path : parentPath(menu.entry!.path)); setMenu(null); }}>Add to context</button> : null}
-          {menu.entry?.isDirectory || !menu.entry ? <button className="context-menu-item" onClick={() => createFileIn(menu.entry?.path ?? rootPath)}>New file</button> : null}
-          {menu.entry?.isDirectory || !menu.entry ? <button className="context-menu-item" onClick={() => createFolderIn(menu.entry?.path ?? rootPath)}>New folder</button> : null}
-          {menu.entry ? <button className="context-menu-item" onClick={() => rename(menu.entry!)}>Rename</button> : null}
-          {menu.entry ? <button className="context-menu-item" onClick={() => { void api.fs.revealInExplorer(menu.entry!.path); setMenu(null); }}>Reveal in Explorer</button> : null}
-          {menu.entry && menu.entry.isFile && isHtmlFile(menu.entry.path) ? <button className="context-menu-item" onClick={() => { onPreviewFile(menu.entry!.path); setMenu(null); }}>Preview</button> : null}
-          {menu.entry && !menu.entry.isDirectory ? <button className="context-menu-item" onClick={() => { void api.shell.openPath(menu.entry!.path); setMenu(null); }}>Open External</button> : null}
-          {menu.entry ? <button className="context-menu-item danger" onClick={() => remove(menu.entry!)}>Delete</button> : null}
+          {hasMultiSelection ? <div className="context-menu-label">{describeEntries(menuEntries)}</div> : null}
+          {!hasMultiSelection && menu.entry?.isDirectory ? <button className="context-menu-item" onClick={() => { onOpenTerminalHere(menu.entry!.path); setMenu(null); }}>Open terminal here</button> : null}
+          {menu.entry ? <button className="context-menu-item" disabled={!canAddToContext} onClick={() => { void addEntriesToContext(menuEntries); }}>{hasMultiSelection ? 'Add selected to context' : 'Add to context'}</button> : null}
+          {!hasMultiSelection && (menu.entry?.isDirectory || !menu.entry) ? <button className="context-menu-item" onClick={() => createFileIn(menu.entry?.path ?? rootPath)}>New file</button> : null}
+          {!hasMultiSelection && (menu.entry?.isDirectory || !menu.entry) ? <button className="context-menu-item" onClick={() => createFolderIn(menu.entry?.path ?? rootPath)}>New folder</button> : null}
+          {!hasMultiSelection && menu.entry ? <button className="context-menu-item" onClick={() => rename(menu.entry!)}>Rename</button> : null}
+          {menu.entry ? <button className="context-menu-item" onClick={() => { void api.fs.revealInExplorer(menuEntries[0].path); setMenu(null); }}>{hasMultiSelection ? 'Reveal first in Explorer' : 'Reveal in Explorer'}</button> : null}
+          {!hasMultiSelection && menu.entry && menu.entry.isFile && isHtmlFile(menu.entry.path) ? <button className="context-menu-item" onClick={() => { onPreviewFile(menu.entry!.path); setMenu(null); }}>Preview</button> : null}
+          {!hasMultiSelection && menu.entry && !menu.entry.isDirectory ? <button className="context-menu-item" onClick={() => { void api.shell.openPath(menu.entry!.path); setMenu(null); }}>Open External</button> : null}
+          {menu.entry ? <button className="context-menu-item danger" onClick={() => removeEntries(menuEntries)}>{hasMultiSelection ? 'Delete selected' : 'Delete'}</button> : null}
         </div>
       ) : null}
     </aside>
