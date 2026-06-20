@@ -267,7 +267,14 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
           links.push({
             text: url,
             range: { start: { x: startX, y: bufferLineNumber }, end: { x: startX + url.length - 1, y: bufferLineNumber } },
-            activate: (event: MouseEvent, clicked: string) => { event.preventDefault(); onOpenLinkRef.current?.(clicked); },
+            activate: (event: MouseEvent, clicked: string) => {
+              event.preventDefault();
+              if (event.ctrlKey || event.metaKey) {
+                void api.shell.openExternal(clicked).catch(() => undefined);
+                return;
+              }
+              onOpenLinkRef.current?.(clicked);
+            },
             decorations: { pointerCursor: true, underline: true },
           });
         }
