@@ -22,6 +22,9 @@ pnpm-debug.log*
 !.env.example
 .lean-ctx/
 
+# Private local extension workspaces
+private-extensions/
+
 # OS/editor files
 .DS_Store
 Thumbs.db
