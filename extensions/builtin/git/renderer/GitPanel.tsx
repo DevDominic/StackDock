@@ -46,12 +46,17 @@ function statusClass(file: GitFileStatus) {
   return 'git-modified';
 }
 
+function isDirectoryStatusPath(path: string) {
+  return /[\\/]$/.test(path);
+}
+
 function splitPath(path: string) {
   const normalized = path.replace(/\\/g, '/');
-  const index = normalized.lastIndexOf('/');
+  const displayPath = normalized.replace(/\/+$/, '');
+  const index = displayPath.lastIndexOf('/');
   return index >= 0
-    ? { dir: normalized.slice(0, index), name: normalized.slice(index + 1) }
-    : { dir: '', name: normalized };
+    ? { dir: displayPath.slice(0, index), name: displayPath.slice(index + 1) }
+    : { dir: '', name: displayPath };
 }
 
 export function GitPanel({ status, error, selectedFile, selectedStagedPaths, selectedChangePaths, onSelectFile, onStage, onStageSelected, onStageAll, onUnstage, onUnstageSelected, onDiscard, onDiscardSelected, onIgnore, onCommit, onSwitchBranch, onFetch, onPull, onPullMerge, onPush, onAbortMerge, onRefresh, onClearError }: Props) {
@@ -135,10 +140,11 @@ function GitGroup({ title, group, files, selectedFile, selectedPaths, onSelectFi
           const { dir, name } = splitPath(file.path);
           const isSelected = selected.has(file.path);
           const isActive = selectedFile?.path === file.path;
+          const isDirectory = isDirectoryStatusPath(file.path);
           return (
             <button key={`${title}:${file.path}`} className={`tree-row git-file ${cls}${isSelected ? ' selected' : ''}${isActive ? ' active' : ''}`} title={file.path} onClick={(event) => onSelectFile(file, event, files)} onContextMenu={(event) => { event.preventDefault(); onSelectFile(file, event, files); setMenu({ file, x: event.clientX, y: event.clientY }); }}>
               <span className="tree-twisty" />
-              <FileIcon name={name} isDirectory={false} expanded={false} />
+              <FileIcon name={name} isDirectory={isDirectory} expanded={false} />
               <span className="git-path">
                 {dir ? <><span className="git-path-dir">{dir}</span><span className="git-path-separator">/</span></> : null}
                 <span className="tree-label git-path-name">{name}</span>

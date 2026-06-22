@@ -91,6 +91,10 @@ function joinPath(base: string, file: string) {
   return `${base.replace(/[\\/]+$/, '')}/${file.replace(/^[\\/]+/, '')}`;
 }
 
+function isGitDirectoryStatusPath(file: string) {
+  return /[\\/]$/.test(file);
+}
+
 function baseName(targetPath: string) {
   return targetPath.split(/[\\/]/).filter(Boolean).pop() ?? targetPath;
 }
@@ -1118,13 +1122,14 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
 
   async function openGitDiff(file: GitFileStatus, staged = file.staged && !file.unstaged) {
     const absolutePath = joinPath(workspace.path, file.path);
-    const contents = await api.git.fileContents(workspace.path, file.path, staged);
     setSelectedGitFile(file);
     setSelectedGitStaged(staged);
+    if (isGitDirectoryStatusPath(file.path)) return;
+    const contents = await api.git.fileContents(workspace.path, file.path, staged);
     setEditorDiff({ path: absolutePath, original: contents.original, staged, untracked: file.untracked });
     patchActive((prev) => {
       const targetGroupId = prev.activeEditorGroup;
-      const tab: OpenFileTab = { path: absolutePath, name: absolutePath.split(/[\\/]/).pop() ?? absolutePath, content: contents.modified, dirty: false };
+      const tab: OpenFileTab = { path: absolutePath, name: baseName(absolutePath), content: contents.modified, dirty: false };
       return {
         ...prev,
         activeKind: 'editor',
