@@ -157,8 +157,8 @@ export function FileTree({ rootPath, gitFiles, canAddToContext, onOpenFile, onPr
   const [ignoredPaths, setIgnoredPaths] = useState<Set<string>>(() => new Set());
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
-  const [searchResults, setSearchResults] = useState<DirectoryEntry[]>([]);
-  const [searching, setSearching] = useState(false);
+  const [searchIndex, setSearchIndex] = useState<DirectoryEntry[]>([]);
+  const [searchIndexing, setSearchIndexing] = useState(false);
   const [selectedEntries, setSelectedEntries] = useState<DirectoryEntry[]>([]);
   const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -167,6 +167,11 @@ export function FileTree({ rootPath, gitFiles, canAddToContext, onOpenFile, onPr
   const previousRootPathRef = useRef(rootPath);
   const ignoredLookup = useMemo<IgnoredLookup>(() => (entry) => ignoredPaths.has(normalizePath(entry.path).toLowerCase()), [ignoredPaths]);
   const selectedPaths = useMemo(() => new Set(selectedEntries.map((entry) => entry.path)), [selectedEntries]);
+  const searchResults = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return [];
+    return searchIndex.filter((entry) => matchesSearch(entry, needle)).slice(0, MAX_SEARCH_RESULTS);
+  }, [search, searchIndex]);
   const promptDialog = usePromptDialog();
   const rememberIgnored = async (entries: DirectoryEntry[]) => {
     if (!entries.length) return;
@@ -189,28 +194,42 @@ export function FileTree({ rootPath, gitFiles, canAddToContext, onOpenFile, onPr
   }, [searchOpen]);
 
   useEffect(() => {
-    const needle = search.trim().toLowerCase();
-    if (!needle) { setSearchResults([]); setSearching(false); return; }
     let cancelled = false;
-    setSearching(true);
-    const timer = window.setTimeout(async () => {
-      const results: DirectoryEntry[] = [];
+    const entriesByPath = new Map<string, DirectoryEntry>();
+    let lastPublish = 0;
+    const publish = (force = false) => {
+      const now = Date.now();
+      if (!force && now - lastPublish < 120) return;
+      lastPublish = now;
+      if (!cancelled) setSearchIndex([...entriesByPath.values()]);
+    };
+    const addEntries = (entries: DirectoryEntry[]) => {
+      for (const entry of entries) entriesByPath.set(normalizePath(entry.path).toLowerCase(), entry);
+      publish();
+    };
+    const build = async () => {
+      setSearchIndexing(true);
+      setSearchIndex([]);
       const visit = async (folder: string, depth = 0) => {
-        if (cancelled || results.length >= MAX_SEARCH_RESULTS || depth > 10) return;
+        if (cancelled || depth > 25) return;
         let entries: DirectoryEntry[] = [];
         try { entries = await api.fs.readDirectory(folder); } catch { return; }
+        addEntries(entries);
         void rememberIgnored(entries);
         for (const entry of entries) {
-          if (matchesSearch(entry, needle)) results.push(entry);
+          if (cancelled) break;
           if (entry.isDirectory) await visit(entry.path, depth + 1);
-          if (cancelled || results.length >= MAX_SEARCH_RESULTS) break;
         }
       };
       await visit(rootPath);
-      if (!cancelled) { setSearchResults(results); setSearching(false); }
-    }, 180);
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [rootPath, search, treeVersion, refreshToken]);
+      if (!cancelled) {
+        publish(true);
+        setSearchIndexing(false);
+      }
+    };
+    void build();
+    return () => { cancelled = true; };
+  }, [rootPath, treeVersion, refreshToken]);
 
   useEffect(() => {
     let active = true;
@@ -402,7 +421,7 @@ export function FileTree({ rootPath, gitFiles, canAddToContext, onOpenFile, onPr
       </div>
       {searchOpen ? (
         <div className="tree-search-wrap">
-          <input ref={searchInputRef} className="tree-search-input" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { if (search) setSearch(''); else setSearchOpen(false); } }} placeholder="Search files" />
+          <input ref={searchInputRef} className="tree-search-input" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { if (search) setSearch(''); else setSearchOpen(false); } if (event.key === 'Enter' && searchResults[0]) { event.preventDefault(); searchResults[0].isDirectory ? onOpenTerminalHere(searchResults[0].path) : onOpenFile(searchResults[0].path); } }} placeholder="Search files" />
           <button className="tree-search-clear" title={search ? 'Clear search' : 'Close search'} onClick={search ? () => setSearch('') : closeSearch}>×</button>
         </div>
       ) : null}
@@ -410,8 +429,8 @@ export function FileTree({ rootPath, gitFiles, canAddToContext, onOpenFile, onPr
       <div className="tree-list" onDragOver={(event) => { if (!event.dataTransfer.types.includes(EXPLORER_PATH_MIME)) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }} onDrop={(event) => { const entries = entriesFromDrag(event); if (!entries.length) return; event.preventDefault(); void moveEntries(entries, rootPath); }}>
         {searchActive ? (
           <>
-            {searching ? <div className="muted pad">Searching...</div> : null}
-            {!searching && !searchResults.length ? <div className="muted pad">No matches.</div> : null}
+            {searchIndexing ? <div className="muted pad">Indexing files…</div> : null}
+            {!searchIndexing && !searchResults.length ? <div className="muted pad">No matches.</div> : null}
             {searchResults.map((entry) => (
               <button key={entry.path} className={`tree-row search-result${selectedPaths.has(entry.path) ? ' selected' : ''}`} title={entry.path} onClick={(event) => { if (selectEntry(entry, event, searchResults)) return; entry.isDirectory ? onOpenTerminalHere(entry.path) : onOpenFile(entry.path); }} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); openContextMenu({ entry, x: event.clientX, y: event.clientY }); }} onDragOver={(event) => { if (!entry.isDirectory || !event.dataTransfer.types.includes(EXPLORER_PATH_MIME)) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }} onDrop={(event) => { if (!entry.isDirectory) return; const entries = entriesFromDrag(event); if (!entries.length) return; event.preventDefault(); event.stopPropagation(); void moveEntries(entries, entry.path); }} draggable onDragStart={(event) => { event.dataTransfer.setData(EXPLORER_PATH_MIME, dragPayload(dragEntriesFor(entry))); event.dataTransfer.effectAllowed = 'move'; }}>
                 <FileIcon name={entry.name} isDirectory={entry.isDirectory} expanded={false} />
