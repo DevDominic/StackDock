@@ -155,6 +155,7 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
   const compareModifiedRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const compareOriginalDecorationsRef = useRef<string[]>([]);
   const compareModifiedDecorationsRef = useRef<string[]>([]);
+  const findKeybindingDisposablesRef = useRef<monaco.IDisposable[]>([]);
   const modelSubscriptionRef = useRef<monaco.IDisposable | null>(null);
   const activePathRef = useRef<string | null>(null);
   const onChangeFileRef = useRef(onChangeFile);
@@ -187,6 +188,8 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
     return () => {
       modelSubscriptionRef.current?.dispose();
       modelSubscriptionRef.current = null;
+      findKeybindingDisposablesRef.current.forEach((item) => item.dispose());
+      findKeybindingDisposablesRef.current = [];
       editorRef.current?.dispose();
       editorRef.current = null;
       diffEditorRef.current?.dispose();
@@ -272,6 +275,22 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
       if (visible) requestAnimationFrame(() => requestAnimationFrame(() => layoutEditor(editor, editorHostRef.current)));
     }
   }, [active?.path, active?.content, activeDiff?.path, activeDiff?.original, activeDiff?.staged, showAsDiff, diffMode, visible]);
+
+  useEffect(() => {
+    findKeybindingDisposablesRef.current.forEach((item) => item.dispose());
+    findKeybindingDisposablesRef.current = [editorRef.current, diffEditorRef.current?.getModifiedEditor() ?? null, compareModifiedRef.current]
+      .filter(Boolean)
+      .map((editor) => editor!.addAction({
+        id: `stackdock.find.${crypto.randomUUID()}`,
+        label: 'Find',
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF],
+        run: () => openFind(),
+      }));
+    return () => {
+      findKeybindingDisposablesRef.current.forEach((item) => item.dispose());
+      findKeybindingDisposablesRef.current = [];
+    };
+  }, [active?.path, showAsDiff, diffMode, openFind]);
 
   useEffect(() => {
     if (!visible) return;

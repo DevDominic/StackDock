@@ -41,6 +41,8 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
   const visibleWorkspaces = useMemo(() => workspaces.filter((workspace) => emptySessionsVisible || sessions.some((session) => session.workspaceId === workspace.id)), [emptySessionsVisible, sessions, workspaces]);
   const flatWorkspace = visibleWorkspaces.length <= 1 ? visibleWorkspaces[0] ?? workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? workspaces[0] ?? null : null;
   const defaultProfile = profiles.find((profile) => profile.id === profileId) ?? profiles.find((profile) => profile.id === defaultProfileId) ?? profiles[0] ?? null;
+  const activeSession = activeSessionId ? sessions.find((session) => session.id === activeSessionId) ?? null : null;
+  const activeWorkspace = workspaces.find((workspace) => workspace.id === (activeSession?.workspaceId ?? activeWorkspaceId)) ?? workspaces[0] ?? null;
   const loadedWorkspaces = visibleWorkspaces.length > 1 ? visibleWorkspaces : [];
   const filteredWorkspaces = useMemo(() => loadedWorkspaces.filter((workspace) => `${workspace.name} ${workspace.path}`.toLowerCase().includes(query.toLowerCase())), [query, loadedWorkspaces]);
 
@@ -102,6 +104,11 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
     localStorage.setItem(LAST_PROFILE_KEY, nextProfileId);
     setMenuOpen(false);
     await onCreateSession(workspace, nextProfileId);
+  }
+
+  async function createFromCurrentSelection() {
+    if (!activeWorkspace) return;
+    await createWith(activeWorkspace, activeSession?.profileId ?? defaultProfile?.id ?? profileId);
   }
 
   async function promptRename(session: WorkspaceTerminalSession) {
@@ -204,7 +211,7 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
       <div className="panel-title sessions-title">
         <span>Sessions</span>
         <div className="new-session" ref={menuRef}>
-          <button className="new-session-main" onClick={() => flatWorkspace ? void createWith(flatWorkspace) : toggleCreateMenu()}>New</button>
+          <button className="new-session-main" onClick={() => void (flatWorkspace ? createWith(flatWorkspace) : createFromCurrentSelection())}>New</button>
           <button className="new-session-caret" aria-label="Choose terminal target" aria-haspopup="menu" aria-expanded={menuOpen} onClick={toggleCreateMenu}>▾</button>
           {createMenu}
         </div>
