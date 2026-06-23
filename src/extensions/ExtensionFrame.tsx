@@ -13,9 +13,10 @@ export function ExtensionFrame({ contribution, ctx, className = 'extension-frame
     async function onMessage(event: MessageEvent) {
       if (event.source !== ref.current?.contentWindow) return;
       const expectedOrigin = `stackdock-extension://${contribution.extensionId}`;
-      if (event.origin !== expectedOrigin) return;
+      if (event.origin !== expectedOrigin && event.origin !== 'null') return;
       const msg = event.data as { id?: string; type?: string; payload?: unknown };
-      const reply = (ok: boolean, payload?: unknown) => ref.current?.contentWindow?.postMessage({ id: msg.id, type: 'stackdock.response', ok, payload }, expectedOrigin);
+      const replyOrigin = event.origin === 'null' ? '*' : expectedOrigin;
+      const reply = (ok: boolean, payload?: unknown) => ref.current?.contentWindow?.postMessage({ id: msg.id, type: 'stackdock.response', ok, payload }, replyOrigin);
       const payload = (msg.payload && typeof msg.payload === 'object' ? msg.payload : {}) as Record<string, unknown>;
       try {
         switch (msg.type) {
@@ -48,5 +49,5 @@ export function ExtensionFrame({ contribution, ctx, className = 'extension-frame
     return () => window.removeEventListener('message', onMessage);
   }, [ctx]);
   const entry = contribution.entry ?? 'index.html';
-  return <iframe ref={ref} className={className} title={'title' in contribution ? contribution.title : contribution.label ?? contribution.id} sandbox="allow-scripts allow-forms" src={`stackdock-extension://${contribution.extensionId}/${entry}?view=${encodeURIComponent(contribution.id)}`} />;
+  return <iframe ref={ref} className={className} title={'title' in contribution ? contribution.title : contribution.label ?? contribution.id} sandbox="allow-scripts allow-forms allow-same-origin" src={`stackdock-extension://${contribution.extensionId}/${entry}?view=${encodeURIComponent(contribution.id)}`} />;
 }
