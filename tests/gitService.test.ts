@@ -39,6 +39,22 @@ describe('gitService ignore support', () => {
   });
 });
 
+describe('gitService status', () => {
+  it('lists files inside new untracked folders instead of only the folder', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'stackdock-git-status-'));
+    await git(dir, ['init']);
+    await fs.mkdir(path.join(dir, 'migrated', 'nested'), { recursive: true });
+    await fs.writeFile(path.join(dir, 'migrated', 'first.txt'), 'first\n');
+    await fs.writeFile(path.join(dir, 'migrated', 'nested', 'second.txt'), 'second\n');
+
+    const status = await getGitStatus(dir);
+    const paths = status.files.map((file) => file.path).sort();
+
+    expect(paths).toEqual(['migrated/first.txt', 'migrated/nested/second.txt']);
+    expect(status.files.every((file) => file.untracked)).toBe(true);
+  });
+});
+
 describe('gitService merge state', () => {
   it('detects unresolved merge conflicts', async () => {
     const dir = await makeConflictRepo();

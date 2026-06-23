@@ -93,7 +93,7 @@ export async function listBranches(cwd: string): Promise<string[]> {
 
 export async function getGitStatus(cwd: string): Promise<GitStatus> {
   try {
-    const output = await gitOutput(cwd, ['status', '--porcelain=v1', '-b']);
+    const output = await gitOutput(cwd, ['status', '--porcelain=v1', '-b', '--untracked-files=all']);
     const lines = output.trim().split(/\r?\n/).filter(Boolean);
     const branchLine = lines.shift() ?? '';
     const status: GitStatus = { isRepo: true, files: [] };
