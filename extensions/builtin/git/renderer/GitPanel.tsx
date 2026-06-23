@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
 import type { GitFileStatus, GitStatus } from '../../../../src/shared/types';
 import { FileIcon } from '../../../../src/components/workspace/fileIcons';
 
 type GitSelectionGroup = 'staged' | 'changes';
+type GitSelectionEvent = MouseEvent<HTMLButtonElement> | PointerEvent<HTMLButtonElement>;
 
 interface Props {
   status: GitStatus | null;
@@ -11,7 +12,7 @@ interface Props {
   onClearError(): void;
   selectedStagedPaths: string[];
   selectedChangePaths: string[];
-  onSelectFile(file: GitFileStatus, staged: boolean, event?: MouseEvent<HTMLButtonElement>, groupFiles?: GitFileStatus[]): void;
+  onSelectFile(file: GitFileStatus, staged: boolean, event?: GitSelectionEvent, groupFiles?: GitFileStatus[]): void;
   onStage(path: string): void;
   onStageSelected(paths: string[]): void;
   onStageAll(): void;
@@ -118,7 +119,7 @@ export function GitPanel({ status, error, selectedFile, selectedStagedPaths, sel
   );
 }
 
-function GitGroup({ title, group, files, selectedFile, selectedPaths, onSelectFile, onStage, onUndo, onIgnore }: { title: string; group: GitSelectionGroup; files: GitFileStatus[]; selectedFile: GitFileStatus | null; selectedPaths: string[]; onSelectFile(file: GitFileStatus, event: MouseEvent<HTMLButtonElement>, files: GitFileStatus[]): void; onStage?(path: string): void; onUndo(path: string): void; onIgnore(path: string): void }) {
+function GitGroup({ title, group, files, selectedFile, selectedPaths, onSelectFile, onStage, onUndo, onIgnore }: { title: string; group: GitSelectionGroup; files: GitFileStatus[]; selectedFile: GitFileStatus | null; selectedPaths: string[]; onSelectFile(file: GitFileStatus, event: GitSelectionEvent, files: GitFileStatus[]): void; onStage?(path: string): void; onUndo(path: string): void; onIgnore(path: string): void }) {
   const selected = new Set(selectedPaths);
   const [menu, setMenu] = useState<{ file: GitFileStatus; x: number; y: number } | null>(null);
   useEffect(() => {
@@ -142,14 +143,14 @@ function GitGroup({ title, group, files, selectedFile, selectedPaths, onSelectFi
           const isActive = selectedFile?.path === file.path;
           const isDirectory = isDirectoryStatusPath(file.path);
           return (
-            <button key={`${title}:${file.path}`} className={`tree-row git-file ${cls}${isSelected ? ' selected' : ''}${isActive ? ' active' : ''}`} title={file.path} onClick={(event) => onSelectFile(file, event, files)} onContextMenu={(event) => { event.preventDefault(); onSelectFile(file, event, files); setMenu({ file, x: event.clientX, y: event.clientY }); }}>
+            <button key={`${title}:${file.path}`} className={`tree-row git-file ${cls}${isSelected ? ' selected' : ''}${isActive ? ' active' : ''}`} title={file.path} onPointerDown={(event) => { if (event.button !== 0) return; event.preventDefault(); onSelectFile(file, event, files); }} onClick={(event) => { if (event.detail === 0) onSelectFile(file, event, files); }} onContextMenu={(event) => { event.preventDefault(); onSelectFile(file, event, files); setMenu({ file, x: event.clientX, y: event.clientY }); }}>
               <span className="tree-twisty" />
               <FileIcon name={name} isDirectory={isDirectory} expanded={false} />
               <span className="git-path">
                 {dir ? <><span className="git-path-dir">{dir}</span><span className="git-path-separator">/</span></> : null}
                 <span className="tree-label git-path-name">{name}</span>
               </span>
-              <span className="git-row-actions" aria-label={`${title} actions`}>
+              <span className="git-row-actions" aria-label={`${title} actions`} onPointerDown={(event) => event.stopPropagation()}>
                 {group === 'changes' ? <span role="button" tabIndex={0} className="git-row-action git-row-stage" title="Stage" onClick={(event) => { event.stopPropagation(); onStage?.(file.path); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); onStage?.(file.path); } }}>+</span> : null}
                 <span role="button" tabIndex={0} className="git-row-action git-row-undo" title={group === 'staged' ? 'Unstage' : 'Discard changes'} onClick={(event) => { event.stopPropagation(); onUndo(file.path); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); onUndo(file.path); } }}>{'<-'}</span>
               </span>

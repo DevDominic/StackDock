@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import type { AutomationConfig, GitFileStatus, GitStatus, PaletteCommand, StackDockSettings, TerminalPersistedTab, TerminalProfile, TerminalSplitSide, Workspace, WorkspaceLayout, WorkspaceTerminalSession } from '../../shared/types';
 import { api } from '../../lib/api';
@@ -969,6 +969,42 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       return { ...prev, editorGroups, activeKind: 'editor', activeEditorGroup: nextGroup.id, splitOrientation: direction === 'left' || direction === 'right' ? 'horizontal' : 'vertical' };
     });
   }
+
+  async function splitFileIntoSessionPane(sessionId: string, path: string, groupId: string, side: SplitDirection) {
+    const sourceEditors = normalizeEditors(editorsBySession[sessionId]);
+    if (sourceEditors.activeKind !== 'terminal') return false;
+    const sourceGroup = sourceEditors.editorGroups.find((group) => group.id === groupId);
+    const file = sourceGroup?.openFiles.find((item) => item.path === path);
+    const sourceSession = sessions.find((session) => session.id === sessionId);
+    if (!file || !sourceSession) return false;
+    if (!requireTrusted('splitting a file beside the terminal')) return true;
+    try {
+      const direction = sideToDirection(side);
+      const groupIdForSplit = sourceSession.splitGroupId ?? crypto.randomUUID();
+      const existingMembers = sourceSession.splitGroupId
+        ? [...sessions.filter((session) => session.splitGroupId === sourceSession.splitGroupId)].sort((a, b) => (a.splitGroupOrder ?? sessions.indexOf(a)) - (b.splitGroupOrder ?? sessions.indexOf(b)))
+        : [sourceSession];
+      const sourceIndex = Math.max(0, existingMembers.findIndex((session) => session.id === sourceSession.id));
+      const insertIndex = isBeforeSide(side) ? sourceIndex : sourceIndex + 1;
+      const created = await sessionStore.createSession({ workspaceId: sourceSession.workspaceId, workspaceName: sourceSession.workspaceName, workspacePath: sourceSession.workspacePath, profileId: sourceSession.profileId, cwd: sourceSession.cwd, name: `${sourceSession.name} Split`, startupCommand: '' });
+      const targetGroup = createEditorGroup([{ ...file }], path);
+      setEditorsBySession((map) => ({
+        ...map,
+        [created.id]: { ...normalizeEditors(map[created.id]), editorGroups: [targetGroup], activeEditorGroup: targetGroup.id, splitOrientation: 'horizontal', openLinks: [], activeKind: 'editor', activeWeb: null, webSplit: null },
+      }));
+      await Promise.all(existingMembers.map((session, index) => sessionStore.updateSessionMetadata(session.id, { splitGroupId: groupIdForSplit, splitDirection: direction, splitGroupOrder: index >= insertIndex ? index + 1 : index })));
+      await sessionStore.updateSessionMetadata(created.id, { splitGroupId: groupIdForSplit, splitDirection: direction, splitGroupOrder: insertIndex });
+      sessionStore.setActiveSession(created.id);
+    } catch (error) {
+      showToast(getErrorMessage(error, 'Could not split file beside terminal'), 'error');
+    }
+    return true;
+  }
+
+  async function splitFileTabFor(sessionId: string, path: string, groupId: string, direction: SplitDirection) {
+    if (await splitFileIntoSessionPane(sessionId, path, groupId, direction)) return;
+    splitFileFor(sessionId, path, groupId, direction);
+  }
   function openLinkFor(sessionId: string, url: string) {
     if (settings?.openLinksExternally) { void api.shell.openExternal(url).catch((error) => showToast(getErrorMessage(error, 'Could not open link'), 'error')); return; }
     patchSession(sessionId, (prev) => {
@@ -1146,7 +1182,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     });
   }
 
-  async function selectGitFile(file: GitFileStatus, staged = file.staged && !file.unstaged, event?: MouseEvent<HTMLButtonElement>, groupFiles: GitFileStatus[] = []) {
+  async function selectGitFile(file: GitFileStatus, staged = file.staged && !file.unstaged, event?: MouseEvent<HTMLButtonElement> | PointerEvent<HTMLButtonElement>, groupFiles: GitFileStatus[] = []) {
     try {
       setGitError(null);
       const group: 'staged' | 'changes' = staged ? 'staged' : 'changes';
@@ -1626,10 +1662,10 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         ) : null}
         {tabMenu?.sessionId === session.id ? (
           <div className="context-menu tab-context-menu" style={{ top: tabMenu.y, left: tabMenu.x }} onMouseDown={(event) => event.stopPropagation()}>
-            <button className="context-menu-item" onClick={() => { splitFileFor(tabMenu.sessionId, tabMenu.file.path, tabMenu.groupId, 'left'); setTabMenu(null); }}>Split Left</button>
-            <button className="context-menu-item" onClick={() => { splitFileFor(tabMenu.sessionId, tabMenu.file.path, tabMenu.groupId, 'right'); setTabMenu(null); }}>Split Right</button>
-            <button className="context-menu-item" onClick={() => { splitFileFor(tabMenu.sessionId, tabMenu.file.path, tabMenu.groupId, 'up'); setTabMenu(null); }}>Split Up</button>
-            <button className="context-menu-item" onClick={() => { splitFileFor(tabMenu.sessionId, tabMenu.file.path, tabMenu.groupId, 'down'); setTabMenu(null); }}>Split Down</button>
+            <button className="context-menu-item" onClick={() => { void splitFileTabFor(tabMenu.sessionId, tabMenu.file.path, tabMenu.groupId, 'left'); setTabMenu(null); }}>Split Left</button>
+            <button className="context-menu-item" onClick={() => { void splitFileTabFor(tabMenu.sessionId, tabMenu.file.path, tabMenu.groupId, 'right'); setTabMenu(null); }}>Split Right</button>
+            <button className="context-menu-item" onClick={() => { void splitFileTabFor(tabMenu.sessionId, tabMenu.file.path, tabMenu.groupId, 'up'); setTabMenu(null); }}>Split Up</button>
+            <button className="context-menu-item" onClick={() => { void splitFileTabFor(tabMenu.sessionId, tabMenu.file.path, tabMenu.groupId, 'down'); setTabMenu(null); }}>Split Down</button>
             <button className="context-menu-item" onClick={() => { void closeFileFor(tabMenu.sessionId, tabMenu.file.path, tabMenu.groupId); setTabMenu(null); }}>Close</button>
             <button className="context-menu-item" onClick={() => { void closeOthersFor(tabMenu.sessionId, tabMenu.file.path, tabMenu.groupId); setTabMenu(null); }}>Close Others</button>
             <button className="context-menu-item" onClick={() => { void closeToSideFor(tabMenu.sessionId, tabMenu.file.path, tabMenu.groupId, 'right'); setTabMenu(null); }}>Close to Right</button>
@@ -1795,7 +1831,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
               try {
                 const payload = JSON.parse(event.dataTransfer.getData(FILE_TAB_DRAG_MIME)) as { sessionId?: unknown; groupId?: unknown; path?: unknown };
                 if (typeof payload.sessionId === 'string' && typeof payload.groupId === 'string' && typeof payload.path === 'string') {
-                  splitFileFor(payload.sessionId, payload.path, payload.groupId, side);
+                  void splitFileTabFor(payload.sessionId, payload.path, payload.groupId, side);
                 }
               } catch {
                 // Ignore malformed drag payloads from outside StackDock.

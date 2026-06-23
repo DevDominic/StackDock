@@ -1,4 +1,4 @@
-import type { MouseEvent, ReactNode } from 'react';
+import type { MouseEvent, PointerEvent, ReactNode } from 'react';
 import type { ExtensionConfigPrimitive, ExtensionManifest, ExtensionStatusBarContribution, ExtensionViewContribution, GitFileStatus, GitStatus, HeadlessCommandRun, StackDockSettings, TerminalProfile, TerminalSplitSide, Workspace, WorkspaceTerminalSession } from '../shared/types';
 import type { ExtensionRendererContext } from './runtimeTypes';
 
@@ -44,7 +44,7 @@ export interface WorkspaceExtensionContext {
     selectedFile: GitFileStatus | null;
     selectedStagedPaths: string[];
     selectedChangePaths: string[];
-    selectFile(file: GitFileStatus, staged: boolean, event?: MouseEvent<HTMLButtonElement>, groupFiles?: GitFileStatus[]): void | Promise<void>;
+    selectFile(file: GitFileStatus, staged: boolean, event?: MouseEvent<HTMLButtonElement> | PointerEvent<HTMLButtonElement>, groupFiles?: GitFileStatus[]): void | Promise<void>;
     stage(path: string): void | Promise<void>;
     stageSelected(paths: string[]): void | Promise<void>;
     stageAll(): void | Promise<void>;
