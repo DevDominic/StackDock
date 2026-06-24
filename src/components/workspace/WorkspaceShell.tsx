@@ -1455,6 +1455,20 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       revealFolder: (targetPath = workspace.path) => void api.fs.revealInExplorer(targetPath),
       selectSession: activateSession,
       createSession: () => createTerminal(undefined, 'Terminal', ''),
+      runTerminalCommand: async (name, command, cwd = workspace.path, profileId) => {
+        if (!requireTrusted('running extension commands')) throw new Error('Workspace is not trusted');
+        const requested = profileId && profiles.some((profile) => profile.id === profileId) ? profileId : workspaceSetup?.defaultTerminalProfile ?? defaultProfile?.id ?? 'powershell';
+        const effectiveProfile = profiles.some((profile) => profile.id === requested) ? requested : defaultProfile?.id ?? 'powershell';
+        const selectedProfile = profiles.find((profile) => profile.id === effectiveProfile);
+        const startupCommand = resolveTerminalStartupCommand({ explicitStartupCommand: command, profileStartupCommand: selectedProfile?.startupCommand });
+        const session = await sessionStore.createSession({ workspaceId: workspace.id, workspaceName: workspace.name, workspacePath: workspace.path, profileId: effectiveProfile, cwd, name, startupCommand });
+        showToast(`Started ${name}`, 'success');
+        return session;
+      },
+      killTerminal: async (id) => {
+        if (sessions.some((session) => session.id === id)) await closeTerminal(id);
+        else await api.terminal.kill(id);
+      },
       runHeadlessCommand: async (name, command, cwd = workspace.path) => {
         if (!requireTrusted('running extension commands')) throw new Error('Workspace is not trusted');
         const requested = workspaceSetup?.defaultTerminalProfile ?? defaultProfile?.id ?? 'powershell';
@@ -1532,6 +1546,18 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const panelSizes = mergedLayout.panels.panelSizes ?? { sessions: 14, explorer: 18, main: 68, editor: 72, git: 28, upper: 62, terminal: 38 };
   const safePanelSizes = getSafePanelSizes(panelSizes, sidebarVisible, sessionsVisible);
   const extensionCommands = enabledExtensions.flatMap((manifest) => extensionRegistry.nativeExtensions.get(manifest.id)?.getCommands?.(extensionCtx) ?? []);
+  const statusBarCommands: CommandAction[] = statusBarContributions
+    .filter((contribution) => contribution.entry && !contribution.native)
+    .map((contribution) => {
+      const manifest = enabledExtensions.find((item) => item.id === contribution.extensionId);
+      const label = contribution.tooltip || manifest?.name || contribution.label || contribution.id;
+      return {
+        id: `${contribution.id}.open`,
+        label: label.startsWith('Open ') ? label : `Open ${label}`,
+        description: manifest?.description,
+        run: () => { window.dispatchEvent(new CustomEvent('stackdock:open-statusbar-contribution', { detail: contribution.id })); },
+      };
+    });
   function openSettings(tab: SettingsTab = 'general') { setSettingsInitialTab(tab); setSettingsOpen(true); }
   const sortedWorkspaces = [...workspaces].sort((a, b) => {
     if (a.id === workspace.id) return -1;
@@ -1573,6 +1599,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     { id: 'stackdock.terminal.new', label: 'New Terminal', keybind: settings?.keybinds['stackdock.terminal.new'], run: () => createTerminal(undefined, 'Terminal', '') },
     ...workspaceLauncherActions,
     ...extensionCommands.map((command) => ({ ...command, keybind: settings?.keybinds[command.id] })),
+    ...statusBarCommands,
     { id: 'stackdock.view.toggleTerminal', label: 'Show/Toggle Terminal', keybind: settings?.keybinds['stackdock.view.toggleTerminal'], run: toggleMainView },
     { id: 'stackdock.view.toggleSidebar', label: 'Toggle Sidebar', keybind: settings?.keybinds['stackdock.view.toggleSidebar'], run: toggleActivitySidebar },
     { id: 'stackdock.tab.closeActive', label: 'Close Active Tab', keybind: settings?.keybinds['stackdock.tab.closeActive'], run: () => { if (mainView === 'web' && activeWebId) closeLink(activeWebId); else if (activeFilePath) void closeFile(activeFilePath, activeEditors.activeEditorGroup); } },

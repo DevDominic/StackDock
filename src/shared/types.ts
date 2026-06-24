@@ -21,7 +21,7 @@ export type ImportedEditorTheme = StackDockTheme;
 export type ExtensionContributionLocation = 'activity' | 'sessions' | 'statusBar' | 'bottomBar';
 export type ExtensionSource = 'bundled' | 'local';
 export interface ExtensionViewContribution { id: string; extensionId: string; title: string; icon?: string; location: Exclude<ExtensionContributionLocation, 'statusBar'>; order?: number; native?: boolean; entry?: string; when?: 'always' | 'gitRepo' | 'headlessActive'; }
-export interface ExtensionStatusBarContribution { id: string; extensionId: string; side: 'left' | 'right'; order?: number; label?: string; tooltip?: string; entry?: string; native?: boolean; when?: 'always' | 'gitRepo'; }
+export interface ExtensionStatusBarContribution { id: string; extensionId: string; side: 'left' | 'right'; order?: number; label?: string; tooltip?: string; entry?: string; native?: boolean; when?: 'always' | 'gitRepo'; popoverWidth?: number; popoverHeight?: number; }
 export type ExtensionConfigPrimitive = string | number | boolean;
 export interface ExtensionConfigField { key: string; label: string; type: 'boolean' | 'number' | 'text' | 'select'; description?: string; default?: ExtensionConfigPrimitive; min?: number; max?: number; step?: number; options?: { label: string; value: string }[]; }
 export interface ExtensionConfigurationContribution { title?: string; fields: ExtensionConfigField[]; }

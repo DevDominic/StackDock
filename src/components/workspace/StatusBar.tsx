@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { ExtensionStatusBarContribution } from '../../shared/types';
 import type { NativeExtension, WorkspaceExtensionContext } from '../../extensions/extensionTypes';
 import { ExtensionFrame } from '../../extensions/ExtensionFrame';
@@ -27,15 +27,26 @@ function LocalStatusBarContribution({ contribution, ctx }: { contribution: Exten
       window.removeEventListener('keydown', onKeyDown);
     };
   }, [open]);
+  useEffect(() => {
+    function onOpen(event: Event) {
+      if ((event as CustomEvent<string>).detail === contribution.id) setOpen(true);
+    }
+    window.addEventListener('stackdock:open-statusbar-contribution', onOpen);
+    return () => window.removeEventListener('stackdock:open-statusbar-contribution', onOpen);
+  }, [contribution.id]);
 
   if (!contribution.entry) return <span className="statusbar-item" title={contribution.tooltip}>{contribution.label}</span>;
+  const popoverStyle: CSSProperties = {
+    ...(contribution.popoverWidth ? { width: `min(${contribution.popoverWidth}px, calc(100vw - 16px))` } : {}),
+    ...(contribution.popoverHeight ? { height: `min(${contribution.popoverHeight}px, calc(100vh - 96px))` } : {}),
+  };
   return (
     <span className="statusbar-popover-host" ref={ref}>
       <button className="statusbar-item" type="button" title={contribution.tooltip} onClick={() => setOpen((value) => !value)}>
         {contribution.label ?? contribution.id}
       </button>
       {open ? (
-        <div className={`statusbar-popover ${contribution.side === 'right' ? 'align-right' : 'align-left'}`}>
+        <div className={`statusbar-popover ${contribution.side === 'right' ? 'align-right' : 'align-left'}`} style={popoverStyle}>
           <ExtensionFrame contribution={contribution} ctx={ctx} className="statusbar-extension-frame" />
         </div>
       ) : null}
