@@ -42,10 +42,19 @@ export function getAttachmentCacheDir() {
   return path.join(getDataDir(), 'attachments');
 }
 
+export function getExtensionsDir() {
+  return path.join(getDataDir(), 'extensions');
+}
+
+export function getLocalExtensionsDir() {
+  return path.join(getExtensionsDir(), 'local');
+}
+
 export async function ensureDataDirs() {
   await fs.mkdir(getDataDir(), { recursive: true });
   await fs.mkdir(getLayoutsDir(), { recursive: true });
   await fs.mkdir(getTerminalSnapshotsDir(), { recursive: true });
   await fs.mkdir(getLogsDir(), { recursive: true });
   await fs.mkdir(getAttachmentCacheDir(), { recursive: true });
+  await fs.mkdir(getLocalExtensionsDir(), { recursive: true });
 }

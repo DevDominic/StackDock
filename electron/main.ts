@@ -8,7 +8,7 @@ import { addWorkspace, createWorkspace, listWorkspaces, loadLayout, loadRestoreS
 import { createFile, createFolder, deletePath, pathExists, readDirectory, readFile, readFileDataUrl, renamePath, revealInExplorer, writeFile } from './fileService';
 import { createTerminal, forgetTerminalSnapshot, getTerminalProfiles, getTerminalSnapshot, killTerminal, loadOpenTerminalState, markTerminalReady, resizeTerminal, saveOpenTerminalState, setTerminalWindow, setVisibleTerminals, updateTerminalSession, writeTerminal } from './terminalManager';
 import { setBridgeWindow, startBrowserBridge } from './browserBridge';
-import { ensureDataDirs } from './storage';
+import { ensureDataDirs, getLocalExtensionsDir } from './storage';
 import { logError } from './log';
 import { getDefaultSettings, loadSettings, saveSettings } from './configStore';
 import { ensureExtensionsLoaded, loadExtensions, resolveExtensionAsset } from './extensionService';
@@ -23,6 +23,48 @@ let quittingAfterSnapshotFlush = false;
 let closingAfterTerminalSave = false;
 const watchedWorkspaces = new Map<string, { watcher: FSWatcher; timer: NodeJS.Timeout | null }>();
 const noisyWatchSegments = new Set(['node_modules', 'dist', 'build', 'target', '.cache', '.git']);
+const EXTENSION_MANIFEST_FILE = 'stackdock.extension.json';
+
+function validExtensionId(id: string) { return /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id); }
+function managedLocalExtensionPath(id: string) { return path.join(getLocalExtensionsDir(), id); }
+function isInside(parent: string, child: string) {
+  const relative = path.relative(path.resolve(parent), path.resolve(child));
+  return !!relative && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+async function installLocalExtensionPackage(sourcePath: string): Promise<string> {
+  const root = path.resolve(sourcePath);
+  const stat = await fs.stat(root);
+  if (!stat.isDirectory()) throw new Error('Extension package path must be a directory');
+  const raw = JSON.parse(await fs.readFile(path.join(root, EXTENSION_MANIFEST_FILE), 'utf8')) as { id?: unknown };
+  const id = typeof raw.id === 'string' ? raw.id.trim() : '';
+  if (!id || !validExtensionId(id)) throw new Error(`Invalid extension id ${id || '<missing>'}`);
+  await ensureDataDirs();
+  const target = managedLocalExtensionPath(id);
+  if (path.resolve(root) !== path.resolve(target)) {
+    await fs.rm(target, { recursive: true, force: true });
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.cp(root, target, { recursive: true, dereference: false, errorOnExist: false });
+  }
+  return target;
+}
+
+async function migrateLocalExtensionPackages(settings: Awaited<ReturnType<typeof loadSettings>>) {
+  let changed = false;
+  const nextPaths: string[] = [];
+  for (const packagePath of settings.extensions.localPackagePaths) {
+    try {
+      const resolved = path.resolve(packagePath);
+      const installedPath = isInside(getLocalExtensionsDir(), resolved) ? resolved : await installLocalExtensionPackage(resolved);
+      nextPaths.push(installedPath);
+      if (installedPath !== packagePath) changed = true;
+    } catch {
+      nextPaths.push(packagePath);
+    }
+  }
+  settings.extensions.localPackagePaths = [...new Set(nextPaths)];
+  return changed ? saveSettings(settings) : settings;
+}
 const windowControlsConfig = getWindowControlsConfig(process.platform, os.release());
 const nativeWindowControls = windowControlsConfig.style === 'native';
 const extensionHost = new ExtensionHost();
@@ -238,12 +280,13 @@ function registerIpc() {
   ipcMain.handle('automation:loadRaw', async () => loadAutomationRaw());
   ipcMain.handle('automation:saveRaw', async (_event, content: unknown) => saveAutomationRaw(assertString(content, 'content')));
 
-  ipcMain.handle('extensions:list', async () => loadExtensions(await loadSettings()));
-  ipcMain.handle('extensions:reload', async () => loadExtensions(await loadSettings()));
+  ipcMain.handle('extensions:list', async () => loadExtensions(await migrateLocalExtensionPackages(await loadSettings())));
+  ipcMain.handle('extensions:reload', async () => loadExtensions(await migrateLocalExtensionPackages(await loadSettings())));
   ipcMain.handle('extensions:addLocalPackage', async (_event, targetPath: unknown) => {
-    const packagePath = assertAbsolutePath(targetPath, 'packagePath');
+    const sourcePath = assertAbsolutePath(targetPath, 'packagePath');
+    const packagePath = await installLocalExtensionPackage(sourcePath);
     const settings = await loadSettings();
-    if (!settings.extensions.localPackagePaths.includes(packagePath)) settings.extensions.localPackagePaths.push(packagePath);
+    settings.extensions.localPackagePaths = [...new Set([...settings.extensions.localPackagePaths.filter((item) => path.resolve(item) !== path.resolve(sourcePath)), packagePath])];
     const saved = await saveSettings(settings);
     return loadExtensions(saved);
   });
@@ -251,6 +294,7 @@ function registerIpc() {
     const packagePath = assertAbsolutePath(targetPath, 'packagePath');
     const settings = await loadSettings();
     settings.extensions.localPackagePaths = settings.extensions.localPackagePaths.filter((item) => item !== packagePath);
+    if (isInside(getLocalExtensionsDir(), packagePath)) await fs.rm(packagePath, { recursive: true, force: true });
     const saved = await saveSettings(settings);
     return loadExtensions(saved);
   });

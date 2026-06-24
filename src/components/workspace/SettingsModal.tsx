@@ -225,7 +225,8 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
     if (!folder) return;
     const result = await api.extensions.addLocalPackage(folder);
     setExtensionResult(result);
-    setDraft((current) => ({ ...current, extensions: { ...current.extensions, localPackagePaths: [...new Set([...current.extensions.localPackagePaths, folder])] } }));
+    const localPackagePaths = result.extensions.filter((extension) => extension.source === 'local' && extension.packagePath).map((extension) => extension.packagePath!);
+    setDraft((current) => ({ ...current, extensions: { ...current.extensions, localPackagePaths } }));
   }
 
   useEffect(() => { void loadExtensions(); }, []);
