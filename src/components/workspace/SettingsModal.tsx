@@ -659,6 +659,8 @@ export function SettingsModal({ settings, currentWorkspaceId, initialTab, onSave
             <label>Default profile<select value={draft.defaultTerminalProfileId ?? ''} onChange={(event) => setDraft({ ...draft, defaultTerminalProfileId: event.target.value })}>{draft.terminalProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
             <label><input type="checkbox" checked={draft.terminal.markdownFormatting !== false} onChange={(event) => setDraft({ ...draft, terminal: { ...draft.terminal, markdownFormatting: event.target.checked } })} /> Format Markdown in Pi terminals</label>
             <p className="muted config-hint">Renders inline code and fenced code blocks in Pi output. Applies to new/recreated terminal views.</p>
+            <label><input type="checkbox" checked={draft.terminal.persistentSessionCache !== false} onChange={(event) => setDraft({ ...draft, terminal: { ...draft.terminal, persistentSessionCache: event.target.checked } })} /> Keep inactive terminal sessions mounted</label>
+            <p className="muted config-hint">Speeds up switching back to previous terminal sessions by hiding them instead of remounting/replaying them. Uses more memory/GPU resources.</p>
             <h3>Terminal profiles</h3>
             <p className="muted config-hint">Optional startup command runs after the shell opens. Extension-provided profiles can add tool-specific startup commands.</p>
             <div className="command-list">

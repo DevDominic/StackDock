@@ -608,6 +608,7 @@ html[data-window-controls-position="left"] .workspace-titlebar .topbar-left { mi
 .main-tabbed { height: 100%; }
 .session-split-host { position: relative; height: 100%; width: 100%; min-width: 0; min-height: 0; display: flex; }
 .session-split-host > .workspace-main-area { flex: 1 1 auto; width: 100%; }
+.persistent-session-cache-pane { display: none; }
 .session-pane-group { flex: 1; min-width: 0; min-height: 0; }
 .session-pane-group > [data-panel] { min-width: 0; min-height: 0; display: flex; }
 .session-pane { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; border: 1px solid transparent; }

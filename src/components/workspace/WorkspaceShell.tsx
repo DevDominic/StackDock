@@ -1592,6 +1592,19 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     ? [...activeSplitGroup].sort((a, b) => (a.splitGroupOrder ?? sessions.indexOf(a)) - (b.splitGroupOrder ?? sessions.indexOf(b)))
     : activeSession ? [activeSession] : [];
   const sessionSplitDirection = activeSession?.splitDirection ?? 'row';
+  const persistentSessionCache = settings?.terminal.persistentSessionCache !== false;
+  const visibleSessionIdSet = new Set(visibleSessionPanes.map((session) => session.id));
+  const [mountedTerminalSessionIds, setMountedTerminalSessionIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    const liveIds = new Set(sessions.map((session) => session.id));
+    const visibleIds = visibleSessionPanes.map((session) => session.id);
+    setMountedTerminalSessionIds((current) => {
+      const next = persistentSessionCache ? current.filter((id) => liveIds.has(id)) : [];
+      for (const id of visibleIds) if (!next.includes(id)) next.push(id);
+      return next.length === current.length && next.every((id, index) => id === current[index]) ? current : next;
+    });
+  }, [persistentSessionCache, sessions, visibleSessionPanes]);
 
   function startTerminalTabDrag(event: DragEvent<HTMLDivElement>, sessionId: string) {
     event.dataTransfer.effectAllowed = 'move';
@@ -1603,7 +1616,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     event.dataTransfer.setData(FILE_TAB_DRAG_MIME, JSON.stringify({ sessionId, groupId, path }));
   }
 
-  function renderSessionMainPane(session: WorkspaceTerminalSession) {
+  function renderSessionMainPane(session: WorkspaceTerminalSession, isPaneVisible = true) {
     const paneEditors = normalizeEditors(editorsBySession[session.id]);
     const paneEditorGroup = paneEditors.editorGroups.find((group) => group.id === paneEditors.activeEditorGroup) ?? paneEditors.editorGroups[0];
     const paneOpenFiles = paneEditors.editorGroups.flatMap((group) => group.openFiles);
@@ -1628,7 +1641,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       </>
     ) : null;
     return (
-      <div className={`workspace-main-area main-tabbed session-pane${session.id === activeTerminalId ? ' active' : ''}`} onMouseDown={() => sessionStore.setActiveSession(session.id)}>
+      <div key={session.id} className={`workspace-main-area main-tabbed session-pane${session.id === activeTerminalId ? ' active' : ''}`} style={{ display: isPaneVisible ? 'flex' : 'none' }} onMouseDown={() => sessionStore.setActiveSession(session.id)}>
         {paneContentTabCount > 0 ? (
           <div className="editor-tabbar main-tabbar">
             <div className="tab-strip">
@@ -1677,7 +1690,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
             {paneWebSplit === 'left' || paneWebSplit === 'up' ? paneWebPane : null}
             <Panel key="primary" id={`main-primary-${session.id}`} order={paneWebSplit === 'left' || paneWebSplit === 'up' ? 2 : 1} minSize={20}>
               <div className="main-tab-pane" style={{ display: panePrimaryView === 'terminal' ? 'flex' : 'none' }}>
-                <TerminalPanel sessions={[session]} activeId={session.id} onOpenLink={(url) => openLinkFor(session.id, url)} settings={settings} isVisible={true} onAttachmentError={(message) => showToast(message, 'error')} />
+                <TerminalPanel sessions={[session]} activeId={session.id} onOpenLink={(url) => openLinkFor(session.id, url)} settings={settings} isVisible={isPaneVisible && panePrimaryView === 'terminal'} onAttachmentError={(message) => showToast(message, 'error')} />
               </div>
               <div className="main-tab-pane" style={{ display: panePrimaryView === 'editor' ? 'flex' : 'none' }}>
                 {paneOpenFiles.length ? (
