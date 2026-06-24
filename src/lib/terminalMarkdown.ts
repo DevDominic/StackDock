@@ -12,7 +12,10 @@ const ANSI_ESCAPE = '\x1b';
 const ANSI_SEQUENCE = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)/g;
 const FENCE_STYLE = '\x1b[2;36m';
 const INLINE_CODE_STYLE = '\x1b[96m';
-const CODE_BLOCK_STYLE = '\x1b[48;5;236;38;5;252m';
+// Keep code block formatting foreground-only. A persistent cell background here
+// makes xterm paint wide grey bands during streaming; remounting/replaying the
+// terminal clears them, which is why switching tabs appears to fix it.
+const CODE_BLOCK_STYLE = '\x1b[38;5;252m';
 const JS_KEYWORD_STYLE = '\x1b[38;5;81m';
 const JS_STRING_STYLE = '\x1b[38;5;214m';
 const JS_COMMENT_STYLE = '\x1b[38;5;244m';

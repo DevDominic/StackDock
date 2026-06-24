@@ -19,7 +19,7 @@ describe('terminal markdown formatter', () => {
     const formatted = formatTerminalMarkdownChunk('```bash\necho hi\n```\n', state);
 
     expect(formatted).toContain('\x1b[2;36m```bash\x1b[0m\n');
-    expect(formatted).toContain('\x1b[48;5;236;38;5;252mecho hi\x1b[0m\n');
+    expect(formatted).toContain('\x1b[38;5;252mecho hi\x1b[0m\n');
     expect(formatted).toContain('\x1b[2;36m```\x1b[0m\n');
     expect(state.inFence).toBe(false);
   });
@@ -28,17 +28,17 @@ describe('terminal markdown formatter', () => {
     const state = createTerminalMarkdownState();
     const formatted = formatTerminalMarkdownChunk('```js\nconst message = "Hello";\nconsole.log(42); // done\n```\n', state);
 
-    expect(formatted).toContain('\x1b[38;5;81mconst\x1b[0m\x1b[48;5;236;38;5;252m');
-    expect(formatted).toContain('\x1b[38;5;214m"Hello"\x1b[0m\x1b[48;5;236;38;5;252m');
-    expect(formatted).toContain('\x1b[38;5;141m42\x1b[0m\x1b[48;5;236;38;5;252m');
-    expect(formatted).toContain('\x1b[38;5;244m// done\x1b[0m\x1b[48;5;236;38;5;252m');
+    expect(formatted).toContain('\x1b[38;5;81mconst\x1b[0m\x1b[38;5;252m');
+    expect(formatted).toContain('\x1b[38;5;214m"Hello"\x1b[0m\x1b[38;5;252m');
+    expect(formatted).toContain('\x1b[38;5;141m42\x1b[0m\x1b[38;5;252m');
+    expect(formatted).toContain('\x1b[38;5;244m// done\x1b[0m\x1b[38;5;252m');
   });
 
   it('preserves existing ANSI colors inside code blocks', () => {
     const state = createTerminalMarkdownState();
     const formatted = formatTerminalMarkdownChunk('```js\n\x1b[31mred\x1b[0m\n```\n', state);
 
-    expect(formatted).toContain('\x1b[48;5;236;38;5;252m\x1b[31mred\x1b[0m\x1b[48;5;236;38;5;252m\x1b[0m\n');
+    expect(formatted).toContain('\x1b[38;5;252m\x1b[31mred\x1b[0m\x1b[38;5;252m\x1b[0m\n');
   });
 
   it('keeps fenced code state across chunks', () => {
@@ -49,7 +49,7 @@ describe('terminal markdown formatter', () => {
     const closing = formatTerminalMarkdownChunk('```\n', state);
 
     expect(opening).toContain('\x1b[2;36m```bash\x1b[0m\n');
-    expect(body).toBe('\x1b[48;5;236;38;5;252mnpm test\x1b[0m\n');
+    expect(body).toBe('\x1b[38;5;252mnpm test\x1b[0m\n');
     expect(closing).toContain('\x1b[2;36m```\x1b[0m\n');
     expect(state.inFence).toBe(false);
   });
@@ -60,7 +60,7 @@ describe('terminal markdown formatter', () => {
     const formatted = write('`') + write('``js') + write('\nconst ok = true;\n') + write('`') + write('``\n');
 
     expect(formatted).toContain('\x1b[2;36m```js\x1b[0m\n');
-    expect(formatted).toContain('\x1b[48;5;236;38;5;252m\x1b[38;5;81mconst\x1b[0m\x1b[48;5;236;38;5;252m');
+    expect(formatted).toContain('\x1b[38;5;252m\x1b[38;5;81mconst\x1b[0m\x1b[38;5;252m');
     expect(state.inFence).toBe(false);
   });
 
@@ -83,7 +83,7 @@ describe('terminal markdown formatter', () => {
     const formatted = formatTerminalMarkdownChunk('\x1b[2m```cmd\x1b[0m\necho hi\n\x1b[2m```\x1b[0m\n', state);
 
     expect(formatted).toContain('\x1b[2;36m\x1b[2m```cmd\x1b[0m\x1b[0m\n');
-    expect(formatted).toContain('\x1b[48;5;236;38;5;252mecho hi\x1b[0m\n');
+    expect(formatted).toContain('\x1b[38;5;252mecho hi\x1b[0m\n');
     expect(formatted).toContain('\x1b[2;36m\x1b[2m```\x1b[0m\x1b[0m\n');
     expect(state.inFence).toBe(false);
   });
