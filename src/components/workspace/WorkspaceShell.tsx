@@ -1455,6 +1455,17 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       revealFolder: (targetPath = workspace.path) => void api.fs.revealInExplorer(targetPath),
       selectSession: activateSession,
       createSession: () => createTerminal(undefined, 'Terminal', ''),
+      runHeadlessCommand: async (name, command, cwd = workspace.path) => {
+        if (!requireTrusted('running extension commands')) throw new Error('Workspace is not trusted');
+        const requested = workspaceSetup?.defaultTerminalProfile ?? defaultProfile?.id ?? 'powershell';
+        const effectiveProfile = profiles.some((profile) => profile.id === requested) ? requested : defaultProfile?.id ?? 'powershell';
+        const selectedProfile = profiles.find((profile) => profile.id === effectiveProfile);
+        const startupCommand = resolveTerminalStartupCommand({ explicitStartupCommand: command, profileStartupCommand: selectedProfile?.startupCommand });
+        const session = await sessionStore.createSession({ workspaceId: workspace.id, workspaceName: workspace.name, workspacePath: workspace.path, profileId: effectiveProfile, cwd, name, startupCommand, headless: true, commandLabel: name });
+        showToast(`Running ${name} under Commands`, 'info');
+        openView('stackdock.headless.view');
+        return session;
+      },
     },
     workspaces,
     profiles,
@@ -1852,15 +1863,20 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
             }}
           >
             {visibleSessionPanes.length > 1 ? (
-              <PanelGroup direction={sessionSplitDirection === 'column' ? 'vertical' : 'horizontal'} className="session-pane-group">
-                {visibleSessionPanes.flatMap((session, index) => [
-                  <Panel key={session.id} id={`session-pane-${session.id}`} minSize={20}>
-                    {renderSessionMainPane(session)}
-                  </Panel>,
-                  index < visibleSessionPanes.length - 1 ? <PanelResizeHandle key={`${session.id}:resize`} className={`session-pane-resize resize-handle ${sessionSplitDirection === 'column' ? 'horizontal' : 'vertical'}`} /> : null,
-                ])}
-              </PanelGroup>
-            ) : visibleSessionPanes[0] ? renderSessionMainPane(visibleSessionPanes[0]) : <div className="empty-pad muted">Open terminal from Sessions.</div>}
+              <>
+                <PanelGroup direction={sessionSplitDirection === 'column' ? 'vertical' : 'horizontal'} className="session-pane-group">
+                  {visibleSessionPanes.flatMap((session, index) => [
+                    <Panel key={session.id} id={`session-pane-${session.id}`} minSize={20}>
+                      {renderSessionMainPane(session, true)}
+                    </Panel>,
+                    index < visibleSessionPanes.length - 1 ? <PanelResizeHandle key={`${session.id}:resize`} className={`session-pane-resize resize-handle ${sessionSplitDirection === 'column' ? 'horizontal' : 'vertical'}`} /> : null,
+                  ])}
+                </PanelGroup>
+                {persistentSessionCache ? sessions.filter((session) => mountedTerminalSessionIds.includes(session.id) && !visibleSessionIdSet.has(session.id)).map((session) => <div key={`hidden-${session.id}`} className="persistent-session-cache-pane">{renderSessionMainPane(session, false)}</div>) : null}
+              </>
+            ) : visibleSessionPanes[0] ? (
+              persistentSessionCache ? sessions.filter((session) => mountedTerminalSessionIds.includes(session.id)).map((session) => renderSessionMainPane(session, visibleSessionIdSet.has(session.id))) : renderSessionMainPane(visibleSessionPanes[0], true)
+            ) : <div className="empty-pad muted">Open terminal from Sessions.</div>}
             {tabDrop ? <div className={`session-split-drop-overlay side-${tabDrop.side}`}>Split {tabDrop.side[0].toUpperCase() + tabDrop.side.slice(1)}</div> : null}
           </div>
         </Panel>

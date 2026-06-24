@@ -34,6 +34,7 @@ export interface WorkspaceExtensionContext {
     revealFolder(path?: string): void | Promise<void>;
     selectSession(id: string): void;
     createSession(): void | Promise<void>;
+    runHeadlessCommand(name: string, command: string, cwd?: string): Promise<WorkspaceTerminalSession>;
   };
   workspaces: Workspace[];
   profiles: TerminalProfile[];

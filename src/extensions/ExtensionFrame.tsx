@@ -26,6 +26,7 @@ export function ExtensionFrame({ contribution, ctx, className = 'extension-frame
               workspace: ctx.workspace,
               git: ctx.git,
               sessions: ctx.sessions,
+              headlessRuns: ctx.headlessRuns,
               activeSessionId: ctx.activeSessionId,
               config: getExtensionConfig(ctx.settings, contribution.extensionId),
             });
@@ -38,6 +39,7 @@ export function ExtensionFrame({ contribution, ctx, className = 'extension-frame
           case 'stackdock.shell.openExternal': await api.shell.openExternal(String(msg.payload ?? payload.url ?? '')); reply(true); break;
           case 'stackdock.fs.readDirectory': reply(true, await api.fs.readDirectory(String(payload.path ?? ctx.workspace.path))); break;
           case 'stackdock.fs.readFile': reply(true, await api.fs.readFile(String(payload.path ?? ''))); break;
+          case 'stackdock.command.runHeadless': reply(true, await ctx.actions.runHeadlessCommand(String(payload.name ?? 'Command'), String(payload.command ?? ''), typeof payload.cwd === 'string' ? payload.cwd : undefined)); break;
           case 'stackdock.terminal.create': reply(true, await api.terminal.create(String(payload.profileId ?? ctx.defaultProfileId ?? ctx.profiles[0]?.id ?? 'default'), String(payload.cwd ?? ctx.workspace.path), typeof payload.name === 'string' ? payload.name : undefined, typeof payload.startupCommand === 'string' ? payload.startupCommand : undefined, typeof payload.restoreId === 'string' ? payload.restoreId : undefined, { workspaceId: ctx.workspace.id, workspaceName: ctx.workspace.name, workspacePath: ctx.workspace.path })); break;
           case 'stackdock.terminal.kill': await api.terminal.kill(String(payload.id ?? msg.payload ?? '')); reply(true); break;
           case 'stackdock.terminal.select': ctx.actions.selectSession(String(payload.id ?? msg.payload ?? '')); reply(true); break;

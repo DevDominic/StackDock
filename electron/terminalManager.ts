@@ -362,6 +362,19 @@ function wrapHeadlessStartupCommand(command: string, shell: string) {
   return `${suppressEcho}${command}\r\nexit\r\n`;
 }
 
+function headlessSpawnArgs(profile: TerminalProfile, command: string) {
+  const shellName = path.basename(profile.shell).toLowerCase();
+  if (shellName === 'powershell.exe' || shellName === 'powershell' || shellName === 'pwsh.exe' || shellName === 'pwsh') {
+    const args = profile.args.filter((arg) => !/^-NoExit$/i.test(arg));
+    const hasNoLogo = args.some((arg) => /^-NoLogo$/i.test(arg));
+    const hasNoProfile = args.some((arg) => /^-NoProfile$/i.test(arg));
+    return [...(hasNoLogo ? [] : ['-NoLogo']), ...(hasNoProfile ? [] : ['-NoProfile']), ...args, '-Command', command];
+  }
+  if (shellName === 'cmd.exe' || shellName === 'cmd') return ['/d', '/s', '/c', command];
+  if (shellName === 'bash.exe' || shellName === 'bash' || shellName === 'zsh' || shellName === 'sh') return ['-lc', command];
+  return null;
+}
+
 function appendHeadlessProcessOutput(entry: HeadlessProcessEntry, data: string) {
   entry.output = (entry.output + data).slice(-HEADLESS_OUTPUT_MAX_BYTES);
   mainWindow?.webContents.send('terminal:headlessData', { id: entry.session.id, data });
@@ -396,7 +409,8 @@ function runHeadlessProcess(session: TerminalSession, profile: TerminalProfile, 
     return;
   }
   try {
-    const child = spawn(profile.shell, profile.args, {
+    const directArgs = headlessSpawnArgs(profile, command);
+    const child = spawn(profile.shell, directArgs ?? profile.args, {
       cwd,
       env: { ...(process.env as Record<string, string>), STACKDOCK: '1', STACKDOCK_TERMINAL: '1', ...env },
       windowsHide: true,
@@ -419,7 +433,8 @@ function runHeadlessProcess(session: TerminalSession, profile: TerminalProfile, 
       appendHeadlessProcessOutput(entry, `${error.message}\n`);
       sendHeadlessProcessResult(entry, null);
     });
-    child.stdin.end(wrapHeadlessStartupCommand(command, profile.shell));
+    if (directArgs) child.stdin.end();
+    else child.stdin.end(wrapHeadlessStartupCommand(command, profile.shell));
   } catch (error) {
     appendHeadlessProcessOutput(entry, `${(error as Error).message}\n`);
     sendHeadlessProcessResult(entry, null);
