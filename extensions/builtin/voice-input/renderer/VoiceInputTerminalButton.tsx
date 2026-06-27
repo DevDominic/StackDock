@@ -13,16 +13,22 @@ interface ModelStatus {
   installed: boolean;
 }
 
+interface RuntimeStatus {
+  installed: boolean;
+}
+
 export function VoiceInputTerminalButton({ activeSessionId, config }: Props) {
   const { showToast } = useToast();
   const [modelInstalled, setModelInstalled] = useState(false);
+  const [runtimeInstalled, setRuntimeInstalled] = useState(false);
   const hasCustomModel = !!config.modelPath.trim();
+  const hasCustomRuntime = !!config.executablePath.trim();
   const recorder = useVoiceInputRecorder(config, async (text) => {
     if (!activeSessionId) return;
     await api.terminal.write(activeSessionId, text);
     showToast('Voice text pasted into terminal', 'success');
   });
-  const configured = !!activeSessionId && !!config.executablePath.trim() && (hasCustomModel || modelInstalled);
+  const configured = !!activeSessionId && (hasCustomRuntime || runtimeInstalled) && (hasCustomModel || modelInstalled);
 
   useEffect(() => {
     if (hasCustomModel) {
@@ -38,9 +44,23 @@ export function VoiceInputTerminalButton({ activeSessionId, config }: Props) {
     return () => { active = false; };
   }, [config.modelSize, hasCustomModel]);
 
+  useEffect(() => {
+    if (hasCustomRuntime) {
+      setRuntimeInstalled(true);
+      return;
+    }
+    let active = true;
+    api.extensions.invoke('stackdock.voiceInput', 'runtimeStatus').then((result) => {
+      if (active) setRuntimeInstalled((result as RuntimeStatus).installed === true);
+    }).catch(() => {
+      if (active) setRuntimeInstalled(false);
+    });
+    return () => { active = false; };
+  }, [hasCustomRuntime]);
+
   async function onClick() {
     if (!configured) {
-      showToast('Set up Voice Input in Settings > Extensions before recording.', 'info');
+      showToast('Set up Voice Input from the Voice Input panel before recording.', 'info');
       return;
     }
     try {

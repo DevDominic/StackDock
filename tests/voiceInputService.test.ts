@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import os from 'os';
 import { afterEach } from 'vitest';
 import { describe, expect, it } from 'vitest';
-import { getVoiceInputModelPath, getVoiceInputModelStatus, transcribeVoiceInput } from '../extensions/builtin/voice-input/main/voiceInputService';
+import { getVoiceInputModelPath, getVoiceInputModelStatus, getVoiceInputRuntimeDir, getVoiceInputRuntimeStatus, transcribeVoiceInput } from '../extensions/builtin/voice-input/main/voiceInputService';
 
 const validOptions = {
   executablePath: path.join(process.cwd(), process.platform === 'win32' ? 'whisper-cli.exe' : 'whisper-cli'),
@@ -18,8 +18,7 @@ afterEach(async () => {
 });
 
 describe('voiceInputService', () => {
-  it('requires explicit local executable and model paths before transcription', async () => {
-    await expect(transcribeVoiceInput('audio', {})).rejects.toThrow('executablePath required');
+  it('validates custom executable and model paths before transcription', async () => {
     await expect(transcribeVoiceInput('audio', { executablePath: 'whisper-cli', modelPath: validOptions.modelPath })).rejects.toThrow('executablePath must be an absolute path');
     await expect(transcribeVoiceInput('audio', { executablePath: validOptions.executablePath, modelPath: 'model.bin' })).rejects.toThrow('modelPath must be an absolute path');
   });
@@ -45,5 +44,30 @@ describe('voiceInputService', () => {
     await fs.mkdir(path.dirname(modelPath), { recursive: true });
     await fs.writeFile(modelPath, 'model');
     await expect(getVoiceInputModelStatus('tiny', root)).resolves.toMatchObject({ modelSize: 'tiny', installed: true, bytes: 5 });
+  });
+
+  it('reports managed model download progress from partial files', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'stackdock-voice-test-'));
+    tempDirs.push(root);
+    const modelPath = getVoiceInputModelPath('base', root);
+    const partialPath = `${modelPath}.partial`;
+    await fs.mkdir(path.dirname(modelPath), { recursive: true });
+    await fs.writeFile(partialPath, 'partial');
+    await fs.writeFile(`${partialPath}.json`, JSON.stringify({ totalBytes: 14 }));
+    await expect(getVoiceInputModelStatus('base', root)).resolves.toMatchObject({ modelSize: 'base', installed: false, downloading: true, downloadedBytes: 7, totalBytes: 14 });
+  });
+
+  it('prefers whisper-cli over deprecated main when both runtime binaries are installed', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'stackdock-voice-test-'));
+    tempDirs.push(root);
+    const releaseDir = path.join(getVoiceInputRuntimeDir(root), 'Release');
+    await fs.mkdir(releaseDir, { recursive: true });
+    await fs.writeFile(path.join(releaseDir, 'main.exe'), '');
+    await fs.writeFile(path.join(releaseDir, 'whisper-cli.exe'), '');
+
+    await expect(getVoiceInputRuntimeStatus(root)).resolves.toMatchObject({
+      installed: true,
+      path: path.join(releaseDir, 'whisper-cli.exe'),
+    });
   });
 });

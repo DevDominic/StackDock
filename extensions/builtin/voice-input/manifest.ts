@@ -15,7 +15,7 @@ export const voiceInputExtensionManifest: ExtensionManifest = {
     configuration: {
       title: 'Voice Input settings',
       fields: [
-        { key: 'executablePath', label: 'whisper.cpp executable path', type: 'text', default: '', description: 'Path to whisper-cli.exe, whisper-cli, main.exe, or main.' },
+        { key: 'executablePath', label: 'Custom whisper.cpp executable path', type: 'text', default: '', description: 'Optional. Overrides the managed whisper.cpp runtime installed from the Voice Input panel.' },
         { key: 'modelSize', label: 'Managed model', type: 'select', default: 'tiny', options: [{ label: 'Tiny (fastest)', value: 'tiny' }, { label: 'Base (more accurate)', value: 'base' }], description: 'StackDock can download and use this model automatically.' },
         { key: 'modelPath', label: 'Custom model path', type: 'text', default: '', description: 'Optional. Overrides the managed model when set.' },
         { key: 'language', label: 'Language', type: 'text', default: 'en', description: 'whisper.cpp language code. Use en for tiny.en models.' },
