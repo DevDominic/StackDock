@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell, type MessageBoxOptions } from 'electron';
 import fsSync from 'fs';
 import fs from 'fs/promises';
 import { watch, type FSWatcher } from 'fs';
@@ -22,6 +22,7 @@ import { getWindowControlsConfig } from '../src/shared/windowControls';
 let mainWindow: BrowserWindow | null = null;
 let quittingAfterSnapshotFlush = false;
 let closingAfterTerminalSave = false;
+let microphonePermission: 'prompt' | 'granted' | 'denied' = 'prompt';
 const watchedWorkspaces = new Map<string, { watcher: FSWatcher; timer: NodeJS.Timeout | null }>();
 const noisyWatchSegments = new Set(['node_modules', 'dist', 'build', 'target', '.cache', '.git']);
 const EXTENSION_MANIFEST_FILE = 'stackdock.extension.json';
@@ -120,7 +121,43 @@ async function createWindow() {
 
   mainWindow.setMenuBarVisibility(false);
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  mainWindow.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    const mediaTypes = 'mediaTypes' in details && Array.isArray(details.mediaTypes) ? details.mediaTypes : [];
+    const microphoneOnly = permission === 'media' && mediaTypes.includes('audio') && !mediaTypes.includes('video');
+    if (!microphoneOnly) {
+      callback(false);
+      return;
+    }
+    if (microphonePermission !== 'prompt') {
+      callback(microphonePermission === 'granted');
+      return;
+    }
+    const ownerWindow = BrowserWindow.fromWebContents(webContents) ?? mainWindow;
+    const options: MessageBoxOptions = {
+      type: 'question',
+      buttons: ['Allow', 'Deny'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Allow microphone?',
+      message: 'Allow StackDock to use your microphone for Voice Input?',
+      detail: 'Audio is recorded locally and sent to the local whisper.cpp runtime for transcription.',
+      noLink: true,
+    };
+    const prompt = ownerWindow ? dialog.showMessageBox(ownerWindow, options) : dialog.showMessageBox(options);
+    prompt.then((result) => {
+      microphonePermission = result.response === 0 ? 'granted' : 'denied';
+      if (microphonePermission === 'granted') {
+        void loadSettings()
+          .then((settings) => saveSettings({ ...settings, permissions: { ...settings.permissions, microphone: 'granted' } }))
+          .catch((error) => logError('saveMicrophonePermission', error));
+      }
+      callback(microphonePermission === 'granted');
+    }).catch((error) => {
+      void logError('microphonePermission', error);
+      microphonePermission = 'denied';
+      callback(false);
+    });
+  });
 
   setTerminalWindow(mainWindow);
   setBridgeWindow(mainWindow);
@@ -367,6 +404,7 @@ app.whenReady().then(async () => {
     void logError('startBrowserBridge', error); // bridge failure must never block startup
   }
   const settings = applySafeModeSettings(await loadSettings());
+  microphonePermission = settings.permissions?.microphone === 'granted' ? 'granted' : 'prompt';
   if (isSafeModeActive()) void logError('safeMode', 'Started with local extensions disabled');
   await extensionHost.activateBundledExtensions(await ensureExtensionsLoaded(settings));
   registerIpc();
