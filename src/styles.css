@@ -328,15 +328,15 @@ html[data-window-controls-position="left"] .workspace-titlebar .topbar-left { mi
 .diff-mode-control button.active-toggle { color: var(--active-fg); background: var(--active-bg); border-color: transparent; box-shadow: inset 0 0 0 1px var(--active-border); }
 .diff-mode-control button.active-toggle::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: 2px; height: 2px; border-radius: 999px; background: var(--primary); }
 .workspace-body { flex: 1; min-height: 0; display: flex; }
-.resize-handle { background: var(--border); flex-shrink: 0; }
+.resize-handle { flex-shrink: 0; background: var(--border); }
 .resize-handle:hover { background: var(--primary); }
-.resize-handle.vertical { width: 3px; cursor: col-resize; }
-.resize-handle.horizontal { height: 3px; cursor: row-resize; }
+.resize-handle.vertical { width: 4px; cursor: col-resize; }
+.resize-handle.horizontal { height: 4px; cursor: row-resize; }
 .workspace-explorer { min-width: 0; min-height: 0; border-right: 1px solid var(--border); background: var(--bg-panel); }
 .global-sessions-sidebar { height: 100%; background: var(--activitybar-bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .global-sessions-sidebar .panel-title { padding: 8px 10px; color: var(--muted); text-transform: uppercase; font-size: 11px; letter-spacing: .07em; }
 .sessions-title { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.global-session-list { overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 8px; }
+.global-session-list { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 8px; }
 .global-workspace-title { width: 100%; display: flex; justify-content: space-between; align-items: center; background: transparent; border: none; text-align: left; padding: 5px 7px; color: var(--muted); font-size: 12px; text-transform: none; letter-spacing: 0; }
 .global-workspace.active .global-workspace-title { color: var(--text); }
 .global-workspace-children { margin-left: 8px; padding-left: 8px; border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 5px; }
@@ -367,10 +367,18 @@ html[data-window-controls-position="left"] .workspace-titlebar .topbar-left { mi
 .workspace-pick { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; background: transparent; border: none; width: 100%; }
 .workspace-pick small { color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-explorer .panel { border: none; border-radius: 0; height: 100%; background: transparent; }
+.global-sessions-panel .extension-view-frame,
+.global-sessions-panel .extension-view-body,
+.global-sessions-panel .global-sessions-sidebar { flex: 1 1 auto; height: 100%; min-height: 0; }
 .sidebar-stack { height: 100%; min-height: 0; }
 .sidebar-stack > [data-panel] { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .sidebar-stack .file-tree { height: 100%; }
-.extension-sidebar-view { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.extension-sidebar-view { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+.extension-view-frame { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; background: var(--bg-panel); }
+.extension-view-frame.view-drop-active { outline: 1px solid transparent; outline-offset: -1px; }
+.extension-view-frame.view-drop-active:hover { outline-color: var(--primary); }
+.extension-view-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.resize-handle.movable-view-edge:hover { background: var(--primary); }
 
 .panel { display: flex; flex-direction: column; min-height: 0; }
 .pad { padding: 12px; }

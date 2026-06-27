@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import type { AutomationConfig, GitFileStatus, GitStatus, LaunchInfo, PaletteCommand, StackDockSettings, TerminalPersistedTab, TerminalProfile, TerminalSplitSide, Workspace, WorkspaceLayout, WorkspaceTerminalSession } from '../../shared/types';
+import type { AutomationConfig, ExtensionViewContribution, GitFileStatus, GitStatus, LaunchInfo, PaletteCommand, StackDockSettings, TerminalPersistedTab, TerminalProfile, TerminalSplitSide, Workspace, WorkspaceLayout, WorkspaceTerminalSession, WorkspaceViewZone } from '../../shared/types';
 import { api } from '../../lib/api';
 import { getErrorMessage } from '../../lib/errors';
 import { useToast } from '../common/ToastProvider';
@@ -34,6 +34,7 @@ type EditorSplitOrientation = 'horizontal' | 'vertical';
 
 const SESSION_DRAG_MIME = 'application/x-stackdock-session-id';
 const FILE_TAB_DRAG_MIME = 'application/x-stackdock-file-tab';
+const MOVABLE_WORKSPACE_VIEW_IDS = new Set(['stackdock.git.view', 'stackdock.voiceInput.view']);
 function sideToDirection(side: TerminalSplitSide): 'row' | 'column' { return side === 'left' || side === 'right' ? 'row' : 'column'; }
 function isBeforeSide(side: TerminalSplitSide) { return side === 'left' || side === 'up'; }
 function getDropSide(event: DragEvent, element: HTMLElement): TerminalSplitSide {
@@ -195,6 +196,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const [tabMenu, setTabMenu] = useState<{ sessionId: string; file: OpenFileTab; groupId: string; x: number; y: number } | null>(null);
   const [terminalTabMenu, setTerminalTabMenu] = useState<{ sessionId: string; x: number; y: number } | null>(null);
   const [tabDrop, setTabDrop] = useState<{ side: TerminalSplitSide; kind: 'terminal' | 'file' } | null>(null);
+  const [draggingViewId, setDraggingViewId] = useState<string | null>(null);
   const [tabOverflow, setTabOverflow] = useState({ left: false, right: false });
   const [terminalReloadTokens, setTerminalReloadTokens] = useState<Record<string, number>>({});
   const autoStartedRef = useRef<string | null>(null);
@@ -254,6 +256,19 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
 
   function updatePanelSizes(next: NonNullable<WorkspaceLayout['panels']['panelSizes']>) {
     updatePanels({ panelSizes: { ...(mergedLayout.panels.panelSizes ?? {}), ...next } });
+  }
+
+  function updateExtensionPanelSizes(next: Record<string, number>) {
+    setLayout((current) => {
+      const base = current ?? getDefaultLayout(workspace.id);
+      return {
+        ...base,
+        extensions: {
+          ...(base.extensions ?? {}),
+          panelSizesByViewId: { ...(base.extensions?.panelSizesByViewId ?? {}), ...next },
+        },
+      };
+    });
   }
 
   useEffect(() => {
@@ -1460,28 +1475,32 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     }).catch((error) => showToast(getErrorMessage(error, 'Could not save view setting'), 'error'));
   }
 
+  function saveWorkspaceViewStatePatch(patch: Partial<StackDockSettings['workspaceViewState']>) {
+    saveWorkspaceViewState({ ...workspaceViewState, ...patch });
+  }
+
   function setViewVisible(viewId: string, visible: boolean) {
     const current = visibleActivityViewIds;
     const next = visible ? [...new Set([...current, viewId])] : current.filter((id) => id !== viewId);
-    saveWorkspaceViewState({ sessionsVisible, visibleActivityViewIds: next });
+    saveWorkspaceViewStatePatch({ visibleActivityViewIds: next });
   }
 
   function openView(viewId: string) {
-    const sessionView = sessionContributions.some((view) => view.id === viewId);
-    if (sessionView) { saveWorkspaceViewState({ sessionsVisible: true, visibleActivityViewIds }); return; }
+    const sessionView = baseSessionContributions.some((view) => view.id === viewId);
+    if (sessionView) { saveWorkspaceViewStatePatch({ sessionsVisible: true }); return; }
     if (!activityContributions.some((view) => view.id === viewId)) return;
     setViewVisible(viewId, true);
   }
 
   function toggleView(viewId: string) {
-    const sessionView = sessionContributions.some((view) => view.id === viewId);
-    if (sessionView) { saveWorkspaceViewState({ sessionsVisible: !sessionsVisible, visibleActivityViewIds }); return; }
+    const sessionView = baseSessionContributions.some((view) => view.id === viewId);
+    if (sessionView) { saveWorkspaceViewStatePatch({ sessionsVisible: !sessionsVisible }); return; }
     if (!activityContributions.some((view) => view.id === viewId)) return;
     setViewVisible(viewId, !visibleActivityViewIds.includes(viewId));
   }
 
   function toggleActivitySidebar() {
-    if (visibleActivityViewIds.length) saveWorkspaceViewState({ sessionsVisible, visibleActivityViewIds: [] });
+    if (visibleActivityViewIds.length) saveWorkspaceViewStatePatch({ visibleActivityViewIds: [] });
     else if (activityContributions[0]) setViewVisible(activityContributions[0].id, true);
   }
 
@@ -1594,16 +1613,37 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   };
   const enabledExtensions = resolveEnabledExtensions(extensionRegistry.extensions, settings);
   const statusBarContributions = getEnabledStatusBarContributions(enabledExtensions, extensionCtx);
-  const sessionContributions = getEnabledViewContributions(enabledExtensions, 'sessions', extensionCtx);
-  const sessionContribution = sessionContributions[0] ?? null;
+  const baseSessionContributions = getEnabledViewContributions(enabledExtensions, 'sessions', extensionCtx);
+  const sessionContribution = baseSessionContributions[0] ?? null;
   const activityContributions = getEnabledViewContributions(enabledExtensions, 'activity', extensionCtx);
-  const renderExtensionView = (contribution: (typeof activityContributions)[number] | (typeof sessionContributions)[number]) => extensionRegistry.nativeExtensions.get(contribution.extensionId)?.renderView?.(contribution, extensionCtx) ?? null;
+  const renderExtensionView = (contribution: ExtensionViewContribution) => extensionRegistry.nativeExtensions.get(contribution.extensionId)?.renderView?.(contribution, extensionCtx) ?? null;
   const defaultActivityViewIds = activityContributions.filter((_, index) => index < 2).map((view) => view.id);
-  const visibleActivityViewIds = (settings?.workspaceViewState.visibleActivityViewIds ?? defaultActivityViewIds).filter((id) => activityContributions.some((view) => view.id === id));
-  const visibleActivityContributions = activityContributions.filter((view) => visibleActivityViewIds.includes(view.id));
+  const workspaceViewState: StackDockSettings['workspaceViewState'] = {
+    sessionsVisible: settings?.workspaceViewState.sessionsVisible !== false,
+    visibleActivityViewIds: settings?.workspaceViewState.visibleActivityViewIds ?? defaultActivityViewIds,
+    viewPlacements: settings?.workspaceViewState.viewPlacements ?? {},
+    viewOrder: settings?.workspaceViewState.viewOrder ?? [],
+  };
+  const viewPlacements = workspaceViewState.viewPlacements ?? {};
+  const viewOrder = workspaceViewState.viewOrder ?? [];
+  const visibleActivityViewIds = workspaceViewState.visibleActivityViewIds.filter((id) => activityContributions.some((view) => view.id === id));
+  const orderViewContributions = <T extends ExtensionViewContribution>(views: T[]) => {
+    const orderIndex = new Map(viewOrder.map((id, index) => [id, index]));
+    return [...views].sort((a, b) => {
+      const aIndex = orderIndex.get(a.id);
+      const bIndex = orderIndex.get(b.id);
+      if (aIndex !== undefined || bIndex !== undefined) return (aIndex ?? Number.MAX_SAFE_INTEGER) - (bIndex ?? Number.MAX_SAFE_INTEGER);
+      return (a.order ?? 0) - (b.order ?? 0);
+    });
+  };
+  const visibleMovableContributions = activityContributions.filter((view) => visibleActivityViewIds.includes(view.id));
+  const movedSessionContributions = visibleMovableContributions.filter((view) => MOVABLE_WORKSPACE_VIEW_IDS.has(view.id) && viewPlacements[view.id] === 'sessions');
+  const visibleActivityContributions = orderViewContributions(visibleMovableContributions.filter((view) => !MOVABLE_WORKSPACE_VIEW_IDS.has(view.id) || viewPlacements[view.id] !== 'sessions'));
+  const sessionContributions = orderViewContributions([...baseSessionContributions, ...movedSessionContributions]);
   const sidebarVisible = visibleActivityContributions.length > 0;
   const sessionsVisible = sessionContributions.length > 0 && settings?.workspaceViewState.sessionsVisible !== false;
   const panelSizes = mergedLayout.panels.panelSizes ?? { sessions: 14, explorer: 18, main: 68, editor: 72, git: 28, upper: 62, terminal: 38 };
+  const viewPanelSizes = mergedLayout.extensions?.panelSizesByViewId ?? {};
   const safePanelSizes = getSafePanelSizes(panelSizes, sidebarVisible, sessionsVisible);
   const extensionCommands = enabledExtensions.flatMap((manifest) => extensionRegistry.nativeExtensions.get(manifest.id)?.getCommands?.(extensionCtx) ?? []);
   function renderTerminalOverlays(session: WorkspaceTerminalSession) {
@@ -1611,6 +1651,102 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       const overlay = extensionRegistry.nativeExtensions.get(manifest.id)?.renderTerminalOverlay?.(extensionCtx, session);
       return overlay ? [<div key={manifest.id} className="terminal-extension-overlay-item">{overlay}</div>] : [];
     });
+  }
+
+  function placeViewOnTarget(viewId: string, zone: WorkspaceViewZone, targetViewId: string, insertAfter: boolean, zoneViews: ExtensionViewContribution[]) {
+    if (!MOVABLE_WORKSPACE_VIEW_IDS.has(viewId)) return;
+    const nextPlacements = { ...viewPlacements, [viewId]: zone };
+    if (zone === 'activity') delete nextPlacements[viewId];
+    const nextZoneIds = zoneViews.map((view) => view.id).filter((id) => id !== viewId);
+    const targetIndex = nextZoneIds.indexOf(targetViewId);
+    nextZoneIds.splice(targetIndex < 0 ? nextZoneIds.length : targetIndex + (insertAfter ? 1 : 0), 0, viewId);
+    const nextZoneIdSet = new Set(nextZoneIds);
+    saveWorkspaceViewStatePatch({
+      sessionsVisible: zone === 'sessions' ? true : workspaceViewState.sessionsVisible,
+      visibleActivityViewIds: visibleActivityViewIds.includes(viewId) ? visibleActivityViewIds : [...visibleActivityViewIds, viewId],
+      viewPlacements: nextPlacements,
+      viewOrder: [...viewOrder.filter((id) => !nextZoneIdSet.has(id) && id !== viewId), ...nextZoneIds],
+    });
+  }
+
+  function viewIdForResizeEdge(upper: ExtensionViewContribution, lower: ExtensionViewContribution) {
+    if (MOVABLE_WORKSPACE_VIEW_IDS.has(lower.id)) return lower.id;
+    if (MOVABLE_WORKSPACE_VIEW_IDS.has(upper.id)) return upper.id;
+    return null;
+  }
+
+  function zoneViewsFor(zone: WorkspaceViewZone) {
+    return zone === 'sessions' ? sessionContributions : visibleActivityContributions;
+  }
+
+  function finishViewEdgeMove(viewId: string, clientX: number, clientY: number) {
+    const target = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>('.extension-view-frame[data-view-id][data-view-zone]');
+    const targetViewId = target?.dataset.viewId;
+    const targetZone = target?.dataset.viewZone as WorkspaceViewZone | undefined;
+    if (!targetViewId || (targetZone !== 'sessions' && targetZone !== 'activity')) return;
+    const rect = target.getBoundingClientRect();
+    placeViewOnTarget(viewId, targetZone, targetViewId, clientY > rect.top + rect.height / 2, zoneViewsFor(targetZone));
+  }
+
+  function startViewEdgeMove(event: { ctrlKey: boolean; preventDefault(): void; stopPropagation(): void }, viewId: string) {
+    if (!event.ctrlKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDraggingViewId(viewId);
+    const finish = (pointerEvent: globalThis.PointerEvent) => {
+      finishViewEdgeMove(viewId, pointerEvent.clientX, pointerEvent.clientY);
+      setDraggingViewId(null);
+      window.removeEventListener('pointercancel', cancel, true);
+    };
+    const cancel = () => setDraggingViewId(null);
+    window.addEventListener('pointerup', finish, { once: true, capture: true });
+    window.addEventListener('pointercancel', cancel, { once: true, capture: true });
+  }
+
+  function renderViewFrame(contribution: ExtensionViewContribution, zone: WorkspaceViewZone, zoneViews: ExtensionViewContribution[]) {
+    return (
+      <div
+        className={`extension-view-frame${draggingViewId ? ' view-drop-active' : ''}`}
+        data-view-id={contribution.id}
+        data-view-zone={zone}
+      >
+        <div className="extension-view-body">{renderExtensionView(contribution)}</div>
+      </div>
+    );
+  }
+
+  function renderViewStack(contributions: ExtensionViewContribution[], zone: WorkspaceViewZone) {
+    if (contributions.length === 0) return null;
+    if (contributions.length === 1) return renderViewFrame(contributions[0], zone, contributions);
+    return (
+      <PanelGroup
+        direction="vertical"
+        className={`sidebar-stack ${zone === 'sessions' ? 'sessions-stack' : ''}`}
+        onLayout={(sizes) => {
+          const next: Record<string, number> = {};
+          contributions.forEach((contribution, index) => { next[contribution.id] = sizes[index]; });
+          updateExtensionPanelSizes(next);
+        }}
+      >
+        {contributions.flatMap((contribution, index) => [
+          <Panel key={contribution.id} id={`${zone}-${contribution.id}`} defaultSize={viewPanelSizes[contribution.id] ?? 100 / contributions.length} minSize={6}>
+            {renderViewFrame(contribution, zone, contributions)}
+          </Panel>,
+          index < contributions.length - 1 ? (
+            <PanelResizeHandle
+              key={`${contribution.id}:resize`}
+              className={`resize-handle horizontal${viewIdForResizeEdge(contribution, contributions[index + 1]) ? ' movable-view-edge' : ''}`}
+              title={viewIdForResizeEdge(contribution, contributions[index + 1]) ? 'Ctrl+drag to move this panel' : undefined}
+              hitAreaMargins={{ coarse: 14, fine: 8 }}
+              onPointerDownCapture={(event) => {
+                const viewId = viewIdForResizeEdge(contribution, contributions[index + 1]);
+                if (viewId) startViewEdgeMove(event, viewId);
+              }}
+            />
+          ) : null,
+        ])}
+      </PanelGroup>
+    );
   }
   const statusBarCommands: CommandAction[] = statusBarContributions
     .filter((contribution) => contribution.entry && !contribution.native)
@@ -1979,17 +2115,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         {sessionsVisible ? (
           <>
             <Panel id="sessions" order={1} defaultSize={safePanelSizes.sessions} minSize={4} className="global-sessions-panel">
-              {sessionContributions.length > 1 ? (
-                <PanelGroup direction="vertical" className="sidebar-stack sessions-stack" onLayout={([upper, lower]) => updatePanelSizes({ sessionsUpper: upper, headless: lower })}>
-                  <Panel id="sessions-primary" defaultSize={panelSizes.sessionsUpper ?? 78} minSize={8}>
-                    {renderExtensionView(sessionContributions[0])}
-                  </Panel>
-                  <PanelResizeHandle id="sessions-stack-resize" className="resize-handle horizontal" />
-                  <Panel id="sessions-secondary" defaultSize={panelSizes.headless ?? 22} minSize={6}>
-                    {sessionContributions.slice(1).map((contribution) => <div key={contribution.id} className="extension-sidebar-view">{renderExtensionView(contribution)}</div>)}
-                  </Panel>
-                </PanelGroup>
-              ) : renderExtensionView(sessionContributions[0])}
+              {renderViewStack(sessionContributions, 'sessions')}
             </Panel>
             <PanelResizeHandle id="sessions-resize" className="resize-handle vertical" />
           </>
@@ -1997,19 +2123,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         {sidebarVisible ? (
           <>
             <Panel id="activity-sidebar" order={2} defaultSize={safePanelSizes.explorer} minSize={4} className="workspace-explorer">
-              {visibleActivityContributions.length > 1 ? (
-                <PanelGroup direction="vertical" className="sidebar-stack" onLayout={([upper, lower]) => updatePanelSizes({ upper, git: lower })}>
-                  <Panel id="activity-sidebar-primary" defaultSize={panelSizes.upper ?? 58} minSize={8}>
-                    {renderExtensionView(visibleActivityContributions[0])}
-                  </Panel>
-                  <PanelResizeHandle id="sidebar-stack-resize" className="resize-handle horizontal" />
-                  <Panel id="activity-sidebar-secondary" defaultSize={panelSizes.git ?? 42} minSize={8}>
-                    {visibleActivityContributions.slice(1).map((contribution) => <div key={contribution.id} className="extension-sidebar-view">{renderExtensionView(contribution)}</div>)}
-                  </Panel>
-                </PanelGroup>
-              ) : (
-                renderExtensionView(visibleActivityContributions[0])
-              )}
+              {renderViewStack(visibleActivityContributions, 'activity')}
             </Panel>
             <PanelResizeHandle id="explorer-resize" className="resize-handle vertical" />
           </>
