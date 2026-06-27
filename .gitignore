@@ -29,6 +29,7 @@ private-extensions/
 .DS_Store
 Thumbs.db
 Desktop.ini
+StackDock Dev.lnk
 .vscode/
 .idea/
 *.swp
