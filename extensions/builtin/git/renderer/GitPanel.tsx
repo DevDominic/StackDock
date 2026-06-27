@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { GitFileStatus, GitStatus } from '../../../../src/shared/types';
 import { FileIcon } from '../../../../src/components/workspace/fileIcons';
 
 type GitSelectionGroup = 'staged' | 'changes';
-type GitSelectionEvent = MouseEvent<HTMLButtonElement> | PointerEvent<HTMLButtonElement>;
+type GitSelectionEvent = MouseEvent<HTMLButtonElement>;
 
 interface Props {
   status: GitStatus | null;
   error?: string | null;
   selectedFile: GitFileStatus | null;
+  selectedGroup: GitSelectionGroup | null;
   onClearError(): void;
   selectedStagedPaths: string[];
   selectedChangePaths: string[];
@@ -60,7 +61,7 @@ function splitPath(path: string) {
     : { dir: '', name: displayPath };
 }
 
-export function GitPanel({ status, error, selectedFile, selectedStagedPaths, selectedChangePaths, onSelectFile, onStage, onStageSelected, onStageAll, onUnstage, onUnstageSelected, onDiscard, onDiscardSelected, onIgnore, onCommit, onSwitchBranch, onFetch, onPull, onPullMerge, onPush, onAbortMerge, onRefresh, onClearError }: Props) {
+export function GitPanel({ status, error, selectedFile, selectedGroup, selectedStagedPaths, selectedChangePaths, onSelectFile, onStage, onStageSelected, onStageAll, onUnstage, onUnstageSelected, onDiscard, onDiscardSelected, onIgnore, onCommit, onSwitchBranch, onFetch, onPull, onPullMerge, onPush, onAbortMerge, onRefresh, onClearError }: Props) {
   const conflicts = status?.files.filter((file) => file.conflicted) ?? [];
   const staged = status?.files.filter((file) => file.staged && !file.untracked && !file.conflicted) ?? [];
   const unstaged = status?.files.filter((file) => (file.unstaged || file.untracked) && !file.conflicted) ?? [];
@@ -103,9 +104,9 @@ export function GitPanel({ status, error, selectedFile, selectedStagedPaths, sel
             <div>{status.mergeReady ? 'Merge ready: commit to finish the merge.' : 'Merge in progress: resolve conflicts, stage resolved files, then commit.'}</div>
             <button className="git-action git-discard" onClick={onAbortMerge}>Abort Merge</button>
           </div> : null}
-          {conflicts.length ? <GitGroup title="Conflicts" group="changes" files={conflicts} selectedFile={selectedFile} selectedPaths={selectedChangePaths} onSelectFile={(file, event, files) => onSelectFile(file, false, event, files)} onStage={onStage} onUndo={onDiscard} onIgnore={onIgnore} /> : null}
-          {staged.length ? <GitGroup title="Staged" group="staged" files={staged} selectedFile={selectedFile} selectedPaths={selectedStagedPaths} onSelectFile={(file, event, files) => onSelectFile(file, true, event, files)} onUndo={onUnstage} onIgnore={onIgnore} /> : null}
-          <GitGroup title="Changes" group="changes" files={unstaged} selectedFile={selectedFile} selectedPaths={selectedChangePaths} onSelectFile={(file, event, files) => onSelectFile(file, false, event, files)} onStage={onStage} onUndo={onDiscard} onIgnore={onIgnore} />
+          {conflicts.length ? <GitGroup title="Conflicts" group="changes" files={conflicts} selectedFile={selectedFile} selectedGroup={selectedGroup} selectedPaths={selectedChangePaths} onSelectFile={(file, event, files) => onSelectFile(file, false, event, files)} onStage={onStage} onUndo={onDiscard} onIgnore={onIgnore} /> : null}
+          {staged.length ? <GitGroup title="Staged" group="staged" files={staged} selectedFile={selectedFile} selectedGroup={selectedGroup} selectedPaths={selectedStagedPaths} onSelectFile={(file, event, files) => onSelectFile(file, true, event, files)} onUndo={onUnstage} onIgnore={onIgnore} /> : null}
+          <GitGroup title="Changes" group="changes" files={unstaged} selectedFile={selectedFile} selectedGroup={selectedGroup} selectedPaths={selectedChangePaths} onSelectFile={(file, event, files) => onSelectFile(file, false, event, files)} onStage={onStage} onUndo={onDiscard} onIgnore={onIgnore} />
           <div className={`git-actions git-batch-actions${activeSelection ? ' is-active' : ''}`}>
             {activeSelection === 'staged' ? <button className="git-action ghost" onClick={() => onUnstageSelected(selectedStagedPaths)}>Unstage Selected ({selectedStagedPaths.length})</button> : null}
             {activeSelection === 'changes' ? <button className="git-action git-stage" onClick={() => onStageSelected(selectedChangePaths)}>Stage Selected ({selectedChangePaths.length})</button> : null}
@@ -119,7 +120,7 @@ export function GitPanel({ status, error, selectedFile, selectedStagedPaths, sel
   );
 }
 
-function GitGroup({ title, group, files, selectedFile, selectedPaths, onSelectFile, onStage, onUndo, onIgnore }: { title: string; group: GitSelectionGroup; files: GitFileStatus[]; selectedFile: GitFileStatus | null; selectedPaths: string[]; onSelectFile(file: GitFileStatus, event: GitSelectionEvent, files: GitFileStatus[]): void; onStage?(path: string): void; onUndo(path: string): void; onIgnore(path: string): void }) {
+function GitGroup({ title, group, files, selectedFile, selectedGroup, selectedPaths, onSelectFile, onStage, onUndo, onIgnore }: { title: string; group: GitSelectionGroup; files: GitFileStatus[]; selectedFile: GitFileStatus | null; selectedGroup: GitSelectionGroup | null; selectedPaths: string[]; onSelectFile(file: GitFileStatus, event: GitSelectionEvent, files: GitFileStatus[]): void; onStage?(path: string): void; onUndo(path: string): void; onIgnore(path: string): void }) {
   const selected = new Set(selectedPaths);
   const [menu, setMenu] = useState<{ file: GitFileStatus; x: number; y: number } | null>(null);
   useEffect(() => {
@@ -139,11 +140,11 @@ function GitGroup({ title, group, files, selectedFile, selectedPaths, onSelectFi
         {files.map((file) => {
           const cls = statusClass(file);
           const { dir, name } = splitPath(file.path);
-          const isSelected = selected.has(file.path);
-          const isActive = selectedFile?.path === file.path;
+          const isSelected = selectedPaths.length > 1 && selected.has(file.path);
+          const isActive = selectedFile?.path === file.path && selectedGroup === group;
           const isDirectory = isDirectoryStatusPath(file.path);
           return (
-            <button key={`${title}:${file.path}`} className={`tree-row git-file ${cls}${isSelected ? ' selected' : ''}${isActive ? ' active' : ''}`} title={file.path} onPointerDown={(event) => { if (event.button !== 0) return; event.preventDefault(); onSelectFile(file, event, files); }} onClick={(event) => { if (event.detail === 0) onSelectFile(file, event, files); }} onContextMenu={(event) => { event.preventDefault(); onSelectFile(file, event, files); setMenu({ file, x: event.clientX, y: event.clientY }); }}>
+            <button key={`${title}:${file.path}`} className={`tree-row git-file ${cls}${isSelected ? ' selected' : ''}${isActive ? ' active' : ''}`} title={file.path} onClick={(event) => { onSelectFile(file, event, files); }} onContextMenu={(event) => { event.preventDefault(); onSelectFile(file, event, files); setMenu({ file, x: event.clientX, y: event.clientY }); }}>
               <span className="tree-twisty" />
               <FileIcon name={name} isDirectory={isDirectory} expanded={false} />
               <span className="git-path">

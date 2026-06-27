@@ -11,6 +11,7 @@ export const gitExtension: NativeExtension = {
       error={ctx.gitActions.error}
       onClearError={ctx.gitActions.clearError}
       selectedFile={ctx.gitActions.selectedFile}
+      selectedGroup={ctx.gitActions.selectedGroup}
       selectedStagedPaths={ctx.gitActions.selectedStagedPaths}
       selectedChangePaths={ctx.gitActions.selectedChangePaths}
       onSelectFile={ctx.gitActions.selectFile}

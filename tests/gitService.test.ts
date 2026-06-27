@@ -4,7 +4,7 @@ import os from 'os';
 import path from 'path';
 import { promisify } from 'util';
 import { describe, expect, it } from 'vitest';
-import { getGitStatus, ignoreFile } from '../extensions/builtin/git/main/gitService';
+import { getGitFileContents, getGitStatus, ignoreFile } from '../extensions/builtin/git/main/gitService';
 
 const execFileAsync = promisify(execFile);
 
@@ -52,6 +52,18 @@ describe('gitService status', () => {
 
     expect(paths).toEqual(['migrated/first.txt', 'migrated/nested/second.txt']);
     expect(status.files.every((file) => file.untracked)).toBe(true);
+  });
+});
+
+describe('gitService file contents', () => {
+  it('marks binary files so the renderer can skip text diff preview', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'stackdock-git-binary-'));
+    await git(dir, ['init']);
+    await fs.writeFile(path.join(dir, 'image.bin'), Buffer.from([0, 1, 2, 3]));
+
+    const contents = await getGitFileContents(dir, 'image.bin', false);
+
+    expect(contents.binary).toBe(true);
   });
 });
 

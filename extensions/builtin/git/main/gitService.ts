@@ -138,15 +138,19 @@ async function readWorkingFile(cwd: string, filePath: string) {
   try { return await fs.readFile(path.join(cwd, filePath), 'utf8'); } catch { return ''; }
 }
 
+function looksBinary(value: string) {
+  return value.includes('\0') || value.includes('\uFFFD');
+}
+
 export async function getGitFileContents(cwd: string, filePath: string, staged = false): Promise<GitFileContents> {
   if (staged) {
     const [original, modified] = await Promise.all([readGitObject(cwd, 'HEAD', filePath), readIndexObject(cwd, filePath)]);
-    return { path: filePath, original, modified };
+    return { path: filePath, original, modified, binary: looksBinary(original) || looksBinary(modified) };
   }
   const indexContent = await readIndexObject(cwd, filePath);
   const original = indexContent || await readGitObject(cwd, 'HEAD', filePath);
   const modified = await readWorkingFile(cwd, filePath);
-  return { path: filePath, original, modified };
+  return { path: filePath, original, modified, binary: looksBinary(original) || looksBinary(modified) };
 }
 
 export async function stageFile(cwd: string, filePath: string) { await runGit(cwd, ['add', '--', filePath]); }
