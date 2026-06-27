@@ -29,6 +29,14 @@ describe('configStore terminal defaults', () => {
     expect(settings.workspaceViewState).toEqual({
       sessionsVisible: true,
       visibleActivityViewIds: ['stackdock.explorer.view', 'stackdock.git.view'],
+      viewPlacements: {},
+      viewOrder: [],
     });
+  });
+
+  it('defaults microphone permission to prompt', () => {
+    const settings = getDefaultSettings('win32');
+
+    expect(settings.permissions).toEqual({ microphone: 'prompt' });
   });
 });

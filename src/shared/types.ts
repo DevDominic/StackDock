@@ -32,9 +32,11 @@ export interface ExtensionLoadError { extensionId?: string; packagePath?: string
 export interface ExtensionListResult { extensions: ExtensionManifest[]; errors: ExtensionLoadError[]; }
 export interface ExtensionSettings { localPackagePaths: string[]; disabled: string[]; enabled: string[]; config: Record<string, Record<string, ExtensionConfigPrimitive>>; }
 export interface WorkspaceExtensionState { enabled?: string[]; disabled?: string[]; activeActivityViewId?: string; activeBottomViewId?: string; panelSizesByViewId?: Record<string, number>; visibleViewIds?: string[]; }
-export interface WorkspaceViewState { sessionsVisible: boolean; visibleActivityViewIds: string[]; }
+export type WorkspaceViewZone = 'sessions' | 'activity';
+export interface WorkspaceViewState { sessionsVisible: boolean; visibleActivityViewIds: string[]; viewPlacements?: Record<string, WorkspaceViewZone>; viewOrder?: string[]; }
 
 export type KeybindMap = Record<string, string>;
+export type MicrophonePermissionPreference = 'prompt' | 'granted';
 
 export interface StackDockSettings {
   /** Unified app + Monaco theme id. */
@@ -63,6 +65,7 @@ export interface StackDockSettings {
   terminalProfiles: TerminalProfile[];
   extensions: ExtensionSettings;
   workspaceViewState: WorkspaceViewState;
+  permissions?: { microphone?: MicrophonePermissionPreference };
   keybinds: KeybindMap;
 }
 

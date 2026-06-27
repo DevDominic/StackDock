@@ -1,5 +1,5 @@
 import fs from 'fs/promises';
-import type { ExtensionConfigPrimitive, StackDockSettings, TerminalProfile } from '../src/shared/types';
+import type { ExtensionConfigPrimitive, MicrophonePermissionPreference, StackDockSettings, TerminalProfile, WorkspaceViewZone } from '../src/shared/types';
 import { DEFAULT_KEYBINDS } from '../src/shared/defaultKeybinds';
 import { normalizeKeybind } from '../src/shared/keybinds';
 import { ensureDataDirs, getConfigPath } from './storage';
@@ -14,7 +14,7 @@ const LEGACY_DEFAULT_UI_FONTS = new Set([
 const LEGACY_DEFAULT_CODE_FONTS = new Set(['Consolas, monospace', '"Consolas", monospace', '"Monaspace Neon", "Cascadia Code", Consolas, monospace']);
 const DEFAULT_THEME_ID = 'stackdock-dark';
 const LEGACY_BUILTIN_THEME_IDS = new Set(['catppuccin-noctis-mocha']);
-const DEFAULT_WORKSPACE_VIEW_STATE = { sessionsVisible: true, visibleActivityViewIds: ['stackdock.explorer.view', 'stackdock.git.view'] };
+const DEFAULT_WORKSPACE_VIEW_STATE: StackDockSettings['workspaceViewState'] = { sessionsVisible: true, visibleActivityViewIds: ['stackdock.explorer.view', 'stackdock.git.view'], viewPlacements: {}, viewOrder: [] };
 
 function normalizeKeybindSettings(raw: unknown, defaults: Record<string, string>) {
   const result: Record<string, string> = { ...defaults };
@@ -108,13 +108,31 @@ function normalizeExtensionConfig(rawConfig: unknown): Record<string, Record<str
 
 function normalizeWorkspaceViewState(raw: unknown) {
   if (!raw || typeof raw !== 'object') return DEFAULT_WORKSPACE_VIEW_STATE;
-  const state = raw as { sessionsVisible?: unknown; visibleActivityViewIds?: unknown };
+  const state = raw as { sessionsVisible?: unknown; visibleActivityViewIds?: unknown; viewPlacements?: unknown; viewOrder?: unknown };
+  const viewPlacements: Record<string, WorkspaceViewZone> = {};
+  if (state.viewPlacements && typeof state.viewPlacements === 'object' && !Array.isArray(state.viewPlacements)) {
+    for (const [id, zone] of Object.entries(state.viewPlacements)) {
+      if (!id.trim()) continue;
+      if (zone === 'sessions' || zone === 'activity') viewPlacements[id] = zone;
+    }
+  }
   return {
     sessionsVisible: state.sessionsVisible !== false,
     visibleActivityViewIds: Array.isArray(state.visibleActivityViewIds)
       ? state.visibleActivityViewIds.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
       : DEFAULT_WORKSPACE_VIEW_STATE.visibleActivityViewIds,
+    viewPlacements,
+    viewOrder: Array.isArray(state.viewOrder)
+      ? state.viewOrder.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : [],
   };
+}
+
+function normalizePermissions(raw: unknown): StackDockSettings['permissions'] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { microphone: 'prompt' };
+  const value = (raw as { microphone?: unknown }).microphone;
+  const microphone: MicrophonePermissionPreference = value === 'granted' ? 'granted' : 'prompt';
+  return { microphone };
 }
 
 function getBundledExtensionConfigDefaults(): Record<string, Record<string, ExtensionConfigPrimitive>> {
@@ -149,6 +167,7 @@ export function getDefaultSettings(platform = process.platform): StackDockSettin
     editor: { fontSize: 13, fontFamily: CODE_FONT_FAMILY, tabSize: 2, wordWrap: 'off' },
     terminal: { fontSize: 14, fontFamily: CODE_FONT_FAMILY, cursorBlink: true, startAtBottom: false, markdownFormatting: true, persistentSessionCache: true },
     workspaceViewState: DEFAULT_WORKSPACE_VIEW_STATE,
+    permissions: { microphone: 'prompt' },
     keybinds: DEFAULT_KEYBINDS,
     extensions: {
       localPackagePaths: [],
@@ -236,6 +255,7 @@ export async function loadSettings(): Promise<StackDockSettings> {
       gitRefreshIntervalSeconds: Math.max(1, Number(extensionsConfig['stackdock.git'].refreshIntervalSeconds) || defaults.gitRefreshIntervalSeconds),
       terminalProfiles,
       workspaceViewState: normalizeWorkspaceViewState(raw.workspaceViewState),
+      permissions: normalizePermissions(raw.permissions),
       keybinds: normalizeKeybindSettings(raw.keybinds, defaults.keybinds),
       extensions: {
         localPackagePaths: Array.isArray(raw.extensions?.localPackagePaths) ? raw.extensions.localPackagePaths.filter((item): item is string => typeof item === 'string') : defaults.extensions.localPackagePaths,
@@ -262,6 +282,7 @@ export async function saveSettings(settings: StackDockSettings): Promise<StackDo
     showSessionCwdForAll: sessionsConfig.showSessionCwdForAll === true,
     extensions: { ...settings.extensions, config: normalizeExtensionConfig(settings.extensions.config) },
     workspaceViewState: normalizeWorkspaceViewState(settings.workspaceViewState),
+    permissions: normalizePermissions(settings.permissions),
     keybinds: normalizeKeybindSettings(settings.keybinds, DEFAULT_KEYBINDS),
     terminalProfiles: normalizeTerminalProfiles(settings.terminalProfiles, []),
   };
