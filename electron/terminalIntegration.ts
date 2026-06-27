@@ -49,7 +49,7 @@ export interface TerminalCommandIntegration {
   resolveStartupCommand?(command: string, ctx: TerminalStartupCommandContext): MaybePromise<TerminalStartupCommandResult | undefined>;
   resolveInteractiveCommand?(command: string, ctx: TerminalInteractiveCommandContext): MaybePromise<TerminalInteractiveCommandResult | undefined>;
   captureResumeState?(ctx: TerminalOutputContext): TerminalResumeState | undefined;
-  buildResumeCommand?(ctx: TerminalResumeContext): string | undefined;
+  buildResumeCommand?(ctx: TerminalResumeContext): string | null | undefined;
   detectSnapshotResumeState?(ctx: TerminalSnapshotContext): TerminalResumeState | undefined;
   ownsCommand?(command: string): boolean;
 }

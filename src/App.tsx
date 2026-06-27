@@ -4,9 +4,10 @@ import { TitleBar } from './components/TitleBar';
 import { api } from './lib/api';
 import { useWorkspaceStore } from './state/workspaceStore';
 import { applyTheme } from './lib/themeSupport';
-import type { StackDockSettings } from './shared/types';
+import type { LaunchInfo, StackDockSettings } from './shared/types';
 import { ExtensionProvider } from './extensions/ExtensionProvider';
 import { usePromptDialog } from './components/common/PromptProvider';
+import { ReleaseNotesDialog } from './components/ReleaseNotesDialog';
 
 const WorkspaceShell = lazy(() => import('./components/workspace/WorkspaceShell.js').then((module) => ({ default: module.WorkspaceShell })));
 
@@ -18,6 +19,8 @@ function applyUiFont(settings: StackDockSettings) {
 export default function App() {
   const { workspaces, activeWorkspaceId, loading, error, reload, addWorkspace, openWorkspacePath, createWorkspace, duplicateWorkspace, openWorkspace, closeWorkspace, removeWorkspace, updateWorkspace } = useWorkspaceStore();
   const [settings, setSettings] = useState<StackDockSettings | null>(null);
+  const [launchInfo, setLaunchInfo] = useState<LaunchInfo | null>(null);
+  const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
   const promptDialog = usePromptDialog();
   const restoredRef = useRef(false);
 
@@ -27,9 +30,11 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    api.settings.load().then((loaded) => {
+    Promise.all([api.settings.load(), api.app.getLaunchInfo(), api.app.getReleaseNotesState()]).then(([loaded, info, releaseNotes]) => {
       if (!active) return;
       setSettings(loaded);
+      setLaunchInfo(info);
+      if (!releaseNotes.seen) setReleaseNotesOpen(true);
       applyUiFont(loaded);
       applyTheme(loaded.themeId, loaded.importedThemes);
     }).catch(() => undefined);
@@ -48,6 +53,11 @@ export default function App() {
     setSettings(next);
     applyUiFont(next);
     applyTheme(next.themeId, next.importedThemes);
+  }
+
+  function closeReleaseNotes() {
+    setReleaseNotesOpen(false);
+    void api.app.markReleaseNotesSeen(launchInfo?.releaseNotesVersion).catch(() => undefined);
   }
 
   async function handleAdd() {
@@ -76,6 +86,7 @@ export default function App() {
         <Suspense fallback={<main className="app-shell"><div className="empty-pad muted">Loading workspace…</div></main>}>
           <ExtensionProvider><WorkspaceShell workspace={activeWorkspace} workspaces={workspaces} settings={settings} onSettingsApplied={handleSettingsApplied} onBack={closeWorkspace} onUpdateWorkspace={updateWorkspace} onOpenWorkspace={openWorkspace} onOpenWorkspacePicker={handleOpenWorkspacePicker} /></ExtensionProvider>
         </Suspense>
+        {releaseNotesOpen ? <ReleaseNotesDialog launchInfo={launchInfo} onClose={closeReleaseNotes} /> : null}
       </div>
     );
   }
@@ -98,6 +109,7 @@ export default function App() {
         settings={settings}
         onSettingsApplied={handleSettingsApplied}
         />
+        {releaseNotesOpen ? <ReleaseNotesDialog launchInfo={launchInfo} onClose={closeReleaseNotes} /> : null}
       </main>
     </div>
   );

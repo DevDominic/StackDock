@@ -73,13 +73,6 @@ export function TerminalPanel({ sessions, activeId, onOpenLink, settings, isVisi
   const active = sessions.find((session) => session.id === activeId) ?? sessions[0] ?? null;
   const visibleSessions = active?.splitGroupId ? sessions.filter((session) => session.splitGroupId === active.splitGroupId) : active ? [active] : [];
   const splitDirection = active?.splitDirection ?? 'row';
-  const visibleTerminalIds = isVisible ? visibleSessions.map((session) => session.id) : [];
-  const visibleTerminalKey = visibleTerminalIds.join('\0');
-
-  useEffect(() => {
-    void api.terminal.setVisible(visibleTerminalIds);
-    return () => { void api.terminal.setVisible([]); };
-  }, [visibleTerminalKey]);
 
   return (
     <section className="terminal-workspace">

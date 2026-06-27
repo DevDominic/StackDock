@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import type { AutomationConfig, GitFileStatus, GitStatus, PaletteCommand, StackDockSettings, TerminalPersistedTab, TerminalProfile, TerminalSplitSide, Workspace, WorkspaceLayout, WorkspaceTerminalSession } from '../../shared/types';
+import type { AutomationConfig, GitFileStatus, GitStatus, LaunchInfo, PaletteCommand, StackDockSettings, TerminalPersistedTab, TerminalProfile, TerminalSplitSide, Workspace, WorkspaceLayout, WorkspaceTerminalSession } from '../../shared/types';
 import { api } from '../../lib/api';
 import { getErrorMessage } from '../../lib/errors';
 import { useToast } from '../common/ToastProvider';
@@ -19,7 +19,8 @@ import { getEnabledStatusBarContributions, getEnabledViewContributions, resolveE
 import { getExtensionConfig } from '../../extensions/configuration';
 import type { WorkspaceExtensionContext } from '../../extensions/extensionTypes';
 import { WindowControls } from '../TitleBar';
-import { FolderIcon, FolderOpenIcon, GitBranchIcon, HomeIcon, PanelLeftIcon, SettingsIcon } from '../icons';
+import { ReleaseNotesDialog } from '../ReleaseNotesDialog';
+import { FolderIcon, FolderOpenIcon, GitBranchIcon, HomeIcon, MicrophoneIcon, PanelLeftIcon, SettingsIcon } from '../icons';
 import { resolveTerminalStartupCommand } from '../../shared/terminalProfiles';
 import { keybindMatchesEvent, isEditableTarget } from '../../shared/keybinds';
 
@@ -146,6 +147,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const [editorDiff, setEditorDiff] = useState<EditorDiffModel | null>(null);
   const [diffMode, setDiffMode] = useState<EditorDiffMode>('side-by-side');
   const [settings, setSettings] = useState<StackDockSettings | null>(appSettings ?? null);
+  const [launchInfo, setLaunchInfo] = useState<LaunchInfo | null>(null);
   const [profiles, setProfiles] = useState<TerminalProfile[]>([]);
   const [automation, setAutomation] = useState<AutomationConfig | null>(null);
   const sessionStore = useSessionStore();
@@ -188,11 +190,13 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>('general');
+  const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
   const [pendingBranchSwitch, setPendingBranchSwitch] = useState<string | null>(null);
   const [tabMenu, setTabMenu] = useState<{ sessionId: string; file: OpenFileTab; groupId: string; x: number; y: number } | null>(null);
   const [terminalTabMenu, setTerminalTabMenu] = useState<{ sessionId: string; x: number; y: number } | null>(null);
   const [tabDrop, setTabDrop] = useState<{ side: TerminalSplitSide; kind: 'terminal' | 'file' } | null>(null);
   const [tabOverflow, setTabOverflow] = useState({ left: false, right: false });
+  const [terminalReloadTokens, setTerminalReloadTokens] = useState<Record<string, number>>({});
   const autoStartedRef = useRef<string | null>(null);
   const sessionsRef = useRef<WorkspaceTerminalSession[]>([]);
   const savedLayoutRef = useRef<WorkspaceLayout | null>(null);
@@ -206,6 +210,12 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     setSettings(appSettings);
     applyTheme(appSettings.themeId, appSettings.importedThemes);
   }, [appSettings]);
+
+  useEffect(() => {
+    let active = true;
+    api.app.getLaunchInfo().then((info) => { if (active) setLaunchInfo(info); }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
   const workspaceTrusted = workspace.trusted !== false;
   const workspaceSetup = workspaceTrusted ? automation?.workspaces[workspace.id] : undefined;
   const isRepo = !!git?.isRepo;
@@ -288,7 +298,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
               ?? (session.workspacePath ? workspaces.find((item) => item.path === session.workspacePath) : null);
             if (!targetWorkspace) continue;
             const snapshot = session.restoreId ? await api.terminal.snapshot(session.restoreId).catch(() => null) : null;
-            const resumeCommand = session.resumeStartupCommand || session.resumeState?.resumeCommand || snapshot?.resumeState?.resumeCommand;
+            const resumeCommand = 'resumeStartupCommand' in session ? session.resumeStartupCommand : session.resumeState?.resumeCommand || snapshot?.resumeState?.resumeCommand;
             const startupCommand = resumeCommand || session.startupCommand;
             const created = await sessionStore.createSession({ workspaceId: targetWorkspace.id, workspaceName: targetWorkspace.name, workspacePath: targetWorkspace.path, profileId: session.profileId, cwd: session.cwd, name: session.name, startupCommand, restoreId: session.restoreId });
             const restoredSession = { ...created, originalStartupCommand: session.originalStartupCommand ?? session.startupCommand, resumeState: session.resumeState ?? snapshot?.resumeState, restoredFromSnapshot: true, resumeStartupCommand: session.resumeStartupCommand ?? '', splitGroupId: session.splitGroupId, splitDirection: session.splitDirection, splitGroupOrder: session.splitGroupOrder };
@@ -525,10 +535,10 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     return () => { window.clearInterval(interval); window.removeEventListener('focus', tick); };
   }, [workspace.path, gitConfig.refreshIntervalSeconds, selectedGitFile?.path]);
 
-  // If the repo goes away (or never existed), hide Source Control and clear its selection.
+  // If the repo goes away (or never existed), clear Source Control selection
+  // without changing the global view toggles.
   useEffect(() => {
     if (git && !git.isRepo) {
-      updatePanels({ gitPanelVisible: false });
       setSelectedStagedGitPaths([]);
       setSelectedChangeGitPaths([]);
       setLastSelectedGitPath(null);
@@ -1087,10 +1097,50 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     if (!requireTrusted('restarting terminals')) return;
     const old = allSessions.find((session) => session.id === id);
     if (!old) return;
-    await api.terminal.kill(old.id);
+    await api.terminal.kill(old.id, true);
     const next = await api.terminal.create(old.profileId, cwd ?? old.cwd, old.name, old.resumeState?.resumeCommand || old.startupCommand, old.restoreId, { workspaceId: old.workspaceId, workspaceName: old.workspaceName, workspacePath: old.workspacePath });
-    const replacement: WorkspaceTerminalSession = { ...next, workspaceId: old.workspaceId, workspaceName: old.workspaceName, workspacePath: old.workspacePath, originalStartupCommand: old.originalStartupCommand ?? old.startupCommand, resumeState: next.resumeState ?? old.resumeState, splitGroupId: old.splitGroupId, splitDirection: old.splitDirection };
+    const replacement: WorkspaceTerminalSession = { ...next, workspaceId: old.workspaceId, workspaceName: old.workspaceName, workspacePath: old.workspacePath, originalStartupCommand: old.originalStartupCommand ?? old.startupCommand, resumeState: next.resumeState ?? old.resumeState, splitGroupId: old.splitGroupId, splitDirection: old.splitDirection, splitGroupOrder: old.splitGroupOrder };
     sessionStore.replaceSession(id, replacement);
+  }
+
+  function reloadTerminalView(id: string) {
+    setTerminalReloadTokens((tokens) => ({ ...tokens, [id]: (tokens[id] ?? 0) + 1 }));
+    showToast('Terminal view reloaded from latest snapshot', 'success');
+  }
+
+  async function checkTerminalHealth(id: string) {
+    try {
+      const snapshot = await api.terminal.snapshot(id);
+      if (!snapshot?.output) {
+        showToast('No terminal snapshot is available yet', 'info');
+        return;
+      }
+      reloadTerminalView(id);
+    } catch (error) {
+      showToast(getErrorMessage(error, 'Terminal health check failed'), 'error');
+    }
+  }
+
+  async function killFrozenTerminal(id: string) {
+    const target = allSessions.find((session) => session.id === id);
+    if (!target) return;
+    if (!(await promptDialog.confirm({ title: `Kill ${target.name}?`, message: 'This closes the terminal process and removes its saved snapshot.', confirmLabel: 'Kill', danger: true, icon: '!' }))) return;
+    try {
+      await api.terminal.kill(id);
+      sessionStore.removeSessionLocal(id);
+      showToast('Terminal killed', 'success');
+    } catch (error) {
+      showToast(getErrorMessage(error, 'Could not kill terminal'), 'error');
+    }
+  }
+
+  async function openActiveExternalTerminal(id: string) {
+    const target = allSessions.find((session) => session.id === id);
+    try {
+      await api.app.openExternalTerminal(target?.cwd ?? workspace.path);
+    } catch (error) {
+      showToast(getErrorMessage(error, 'Could not open external terminal'), 'error');
+    }
   }
 
   async function duplicateTerminal(id: string) {
@@ -1160,8 +1210,17 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     const absolutePath = joinPath(workspace.path, file.path);
     setSelectedGitFile(file);
     setSelectedGitStaged(staged);
-    if (isGitDirectoryStatusPath(file.path)) return;
+    if (isGitDirectoryStatusPath(file.path)) {
+      setEditorDiff(null);
+      showToast('Directory changes cannot be previewed as a file diff', 'info');
+      return;
+    }
     const contents = await api.git.fileContents(workspace.path, file.path, staged);
+    if (contents.binary) {
+      setEditorDiff(null);
+      showToast('Binary files cannot be previewed in the diff editor', 'info');
+      return;
+    }
     setEditorDiff({ path: absolutePath, original: contents.original, staged, untracked: file.untracked });
     patchActive((prev) => {
       const targetGroupId = prev.activeEditorGroup;
@@ -1390,45 +1449,46 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const defaultLayout = getDefaultLayout(workspace.id);
   const mergedLayout = layout ?? defaultLayout;
 
-  function updateExtensionState(next: NonNullable<WorkspaceLayout['extensions']>) {
-    setLayout((current) => {
-      const base = current ?? getDefaultLayout(workspace.id);
-      return { ...base, extensions: { ...(base.extensions ?? {}), ...next } };
-    });
+  function saveWorkspaceViewState(next: StackDockSettings['workspaceViewState']) {
+    if (!settings) return;
+    const optimistic = { ...settings, workspaceViewState: next };
+    setSettings(optimistic);
+    onSettingsApplied?.(optimistic);
+    api.settings.save(optimistic).then((saved) => {
+      setSettings(saved);
+      onSettingsApplied?.(saved);
+    }).catch((error) => showToast(getErrorMessage(error, 'Could not save view setting'), 'error'));
   }
 
   function setViewVisible(viewId: string, visible: boolean) {
-    // If this workspace has not written extension visibility yet, start from
-    // the currently visible (legacy panel-derived) views. Otherwise clicking a
-    // second activity icon (e.g. Source Control) replaces Explorer instead of
-    // stacking the two views.
-    const current = mergedLayout.extensions?.visibleViewIds ?? visibleActivityViewIds;
+    const current = visibleActivityViewIds;
     const next = visible ? [...new Set([...current, viewId])] : current.filter((id) => id !== viewId);
-    updateExtensionState({ visibleViewIds: next });
+    saveWorkspaceViewState({ sessionsVisible, visibleActivityViewIds: next });
   }
 
   function openView(viewId: string) {
     const sessionView = sessionContributions.some((view) => view.id === viewId);
-    if (sessionView) { updatePanels({ sessionsVisible: true }); return; }
+    if (sessionView) { saveWorkspaceViewState({ sessionsVisible: true, visibleActivityViewIds }); return; }
     if (!activityContributions.some((view) => view.id === viewId)) return;
     setViewVisible(viewId, true);
   }
 
   function toggleView(viewId: string) {
     const sessionView = sessionContributions.some((view) => view.id === viewId);
-    if (sessionView) { updatePanels({ sessionsVisible: !sessionsVisible }); return; }
+    if (sessionView) { saveWorkspaceViewState({ sessionsVisible: !sessionsVisible, visibleActivityViewIds }); return; }
     if (!activityContributions.some((view) => view.id === viewId)) return;
     setViewVisible(viewId, !visibleActivityViewIds.includes(viewId));
   }
 
   function toggleActivitySidebar() {
-    if (visibleActivityViewIds.length) updateExtensionState({ visibleViewIds: [] });
+    if (visibleActivityViewIds.length) saveWorkspaceViewState({ sessionsVisible, visibleActivityViewIds: [] });
     else if (activityContributions[0]) setViewVisible(activityContributions[0].id, true);
   }
 
   function renderContributionIcon(icon?: string) {
     if (icon === 'git') return <GitBranchIcon />;
     if (icon === 'sessions') return <PanelLeftIcon />;
+    if (icon === 'mic') return <MicrophoneIcon />;
     return <FolderIcon />;
   }
   const extensionCtx: WorkspaceExtensionContext = {
@@ -1497,6 +1557,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       error: gitError,
       clearError: () => setGitError(null),
       selectedFile: selectedGitFile,
+      selectedGroup: selectedGitFile ? (selectedGitStaged ? 'staged' : 'changes') : null,
       selectedStagedPaths: selectedStagedGitPaths,
       selectedChangePaths: selectedChangeGitPaths,
       selectFile: selectGitFile,
@@ -1531,21 +1592,26 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       detach: (id) => void detachTerminal(id),
     },
   };
-  const enabledExtensions = resolveEnabledExtensions(extensionRegistry.extensions, settings, mergedLayout.extensions);
+  const enabledExtensions = resolveEnabledExtensions(extensionRegistry.extensions, settings);
   const statusBarContributions = getEnabledStatusBarContributions(enabledExtensions, extensionCtx);
   const sessionContributions = getEnabledViewContributions(enabledExtensions, 'sessions', extensionCtx);
   const sessionContribution = sessionContributions[0] ?? null;
   const activityContributions = getEnabledViewContributions(enabledExtensions, 'activity', extensionCtx);
   const renderExtensionView = (contribution: (typeof activityContributions)[number] | (typeof sessionContributions)[number]) => extensionRegistry.nativeExtensions.get(contribution.extensionId)?.renderView?.(contribution, extensionCtx) ?? null;
-  const legacyActivityViewIds = activityContributions.filter((_, index) => index === 0 ? mergedLayout.panels.fileTreeVisible : index === 1 ? mergedLayout.panels.gitPanelVisible : false).map((view) => view.id);
-  const configuredActivityViewIds = mergedLayout.extensions?.visibleViewIds;
-  const visibleActivityViewIds = (configuredActivityViewIds ?? legacyActivityViewIds).filter((id) => activityContributions.some((view) => view.id === id));
+  const defaultActivityViewIds = activityContributions.filter((_, index) => index < 2).map((view) => view.id);
+  const visibleActivityViewIds = (settings?.workspaceViewState.visibleActivityViewIds ?? defaultActivityViewIds).filter((id) => activityContributions.some((view) => view.id === id));
   const visibleActivityContributions = activityContributions.filter((view) => visibleActivityViewIds.includes(view.id));
   const sidebarVisible = visibleActivityContributions.length > 0;
-  const sessionsVisible = sessionContributions.length > 0 && mergedLayout.panels.sessionsVisible !== false;
+  const sessionsVisible = sessionContributions.length > 0 && settings?.workspaceViewState.sessionsVisible !== false;
   const panelSizes = mergedLayout.panels.panelSizes ?? { sessions: 14, explorer: 18, main: 68, editor: 72, git: 28, upper: 62, terminal: 38 };
   const safePanelSizes = getSafePanelSizes(panelSizes, sidebarVisible, sessionsVisible);
   const extensionCommands = enabledExtensions.flatMap((manifest) => extensionRegistry.nativeExtensions.get(manifest.id)?.getCommands?.(extensionCtx) ?? []);
+  function renderTerminalOverlays(session: WorkspaceTerminalSession) {
+    return enabledExtensions.flatMap((manifest) => {
+      const overlay = extensionRegistry.nativeExtensions.get(manifest.id)?.renderTerminalOverlay?.(extensionCtx, session);
+      return overlay ? [<div key={manifest.id} className="terminal-extension-overlay-item">{overlay}</div>] : [];
+    });
+  }
   const statusBarCommands: CommandAction[] = statusBarContributions
     .filter((contribution) => contribution.entry && !contribution.native)
     .map((contribution) => {
@@ -1576,6 +1642,69 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     showToast(`Opened terminal in ${target.name}`, 'success');
   }
 
+  async function exportDiagnosticsAction() {
+    try {
+      const result = await api.app.exportDiagnostics({ workspaceId: workspace.id, workspaceName: workspace.name, workspacePath: workspace.path, redactPaths: true });
+      showToast('Diagnostics exported', 'success', { onClick: () => void api.fs.revealInExplorer(result.path) });
+    } catch (error) {
+      showToast(getErrorMessage(error, 'Could not export diagnostics'), 'error');
+    }
+  }
+
+  async function exportSettingsBackupAction() {
+    try {
+      const result = await api.app.exportSettingsBackup();
+      showToast('Settings backup exported', 'success', { onClick: () => void api.fs.revealInExplorer(result.path) });
+    } catch (error) {
+      showToast(getErrorMessage(error, 'Could not export settings backup'), 'error');
+    }
+  }
+
+  async function resetSettingsAction() {
+    if (!(await promptDialog.confirm({ title: 'Reset settings?', message: 'This restores default app settings. Workspace files are not touched.', confirmLabel: 'Reset Settings', danger: true, icon: '!' }))) return;
+    try {
+      const saved = await api.app.resetSettings();
+      setSettings(saved);
+      applyTheme(saved.themeId, saved.importedThemes);
+      onSettingsApplied?.(saved);
+      setProfiles(await api.terminal.profiles());
+      showToast('Settings reset to defaults', 'success');
+    } catch (error) {
+      showToast(getErrorMessage(error, 'Could not reset settings'), 'error');
+    }
+  }
+
+  async function resetWorkspaceLayoutAction() {
+    if (!(await promptDialog.confirm({ title: 'Reset workspace layout?', message: 'This resets panels, tabs, and saved layout for this workspace. Files and terminals are not deleted.', confirmLabel: 'Reset Layout', danger: true, icon: '!' }))) return;
+    try {
+      await api.app.resetWorkspaceLayout(workspace.id);
+      setLayout(getDefaultLayout(workspace.id));
+      setEditorsBySession({});
+      setHtmlPreviewBySession({});
+      showToast('Workspace layout reset', 'success');
+    } catch (error) {
+      showToast(getErrorMessage(error, 'Could not reset workspace layout'), 'error');
+    }
+  }
+
+  async function enableSafeModeAction() {
+    if (!(await promptDialog.confirm({ title: 'Enable Safe Mode?', message: 'StackDock will back up settings and remove local extension package paths for the next launch.', confirmLabel: 'Enable Safe Mode', icon: '!' }))) return;
+    try {
+      const result = await api.app.enableSafeMode();
+      showToast('Safe Mode prepared for next launch', 'success', { onClick: () => void api.fs.revealInExplorer(result.backupPath) });
+    } catch (error) {
+      showToast(getErrorMessage(error, 'Could not enable Safe Mode'), 'error');
+    }
+  }
+
+  async function openLogsFolderAction() {
+    try {
+      await api.app.openLogsFolder();
+    } catch (error) {
+      showToast(getErrorMessage(error, 'Could not open logs folder'), 'error');
+    }
+  }
+
   const workspaceLauncherActions: CommandAction[] = sortedWorkspaces.map((target) => ({
     id: `stackdock.workspace.openTerminal.${target.id}`,
     label: `Open Workspace: ${target.name}`,
@@ -1592,6 +1721,15 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     { id: 'stackdock.settings.open.workspace', label: 'Open Settings: Workspace', keybind: settings?.keybinds['stackdock.settings.open.workspace'], run: () => openSettings('workspace') },
     { id: 'stackdock.settings.open.keybinds', label: 'Open Settings: Keybinds', keybind: settings?.keybinds['stackdock.settings.open.keybinds'], run: () => openSettings('keybinds') },
   ];
+  const launchSupportActions: CommandAction[] = [
+    { id: 'stackdock.diagnostics.export', label: 'StackDock: Export Diagnostics', description: 'Create a redacted local diagnostics bundle', run: exportDiagnosticsAction },
+    { id: 'stackdock.logs.open', label: 'StackDock: Open Logs Folder', description: 'Open local app logs', run: openLogsFolderAction },
+    { id: 'stackdock.releaseNotes.show', label: 'StackDock: Show Release Notes', description: launchInfo ? `Version ${launchInfo.releaseNotesVersion}` : undefined, run: () => setReleaseNotesOpen(true) },
+    { id: 'stackdock.safeMode.enable', label: 'StackDock: Enable Safe Mode', description: 'Disable local extensions for the next launch after backing up settings', run: enableSafeModeAction },
+    { id: 'stackdock.settings.backup', label: 'StackDock: Export Settings Backup', description: 'Copy current settings to the backups folder', run: exportSettingsBackupAction },
+    { id: 'stackdock.settings.reset', label: 'StackDock: Reset Settings', description: 'Restore default app settings', run: resetSettingsAction },
+    { id: 'stackdock.layout.reset', label: 'StackDock: Reset Workspace Layout', description: 'Reset panels and saved tabs for this workspace', run: resetWorkspaceLayoutAction },
+  ];
   const launcherActions: CommandAction[] = [
     // User-defined commands first so they're front-and-center in the palette.
     ...(workspaceSetup?.commands ?? []).map((command) => ({ id: `ws:${command.id}`, label: command.label, description: command.command, keybind: command.keybind, run: () => runPaletteCommand(command) })),
@@ -1604,10 +1742,16 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     { id: 'stackdock.view.toggleSidebar', label: 'Toggle Sidebar', keybind: settings?.keybinds['stackdock.view.toggleSidebar'], run: toggleActivitySidebar },
     { id: 'stackdock.tab.closeActive', label: 'Close Active Tab', keybind: settings?.keybinds['stackdock.tab.closeActive'], run: () => { if (mainView === 'web' && activeWebId) closeLink(activeWebId); else if (activeFilePath) void closeFile(activeFilePath, activeEditors.activeEditorGroup); } },
     ...(activeTerminalId ? [
+      { id: 'stackdock.terminal.reloadView', label: 'Terminal: Reload View', description: 'Recreate the visible terminal renderer from the latest snapshot', run: () => reloadTerminalView(activeTerminalId) },
+      { id: 'stackdock.terminal.checkHealth', label: 'Terminal: Check Health', description: 'Verify the active terminal snapshot and reload the view', run: () => checkTerminalHealth(activeTerminalId) },
+      { id: 'stackdock.terminal.restartPreserveSnapshot', label: 'Terminal: Restart Preserving Snapshot', description: 'Restart the terminal while keeping its restore buffer', run: () => restartTerminal(activeTerminalId) },
+      { id: 'stackdock.terminal.killFrozen', label: 'Terminal: Kill Frozen Terminal', description: 'Force-close the active terminal and discard its snapshot', run: () => killFrozenTerminal(activeTerminalId) },
+      { id: 'stackdock.terminal.openExternal', label: 'Terminal: Open in External Terminal', description: 'Open a system terminal in this session working directory', run: () => openActiveExternalTerminal(activeTerminalId) },
       { id: 'restart-terminal', label: 'Restart Terminal', run: () => restartTerminal(activeTerminalId) },
       { id: 'close-terminal', label: 'Close Terminal', run: () => closeTerminal(activeTerminalId) },
     ] : []),
     ...settingsActions,
+    ...launchSupportActions,
     { id: 'open-folder', label: 'Open Workspace Folder', run: () => api.shell.openPath(workspace.path) },
   ];
 
@@ -1632,17 +1776,23 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const sessionSplitDirection = activeSession?.splitDirection ?? 'row';
   const persistentSessionCache = settings?.terminal.persistentSessionCache !== false;
   const visibleSessionIdSet = new Set(visibleSessionPanes.map((session) => session.id));
+  const visibleTerminalIds = visibleSessionPanes.map((session) => session.id);
+  const visibleTerminalKey = visibleTerminalIds.join('\0');
   const [mountedTerminalSessionIds, setMountedTerminalSessionIds] = useState<string[]>([]);
 
   useEffect(() => {
+    void api.terminal.setVisible(visibleTerminalIds);
+    return () => { void api.terminal.setVisible([]); };
+  }, [visibleTerminalKey]);
+
+  useEffect(() => {
     const liveIds = new Set(sessions.map((session) => session.id));
-    const visibleIds = visibleSessionPanes.map((session) => session.id);
     setMountedTerminalSessionIds((current) => {
       const next = persistentSessionCache ? current.filter((id) => liveIds.has(id)) : [];
-      for (const id of visibleIds) if (!next.includes(id)) next.push(id);
+      for (const id of visibleTerminalIds) if (!next.includes(id)) next.push(id);
       return next.length === current.length && next.every((id, index) => id === current[index]) ? current : next;
     });
-  }, [persistentSessionCache, sessions, visibleSessionPanes]);
+  }, [persistentSessionCache, sessions, visibleTerminalKey]);
 
   function startTerminalTabDrag(event: DragEvent<HTMLDivElement>, sessionId: string) {
     event.dataTransfer.effectAllowed = 'move';
@@ -1728,7 +1878,8 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
             {paneWebSplit === 'left' || paneWebSplit === 'up' ? paneWebPane : null}
             <Panel key="primary" id={`main-primary-${session.id}`} order={paneWebSplit === 'left' || paneWebSplit === 'up' ? 2 : 1} minSize={20}>
               <div className="main-tab-pane" style={{ display: panePrimaryView === 'terminal' ? 'flex' : 'none' }}>
-                <TerminalPanel sessions={[session]} activeId={session.id} onOpenLink={(url) => openLinkFor(session.id, url)} settings={settings} isVisible={isPaneVisible && panePrimaryView === 'terminal'} onAttachmentError={(message) => showToast(message, 'error')} />
+                <TerminalPanel key={`${session.id}:${terminalReloadTokens[session.id] ?? 0}`} sessions={[session]} activeId={session.id} onOpenLink={(url) => openLinkFor(session.id, url)} settings={settings} isVisible={isPaneVisible && panePrimaryView === 'terminal'} onAttachmentError={(message) => showToast(message, 'error')} />
+                {isPaneVisible && panePrimaryView === 'terminal' ? <div className="terminal-overlay-host">{renderTerminalOverlays(session)}</div> : null}
               </div>
               <div className="main-tab-pane" style={{ display: panePrimaryView === 'editor' ? 'flex' : 'none' }}>
                 {paneOpenFiles.length ? (
@@ -1812,6 +1963,15 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
             <span>Terminals, automation, git mutations, and workspace startup commands are blocked until you trust this folder.</span>
           </div>
           <button className="primary" onClick={() => void trustWorkspace()}>Trust workspace</button>
+        </div>
+      ) : null}
+      {launchInfo?.safeMode ? (
+        <div className="workspace-trust-banner" role="status">
+          <div>
+            <strong>Safe Mode active</strong>
+            <span>Local extension packages are disabled for this launch.</span>
+          </div>
+          <button className="ghost" onClick={() => openSettings('extensions')}>Extensions</button>
         </div>
       ) : null}
 
@@ -1919,6 +2079,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         onClose={() => setSessionSwitcherOpen(false)}
       />
       {settingsOpen && settings ? <SettingsModal settings={settings} currentWorkspaceId={workspace.id} initialTab={settingsInitialTab} onSave={async (next) => { const saved = await api.settings.save(next); setSettings(saved); applyTheme(saved.themeId, saved.importedThemes); onSettingsApplied?.(saved); setProfiles(await api.terminal.profiles()); }} onAutomationSaved={(config) => setAutomation(config)} onRunCommand={(command) => void runPaletteCommand(command)} onClose={() => setSettingsOpen(false)} /> : null}
+      {releaseNotesOpen ? <ReleaseNotesDialog launchInfo={launchInfo} onClose={() => setReleaseNotesOpen(false)} /> : null}
       {pendingBranchSwitch ? (
         <div className="modal-backdrop confirm-backdrop" onMouseDown={() => setPendingBranchSwitch(null)}>
           <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="branch-switch-title" onMouseDown={(event) => event.stopPropagation()}>

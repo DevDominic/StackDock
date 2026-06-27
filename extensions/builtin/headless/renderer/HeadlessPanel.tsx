@@ -52,7 +52,7 @@ export function HeadlessPanel({ runs, inspectRunId, onTerminate, onDelete }: Pro
           <button key={run.id} className={`headless-run${run.completedAt ? ' completed' : ''}`} title={run.output || run.command} onClick={() => setInspectingRunId(run.id)}>
             <span className="headless-run-copy">
               <span className="headless-run-label">{run.label}</span>
-              <small>{run.workspaceName} · {run.completedAt ? (run.timedOut ? 'Timed out' : run.exitCode === 0 ? 'Completed' : `Exited ${run.exitCode ?? '?'}`) : elapsedLabel(run.startedAt, now)}</small>
+              <small>{run.completedAt ? (run.timedOut ? 'Timed out' : run.exitCode === 0 ? 'Completed' : `Exited ${run.exitCode ?? '?'}`) : `Running · ${elapsedLabel(run.startedAt, now)}`}</small>
               {run.output ? <span className="headless-run-output">{run.output}</span> : null}
             </span>
             <span

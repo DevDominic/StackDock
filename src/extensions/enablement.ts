@@ -1,13 +1,11 @@
-import type { ExtensionManifest, ExtensionStatusBarContribution, ExtensionViewContribution, StackDockSettings, WorkspaceExtensionState } from '../shared/types';
+import type { ExtensionManifest, ExtensionStatusBarContribution, ExtensionViewContribution, StackDockSettings } from '../shared/types';
 import type { WorkspaceExtensionContext } from './extensionTypes';
 
-export function resolveEnabledExtensions(manifests: ExtensionManifest[], settings?: StackDockSettings | null, workspace?: WorkspaceExtensionState): ExtensionManifest[] {
+export function resolveEnabledExtensions(manifests: ExtensionManifest[], settings?: StackDockSettings | null): ExtensionManifest[] {
   return manifests.filter((manifest) => {
     let enabled = manifest.defaultEnabled === true;
     if (settings?.extensions.enabled.includes(manifest.id)) enabled = true;
     if (settings?.extensions.disabled.includes(manifest.id)) enabled = false;
-    if (workspace?.enabled?.includes(manifest.id)) enabled = true;
-    if (workspace?.disabled?.includes(manifest.id)) enabled = false;
     return enabled;
   });
 }

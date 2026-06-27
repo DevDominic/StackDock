@@ -32,6 +32,7 @@ export interface ExtensionLoadError { extensionId?: string; packagePath?: string
 export interface ExtensionListResult { extensions: ExtensionManifest[]; errors: ExtensionLoadError[]; }
 export interface ExtensionSettings { localPackagePaths: string[]; disabled: string[]; enabled: string[]; config: Record<string, Record<string, ExtensionConfigPrimitive>>; }
 export interface WorkspaceExtensionState { enabled?: string[]; disabled?: string[]; activeActivityViewId?: string; activeBottomViewId?: string; panelSizesByViewId?: Record<string, number>; visibleViewIds?: string[]; }
+export interface WorkspaceViewState { sessionsVisible: boolean; visibleActivityViewIds: string[]; }
 
 export type KeybindMap = Record<string, string>;
 
@@ -61,6 +62,7 @@ export interface StackDockSettings {
   terminal: { fontSize: number; fontFamily: string; cursorBlink: boolean; startAtBottom: boolean; markdownFormatting: boolean; persistentSessionCache?: boolean };
   terminalProfiles: TerminalProfile[];
   extensions: ExtensionSettings;
+  workspaceViewState: WorkspaceViewState;
   keybinds: KeybindMap;
 }
 
@@ -117,6 +119,26 @@ export interface AppRestoreState {
   lastWorkspaceId?: string;
   lastTerminalRestoreId?: string;
   lastTerminalRuntimeId?: string;
+}
+
+export interface LaunchInfo {
+  version: string;
+  releaseNotesVersion: string;
+  safeMode: boolean;
+  dataPath: string;
+  logsPath: string;
+}
+
+export interface ReleaseNotesState {
+  version: string;
+  seen: boolean;
+}
+
+export interface LaunchDiagnosticExportOptions {
+  workspaceId?: string;
+  workspaceName?: string;
+  workspacePath?: string;
+  redactPaths?: boolean;
 }
 
 export interface WorkspaceLayout {
@@ -275,6 +297,7 @@ export interface GitFileContents {
   path: string;
   original: string;
   modified: string;
+  binary?: boolean;
 }
 
 export interface DirectoryEntry {
@@ -339,6 +362,16 @@ export interface StackDockApi {
   app: {
     pickWorkspaceFolder(): Promise<string | null>;
     importJsonFile(): Promise<{ path: string; content: string } | null>;
+    getLaunchInfo(): Promise<LaunchInfo>;
+    getReleaseNotesState(): Promise<ReleaseNotesState>;
+    markReleaseNotesSeen(version?: string): Promise<ReleaseNotesState>;
+    exportDiagnostics(options?: LaunchDiagnosticExportOptions): Promise<{ path: string }>;
+    exportSettingsBackup(): Promise<{ path: string }>;
+    resetSettings(): Promise<StackDockSettings>;
+    resetWorkspaceLayout(workspaceId: string): Promise<void>;
+    enableSafeMode(): Promise<{ backupPath: string }>;
+    openLogsFolder(): Promise<void>;
+    openExternalTerminal(cwd: string): Promise<void>;
     minimizeWindow(): Promise<void>;
     toggleMaximizeWindow(): Promise<boolean>;
     closeWindow(): Promise<void>;
@@ -430,7 +463,7 @@ export interface StackDockApi {
     resize(id: string, cols: number, rows: number): Promise<void>;
     ready(id: string): Promise<void>;
     setVisible(ids: string[]): Promise<void>;
-    kill(id: string): Promise<void>;
+    kill(id: string, preserveSnapshot?: boolean): Promise<void>;
     snapshot(idOrRestoreId: string): Promise<TerminalSnapshot | null>;
     forgetSnapshot(idOrRestoreId: string): Promise<void>;
   };

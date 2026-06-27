@@ -12,10 +12,11 @@ import { ensureDataDirs, getLocalExtensionsDir } from './storage';
 import { logError } from './log';
 import { getDefaultSettings, loadSettings, saveSettings } from './configStore';
 import { ensureExtensionsLoaded, loadExtensions, resolveExtensionAsset } from './extensionService';
+import { applySafeModeSettings, enableSafeModeForNextLaunch, exportDiagnostics, exportSettingsBackup, getLaunchInfo, getReleaseNotesState, isSafeModeActive, markReleaseNotesSeen, openExternalTerminal, openLogsFolder, resetSettingsToDefaults, resetWorkspaceLayout } from './launchSupport';
 import { ExtensionHost } from './extensionHost';
 import { loadAutomation, loadAutomationRaw, saveAutomationRaw } from './automationStore';
 import { inspectAttachmentPath, savePastedImageAttachment } from './attachmentService';
-import { assertAbsolutePath, assertLayoutLike, assertNonEmptyString, assertNumber, assertRestoreStateLike, assertSafeFileName, assertString, assertTerminalAttachmentOptions, assertTerminalAttachmentSource, assertTerminalSessionContext, assertTerminalSessionUpdate, assertWorkspaceLike } from './validation';
+import { assertAbsolutePath, assertBoolean, assertLayoutLike, assertNonEmptyString, assertNumber, assertRestoreStateLike, assertSafeFileName, assertString, assertTerminalAttachmentOptions, assertTerminalAttachmentSource, assertTerminalSessionContext, assertTerminalSessionUpdate, assertWorkspaceLike } from './validation';
 import { getWindowControlsConfig } from '../src/shared/windowControls';
 
 let mainWindow: BrowserWindow | null = null;
@@ -24,6 +25,18 @@ let closingAfterTerminalSave = false;
 const watchedWorkspaces = new Map<string, { watcher: FSWatcher; timer: NodeJS.Timeout | null }>();
 const noisyWatchSegments = new Set(['node_modules', 'dist', 'build', 'target', '.cache', '.git']);
 const EXTENSION_MANIFEST_FILE = 'stackdock.extension.json';
+
+function assertDiagnosticsOptions(value: unknown) {
+  if (value == null) return undefined;
+  if (typeof value !== 'object') throw new Error('diagnostics options invalid');
+  const options = value as { workspaceId?: unknown; workspaceName?: unknown; workspacePath?: unknown; redactPaths?: unknown };
+  return {
+    workspaceId: options.workspaceId == null ? undefined : assertNonEmptyString(options.workspaceId, 'workspaceId'),
+    workspaceName: options.workspaceName == null ? undefined : assertNonEmptyString(options.workspaceName, 'workspaceName'),
+    workspacePath: options.workspacePath == null ? undefined : assertAbsolutePath(options.workspacePath, 'workspacePath'),
+    redactPaths: options.redactPaths == null ? undefined : assertBoolean(options.redactPaths, 'redactPaths'),
+  };
+}
 
 function validExtensionId(id: string) { return /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id); }
 function managedLocalExtensionPath(id: string) { return path.join(getLocalExtensionsDir(), id); }
@@ -217,6 +230,16 @@ function registerIpc() {
   });
   ipcMain.handle('app:loadRestoreState', async () => loadRestoreState());
   ipcMain.handle('app:saveRestoreState', async (_event, state: unknown) => saveRestoreState(assertRestoreStateLike(state)));
+  ipcMain.handle('app:getLaunchInfo', async () => getLaunchInfo());
+  ipcMain.handle('app:getReleaseNotesState', async () => getReleaseNotesState());
+  ipcMain.handle('app:markReleaseNotesSeen', async (_event, version?: unknown) => markReleaseNotesSeen(version == null ? undefined : assertNonEmptyString(version, 'version')));
+  ipcMain.handle('app:exportDiagnostics', async (_event, options?: unknown) => exportDiagnostics(assertDiagnosticsOptions(options)));
+  ipcMain.handle('app:exportSettingsBackup', async () => exportSettingsBackup());
+  ipcMain.handle('app:resetSettings', async () => resetSettingsToDefaults());
+  ipcMain.handle('app:resetWorkspaceLayout', async (_event, workspaceId: unknown) => resetWorkspaceLayout(assertNonEmptyString(workspaceId, 'workspaceId')));
+  ipcMain.handle('app:enableSafeMode', async () => enableSafeModeForNextLaunch());
+  ipcMain.handle('app:openLogsFolder', async () => openLogsFolder());
+  ipcMain.handle('app:openExternalTerminal', async (_event, cwd: unknown) => openExternalTerminal(assertAbsolutePath(cwd, 'cwd')));
 
   ipcMain.handle('workspaces:list', async () => listWorkspaces());
   ipcMain.handle('workspaces:add', async (_event, folderPath: unknown) => {
@@ -280,8 +303,8 @@ function registerIpc() {
   ipcMain.handle('automation:loadRaw', async () => loadAutomationRaw());
   ipcMain.handle('automation:saveRaw', async (_event, content: unknown) => saveAutomationRaw(assertString(content, 'content')));
 
-  ipcMain.handle('extensions:list', async () => loadExtensions(await migrateLocalExtensionPackages(await loadSettings())));
-  ipcMain.handle('extensions:reload', async () => loadExtensions(await migrateLocalExtensionPackages(await loadSettings())));
+  ipcMain.handle('extensions:list', async () => loadExtensions(applySafeModeSettings(await migrateLocalExtensionPackages(await loadSettings()))));
+  ipcMain.handle('extensions:reload', async () => loadExtensions(applySafeModeSettings(await migrateLocalExtensionPackages(await loadSettings()))));
   ipcMain.handle('extensions:addLocalPackage', async (_event, targetPath: unknown) => {
     const sourcePath = assertAbsolutePath(targetPath, 'packagePath');
     const packagePath = await installLocalExtensionPackage(sourcePath);
@@ -320,7 +343,7 @@ function registerIpc() {
     if (!Array.isArray(ids)) throw new Error('ids must be an array');
     setVisibleTerminals(ids.map((id, index) => assertNonEmptyString(id, `ids[${index}]`)));
   });
-  ipcMain.handle('terminal:kill', async (_event, id: unknown) => killTerminal(assertNonEmptyString(id, 'id')));
+  ipcMain.handle('terminal:kill', async (_event, id: unknown, preserveSnapshot?: unknown) => killTerminal(assertNonEmptyString(id, 'id'), preserveSnapshot === true));
   ipcMain.handle('terminal:snapshot', async (_event, idOrRestoreId: unknown) => getTerminalSnapshot(assertNonEmptyString(idOrRestoreId, 'idOrRestoreId')));
   ipcMain.handle('terminal:forgetSnapshot', async (_event, idOrRestoreId: unknown) => forgetTerminalSnapshot(assertNonEmptyString(idOrRestoreId, 'idOrRestoreId')));
 }
@@ -343,7 +366,8 @@ app.whenReady().then(async () => {
   } catch (error) {
     void logError('startBrowserBridge', error); // bridge failure must never block startup
   }
-  const settings = await loadSettings();
+  const settings = applySafeModeSettings(await loadSettings());
+  if (isSafeModeActive()) void logError('safeMode', 'Started with local extensions disabled');
   await extensionHost.activateBundledExtensions(await ensureExtensionsLoaded(settings));
   registerIpc();
   await createWindow();
@@ -371,4 +395,3 @@ process.on('uncaughtException', (error) => {
 process.on('unhandledRejection', (error) => {
   void logError('unhandledRejection', error);
 });
-

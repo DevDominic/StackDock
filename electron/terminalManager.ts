@@ -160,13 +160,15 @@ async function resolveIntegratedStartupCommand(command: string | undefined, rest
   return { command, resumeState: undefined as TerminalResumeState | undefined };
 }
 
-function buildResumeCommand(session: TerminalSession, snapshot: TerminalSnapshot | null | undefined, terminalIntegrations: TerminalCommandIntegration[]) {
+function buildResumeCommandResult(session: TerminalSession, snapshot: TerminalSnapshot | null | undefined, terminalIntegrations: TerminalCommandIntegration[]) {
   for (const integration of terminalIntegrations) {
     const command = integration.buildResumeCommand?.({ session, snapshot });
-    if (command) return command;
+    if (command === null) return { command: undefined as string | undefined, suppressed: true };
+    if (command) return { command, suppressed: false };
   }
-  return session.resumeState?.resumeCommand ?? snapshot?.resumeState?.resumeCommand;
+  return { command: session.resumeState?.resumeCommand ?? snapshot?.resumeState?.resumeCommand, suppressed: false };
 }
+
 
 async function refreshTerminalIntegrations(entry: RecordEntry) {
   const settings = await loadSettings().catch(() => getDefaultSettings());
@@ -182,15 +184,15 @@ function terminalPersistedTab(entry: RecordEntry): TerminalPersistedTab {
   const restoreId = entry.session.restoreId ?? entry.session.id;
   const snapshot = snapshots.get(restoreId);
   if (snapshot) hydrateSnapshotResumeState(snapshot, entry.terminalIntegrations);
-  const resumeState = entry.session.resumeState ?? snapshot?.resumeState;
-  const resumeStartupCommand = buildResumeCommand(entry.session, snapshot, entry.terminalIntegrations);
-  const suppressIntegratedStartup = !resumeStartupCommand && integrationOwnsCommand(entry.session.startupCommand, entry.terminalIntegrations);
+  const resumeCommandResult = buildResumeCommandResult(entry.session, snapshot, entry.terminalIntegrations);
+  const resumeState = resumeCommandResult.suppressed ? undefined : entry.session.resumeState ?? snapshot?.resumeState;
+  const suppressIntegratedStartup = !resumeCommandResult.command && integrationOwnsCommand(entry.session.startupCommand, entry.terminalIntegrations);
   return {
     ...entry.session,
     ...entry.context,
     startupCommand: suppressIntegratedStartup ? undefined : entry.session.startupCommand,
     resumeState,
-    resumeStartupCommand: resumeStartupCommand ?? '',
+    resumeStartupCommand: resumeCommandResult.command ?? '',
     lastActiveAt: new Date().toISOString(),
   };
 }
@@ -277,7 +279,6 @@ function flushTerminalOutput(entry: RecordEntry) {
   entry.pendingData = [];
   updateSnapshot(entry, data);
   if (entry.context?.headless) mainWindow?.webContents.send('terminal:headlessData', { id: entry.session.id, data });
-  if (!isTerminalVisible(entry)) return;
   mainWindow?.webContents.send('terminal:data', { id: entry.session.id, data });
 }
 
@@ -504,8 +505,9 @@ export async function createTerminal(profileId: string, cwd: string, name?: stri
   const headless = new HeadlessTerminal({ cols: SPAWN_COLS, rows: SPAWN_ROWS, scrollback: SNAPSHOT_SCROLLBACK_LINES, allowProposedApi: true });
   const serializeAddon = new SerializeAddon();
   headless.loadAddon(serializeAddon as unknown as HeadlessTerminalAddon);
+  const restoreResumeCommand = session.restoredFromSnapshot && priorSnapshot?.output ? buildResumeCommandResult(session, priorSnapshot, terminalIntegrations) : null;
   const pendingRestoreBarrier = session.restoredFromSnapshot && priorSnapshot?.output
-    ? { resumeCommand: buildResumeCommand(session, priorSnapshot, terminalIntegrations) ?? (integrationOwnsCommand(normalizedStartupCommand, terminalIntegrations) ? normalizedStartupCommand : undefined) }
+    ? { resumeCommand: restoreResumeCommand?.command ?? (!restoreResumeCommand?.suppressed && integrationOwnsCommand(normalizedStartupCommand, terminalIntegrations) ? normalizedStartupCommand : undefined) }
     : null;
   if (session.restoredFromSnapshot && priorSnapshot?.output) {
     // Seed only the previous session's rendered buffer at spawn geometry. The

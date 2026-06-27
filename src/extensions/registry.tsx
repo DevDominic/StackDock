@@ -5,6 +5,7 @@ import { sessionsExtension } from '../../extensions/builtin/sessions/renderer';
 import { headlessExtension } from '../../extensions/builtin/headless/renderer';
 import { workspaceStatusExtension } from '../../extensions/builtin/workspace-status/renderer';
 import { piExtension } from '../../extensions/builtin/pi/renderer';
+import { voiceInputExtension } from '../../extensions/builtin/voice-input/renderer';
 export { getEnabledStatusBarContributions, getEnabledViewContributions, resolveEnabledExtensions } from './enablement';
 
-export function getNativeExtensions(): NativeExtension[] { return [explorerExtension, gitExtension, sessionsExtension, headlessExtension, workspaceStatusExtension, piExtension]; }
+export function getNativeExtensions(): NativeExtension[] { return [explorerExtension, gitExtension, sessionsExtension, headlessExtension, workspaceStatusExtension, piExtension, voiceInputExtension]; }

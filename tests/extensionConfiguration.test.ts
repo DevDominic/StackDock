@@ -4,7 +4,7 @@ import { coerceConfigValue, defaultsFromFields, getExtensionConfig, setExtension
 
 const settings: StackDockSettings = {
   themeId: 'x', importedThemes: [], confirmBeforeDiscard: true, emptySessionsVisible: false, showSessionCwdForAll: false, gitRefreshIntervalSeconds: 1, autoSave: true, autoSaveDelayMs: 1000, openLinksExternally: false, captureTerminalBrowserOpens: true, capturedLinkOpenMode: 'tab',
-  ui: { fontFamily: 'sans', fontSize: 13 }, code: { ligatures: true }, editor: { fontSize: 13, fontFamily: 'mono', tabSize: 2, wordWrap: 'off' }, terminal: { fontSize: 13, fontFamily: 'mono', cursorBlink: true, startAtBottom: false, markdownFormatting: true }, terminalProfiles: [], extensions: { localPackagePaths: [], enabled: [], disabled: [], config: { 'x.ext': { enabled: true } } }, keybinds: {},
+  ui: { fontFamily: 'sans', fontSize: 13 }, code: { ligatures: true }, editor: { fontSize: 13, fontFamily: 'mono', tabSize: 2, wordWrap: 'off' }, terminal: { fontSize: 13, fontFamily: 'mono', cursorBlink: true, startAtBottom: false, markdownFormatting: true }, terminalProfiles: [], extensions: { localPackagePaths: [], enabled: [], disabled: [], config: { 'x.ext': { enabled: true } } }, workspaceViewState: { sessionsVisible: true, visibleActivityViewIds: [] }, keybinds: {},
 };
 
 describe('extension configuration helpers', () => {

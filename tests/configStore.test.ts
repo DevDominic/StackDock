@@ -22,4 +22,13 @@ describe('configStore terminal defaults', () => {
     expect(settings.terminalProfiles.some((profile) => profile.shell === 'powershell.exe')).toBe(true);
     expect(settings.terminalProfiles.some((profile) => profile.shell === 'cmd.exe')).toBe(true);
   });
+
+  it('keeps workspace view toggles in global defaults', () => {
+    const settings = getDefaultSettings('win32');
+
+    expect(settings.workspaceViewState).toEqual({
+      sessionsVisible: true,
+      visibleActivityViewIds: ['stackdock.explorer.view', 'stackdock.git.view'],
+    });
+  });
 });

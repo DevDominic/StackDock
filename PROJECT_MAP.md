@@ -34,6 +34,7 @@ Important files (paths are repo-relative; there is no top-level `main/` folder):
 * `electron/configStore.ts` — user settings and terminal profile persistence.
 * `electron/automationStore.ts` — palette commands and per-workspace automation config.
 * `electron/extensionService.ts` — bundled/local extension manifest loading and extension assets.
+* `electron/launchSupport.ts` — launch-readiness helpers: diagnostics export, release notes state, Safe Mode, logs, backups, and reset helpers.
 * `electron/browserBridge.ts` — captured browser/webview bridge handling.
 * `electron/attachmentService.ts` — terminal drag/drop/paste attachment inspection/cache.
 * `electron/storage.ts` — Electron userData paths and data-dir setup.
@@ -85,6 +86,7 @@ Purpose: Core React UI outside extension packages.
 Important files:
 
 * `TitleBar.tsx` — custom/native window titlebar controls.
+* `ReleaseNotesDialog.tsx` — first-run and command-palette release notes modal.
 * `icons.tsx` — shared SVG icon components.
 * `dashboard/WorkspaceDashboard.tsx` — workspace list/add/create/pin/open dashboard.
 * `common/ToastProvider.tsx` — toast notification provider.
@@ -189,6 +191,7 @@ Important files:
 * Editor/file flow: Explorer or workspace actions -> `WorkspaceShell.openFile` -> file API in `fileService` -> `EditorPanel` edits -> save via file API.
 * Git flow: Git extension UI/actions in `extensions/builtin/git/renderer` -> workspace context/API bridge -> git API handlers -> `extensions/builtin/git/main/gitService.ts` and parser. Git-related implementation belongs under `extensions/builtin/git/`, not `src/`.
 * Extension flow: `electron/extensionService.ts` loads manifests -> renderer registry/provider resolves enabled contributions -> `WorkspaceShell` renders native views or iframe `ExtensionFrame` for local packages.
+* Launch-support flow: command palette/App -> `app:*` IPC -> `electron/launchSupport.ts` -> diagnostics/logs/settings/layout/release-state helpers in Electron userData.
 * Persistence flow: Electron userData JSON via `storage.ts`; settings/config/automation/workspaces/layouts/snapshots are separate service-owned files.
 * Build/package flow: `npm run build` -> `scripts/build-if-needed.cjs` -> `npm run build:force` when stale -> `tsc -p electron/tsconfig.json` + `vite build` -> `dist-electron` + `dist`; builder scripts package to `release`.
 

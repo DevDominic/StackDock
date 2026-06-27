@@ -27,6 +27,7 @@ function settings(): StackDockSettings {
     terminal: { fontSize: 13, fontFamily: 'mono', cursorBlink: true, startAtBottom: true, markdownFormatting: true },
     terminalProfiles: [],
     extensions: { localPackagePaths: [], enabled: [], disabled: [], config: {} },
+    workspaceViewState: { sessionsVisible: true, visibleActivityViewIds: [] },
     keybinds: {},
   };
 }
@@ -145,5 +146,31 @@ describe('Pi terminal integration', () => {
     } satisfies TerminalSnapshot;
 
     expect(integration.buildResumeCommand?.({ session, snapshot })).toBe('pi --session-id "stackdock.restore_abc"');
+  });
+
+  it('can disable automatic resume of restored pi terminals', () => {
+    const disabled = settings();
+    disabled.extensions.config['stackdock.pi'] = { resumeRestoredTerminals: false };
+    const integration = createPiTerminalIntegration(disabled);
+    const session = {
+      id: 'term_1',
+      restoreId: 'restore_abc',
+      name: 'Pi',
+      profileId: 'pi',
+      cwd: 'C:\\repo',
+      startupCommand: 'pi --session-id "stackdock.restore_abc"',
+      resumeState: { integrationId: 'stackdock.pi', sessionId: 'stackdock.restore_abc', resumeCommand: 'pi --session-id "stackdock.restore_abc"' },
+      createdAt: '2026-06-14T00:00:00.000Z',
+    } satisfies TerminalSession;
+    const snapshot = {
+      id: 'term_1',
+      restoreId: 'restore_abc',
+      output: 'pi v1.2.3\nModel scope: repo\nMCP: 2/2\n> ',
+    } satisfies TerminalSnapshot;
+
+    expect(integration.resolveStartupCommand?.('pi', { restoreId: 'restore_abc', cwd: 'C:\\repo' })?.command).toBe('pi');
+    expect(integration.buildResumeCommand?.({ session, snapshot })).toBeNull();
+    expect(integration.captureResumeState).toBeUndefined();
+    expect(integration.detectSnapshotResumeState).toBeUndefined();
   });
 });

@@ -12,6 +12,7 @@ const DIRECT_SESSION_ARG_PATTERN = /(?:^|\s)(?:--session(?:\s|=)|--session-id(?:
 const NON_INTERACTIVE_ARG_PATTERN = /(?:^|\s)(?:--print\b|-p\b|--mode\s+(?:text|json|rpc)\b)/i;
 
 interface PiConfig {
+  resumeRestoredTerminals: boolean;
   stableSessionIds: boolean;
   useStackDockSessionDir: boolean;
 }
@@ -34,7 +35,8 @@ export const piTerminalProfile: TerminalProfile = {
 function getPiConfig(settings: StackDockSettings): PiConfig {
   const config = settings.extensions.config?.[PI_EXTENSION_ID] ?? {};
   return {
-    stableSessionIds: config.stableSessionIds !== false,
+    resumeRestoredTerminals: config.resumeRestoredTerminals !== false,
+    stableSessionIds: config.resumeRestoredTerminals !== false && config.stableSessionIds !== false,
     useStackDockSessionDir: config.useStackDockSessionDir === true,
   };
 }
@@ -194,7 +196,8 @@ function captureResumeState(ctx: TerminalOutputContext): TerminalResumeState | u
   };
 }
 
-function buildResumeCommand(ctx: TerminalResumeContext): string | undefined {
+function buildResumeCommand(ctx: TerminalResumeContext, config: PiConfig): string | null | undefined {
+  if (!config.resumeRestoredTerminals) return null;
   if (!detectPiSnapshotOutput(ctx.snapshot?.output)) return undefined;
   const state = resolveState(ctx.session, ctx.snapshot);
   if (state?.sessionId) return buildPiResumeCommand(state.sessionId, state.storagePath, state.resumeCommand);
@@ -215,8 +218,8 @@ export function createPiTerminalIntegration(settings: StackDockSettings): Termin
     beforeShellCommand: (command, ctx: TerminalCommandHookContext) => resolveStartupCommand(command, ctx, config),
     resolveStartupCommand: (command, ctx) => resolveStartupCommand(command, ctx, config),
     resolveInteractiveCommand: (command, ctx) => resolveStartupCommand(command, ctx, config),
-    captureResumeState,
-    buildResumeCommand,
-    detectSnapshotResumeState,
+    captureResumeState: config.resumeRestoredTerminals ? captureResumeState : undefined,
+    buildResumeCommand: (ctx) => buildResumeCommand(ctx, config),
+    detectSnapshotResumeState: config.resumeRestoredTerminals ? detectSnapshotResumeState : undefined,
   };
 }

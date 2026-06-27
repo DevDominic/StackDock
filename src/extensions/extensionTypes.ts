@@ -45,6 +45,7 @@ export interface WorkspaceExtensionContext {
     error: string | null;
     clearError(): void;
     selectedFile: GitFileStatus | null;
+    selectedGroup: 'staged' | 'changes' | null;
     selectedStagedPaths: string[];
     selectedChangePaths: string[];
     selectFile(file: GitFileStatus, staged: boolean, event?: MouseEvent<HTMLButtonElement> | PointerEvent<HTMLButtonElement>, groupFiles?: GitFileStatus[]): void | Promise<void>;
@@ -98,6 +99,7 @@ export interface NativeExtension {
   activateRenderer?(ctx: ExtensionRendererContext): NativeExtension;
   renderView?(contribution: ExtensionViewContribution, ctx: WorkspaceExtensionContext): ReactNode;
   renderStatusBar?(contribution: ExtensionStatusBarContribution, ctx: WorkspaceExtensionContext): ReactNode;
+  renderTerminalOverlay?(ctx: WorkspaceExtensionContext, session: WorkspaceTerminalSession): ReactNode;
   renderSettings?(ctx: ExtensionSettingsContext): ReactNode;
   getCommands?(ctx: WorkspaceExtensionContext): ExtensionCommand[];
 }

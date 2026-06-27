@@ -71,6 +71,11 @@ export async function loadLayout(workspaceId: string): Promise<WorkspaceLayout |
   return readJson<WorkspaceLayout | null>(path.join(getLayoutsDir(), `${workspaceId}.json`), null);
 }
 
+export async function resetLayout(workspaceId: string) {
+  await ensureDataDirs();
+  await fs.unlink(path.join(getLayoutsDir(), `${workspaceId}.json`)).catch(() => undefined);
+}
+
 export async function saveLayout(layout: WorkspaceLayout) {
   await ensureDataDirs();
   await writeJson(path.join(getLayoutsDir(), `${layout.workspaceId}.json`), layout);
