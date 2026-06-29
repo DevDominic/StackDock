@@ -10,6 +10,7 @@ const execFileAsync = promisify(execFile);
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 const MODEL_BASE_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main';
 const WHISPER_RELEASE_API = 'https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest';
+const WHISPER_CPP_CLI_PYPI_API = 'https://pypi.org/pypi/whisper.cpp-cli/json';
 
 export type VoiceInputModelSize = 'tiny' | 'base';
 
@@ -118,7 +119,11 @@ export function getVoiceInputRuntimeDir(rootDir = getDataDir()) {
 }
 
 function getRuntimeArchivePath(rootDir = getDataDir()) {
-  return path.join(getVoiceInputRuntimeDir(rootDir), 'whisper.cpp.zip');
+  return path.join(getVoiceInputRuntimeDir(rootDir), process.platform === 'linux' ? 'whisper.cpp.tar.gz' : 'whisper.cpp.zip');
+}
+
+function isZipRuntimeArchive(archivePath: string) {
+  return /\.(zip|whl)$/i.test(archivePath);
 }
 
 function powerShellSingleQuoted(value: string) {
@@ -191,8 +196,14 @@ export async function downloadVoiceInputModel(rawModelSize: unknown, rootDir = g
   return getVoiceInputModelStatus(modelSize, rootDir);
 }
 
+function runtimeExecutableNames() {
+  return process.platform === 'win32'
+    ? ['whisper-cli.exe', 'whisper.exe', 'main.exe', 'whisper-cpp.exe']
+    : ['whisper-cli', 'whisper', 'main', 'whisper-cpp'];
+}
+
 async function findRuntimeExecutable(rootDir: string): Promise<string | undefined> {
-  const wanted = process.platform === 'win32' ? ['whisper-cli.exe', 'main.exe'] : ['whisper-cli', 'main'];
+  const wanted = runtimeExecutableNames();
   const priority = new Map(wanted.map((name, index) => [name, index]));
   async function walk(dir: string): Promise<string | undefined> {
     let entries: fsSync.Dirent[];
@@ -218,16 +229,36 @@ async function findRuntimeExecutable(rootDir: string): Promise<string | undefine
 }
 
 function runtimeAssetPattern() {
-  if (process.platform === 'win32' && process.arch === 'x64') return /^whisper-bin-x64\.zip$/i;
+  if (process.platform === 'win32') {
+    if (process.arch === 'x64') return /^whisper-bin-x64\.zip$/i;
+    if (process.arch === 'ia32') return /^whisper-bin-Win32\.zip$/i;
+  }
+  if (process.platform === 'linux') {
+    if (process.arch === 'x64') return /^whisper-bin-ubuntu-x64\.tar\.gz$/i;
+    if (process.arch === 'arm64') return /^whisper-bin-ubuntu-arm64\.tar\.gz$/i;
+  }
+  return undefined;
+}
+
+function pypiWheelPattern() {
+  if (process.platform === 'darwin') {
+    if (process.arch === 'arm64') return /-macosx_\d+_\d+_arm64\.whl$/i;
+    if (process.arch === 'x64') return /-macosx_\d+_\d+_x86_64\.whl$/i;
+  }
+  if (process.platform === 'linux') {
+    if (process.arch === 'x64') return /-manylinux_.*_x86_64\..*\.whl$/i;
+    if (process.arch === 'arm64') return /-manylinux_.*_aarch64\..*\.whl$/i;
+    if (process.arch === 'ia32') return /-manylinux_.*_i686\..*\.whl$/i;
+  }
   return undefined;
 }
 
 export async function getVoiceInputRuntimeStatus(rootDir = getDataDir()): Promise<VoiceInputRuntimeStatus> {
-  const pattern = runtimeAssetPattern();
-  if (!pattern) return { supported: false, installed: false, message: `Managed whisper.cpp runtime is not supported on ${process.platform}/${process.arch}. Configure a custom executable path.` };
   const runtimeDir = getVoiceInputRuntimeDir(rootDir);
   const executablePath = await findRuntimeExecutable(runtimeDir);
   if (executablePath) return { supported: true, installed: true, path: executablePath };
+  const pattern = runtimeAssetPattern() ?? pypiWheelPattern();
+  if (!pattern) return { supported: false, installed: false, message: `Managed whisper.cpp runtime is not supported on ${process.platform}/${process.arch}. Configure a custom executable path.` };
   const partialPath = `${getRuntimeArchivePath(rootDir)}.partial`;
   try {
     const partialStat = await fs.stat(partialPath);
@@ -237,15 +268,30 @@ export async function getVoiceInputRuntimeStatus(rootDir = getDataDir()): Promis
   }
 }
 
+async function getPypiRuntimeWheelUrl() {
+  const pattern = pypiWheelPattern();
+  if (!pattern) return undefined;
+  const response = await fetch(WHISPER_CPP_CLI_PYPI_API, { headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error(`Could not fetch whisper.cpp-cli package metadata: HTTP ${response.status}`);
+  const metadata = await response.json() as { info?: { version?: unknown }; releases?: Record<string, Array<{ filename?: unknown; url?: unknown }>> };
+  const version = typeof metadata.info?.version === 'string' ? metadata.info.version : undefined;
+  const files = version ? metadata.releases?.[version] ?? [] : [];
+  const wheel = files.find((item) => typeof item.filename === 'string' && pattern.test(item.filename));
+  return typeof wheel?.url === 'string' ? wheel.url : undefined;
+}
+
 async function getLatestRuntimeAssetUrl() {
   const pattern = runtimeAssetPattern();
-  if (!pattern) throw new Error(`Managed whisper.cpp runtime is not supported on ${process.platform}/${process.arch}. Configure a custom executable path.`);
-  const response = await fetch(WHISPER_RELEASE_API, { headers: { Accept: 'application/vnd.github+json' } });
-  if (!response.ok) throw new Error(`Could not fetch whisper.cpp release metadata: HTTP ${response.status}`);
-  const release = await response.json() as { assets?: Array<{ name?: unknown; browser_download_url?: unknown }> };
-  const asset = (release.assets ?? []).find((item) => typeof item.name === 'string' && pattern.test(item.name));
-  if (typeof asset?.browser_download_url !== 'string') throw new Error('Could not find a compatible whisper.cpp runtime asset.');
-  return asset.browser_download_url;
+  if (pattern) {
+    const response = await fetch(WHISPER_RELEASE_API, { headers: { Accept: 'application/vnd.github+json' } });
+    if (!response.ok) throw new Error(`Could not fetch whisper.cpp release metadata: HTTP ${response.status}`);
+    const release = await response.json() as { assets?: Array<{ name?: unknown; browser_download_url?: unknown }> };
+    const asset = (release.assets ?? []).find((item) => typeof item.name === 'string' && pattern.test(item.name));
+    if (typeof asset?.browser_download_url === 'string') return asset.browser_download_url;
+  }
+  const wheelUrl = await getPypiRuntimeWheelUrl();
+  if (wheelUrl) return wheelUrl;
+  throw new Error(`Managed whisper.cpp runtime is not supported on ${process.platform}/${process.arch}. Configure a custom executable path.`);
 }
 
 export async function downloadVoiceInputRuntime(rootDir = getDataDir()): Promise<VoiceInputRuntimeStatus> {
@@ -255,9 +301,20 @@ export async function downloadVoiceInputRuntime(rootDir = getDataDir()): Promise
   await fs.mkdir(runtimeDir, { recursive: true });
   const assetUrl = await getLatestRuntimeAssetUrl();
   await downloadFile(assetUrl, archivePath, partialPath);
-  if (process.platform !== 'win32') throw new Error(`Managed whisper.cpp runtime extraction is not supported on ${process.platform}. Configure a custom executable path.`);
-  const expandCommand = `Expand-Archive -LiteralPath ${powerShellSingleQuoted(archivePath)} -DestinationPath ${powerShellSingleQuoted(runtimeDir)} -Force`;
-  await execFileAsync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', expandCommand], { windowsHide: true, timeout: 120000, maxBuffer: 1024 * 1024 });
+  if (process.platform === 'win32') {
+    const expandCommand = `Expand-Archive -LiteralPath ${powerShellSingleQuoted(archivePath)} -DestinationPath ${powerShellSingleQuoted(runtimeDir)} -Force`;
+    await execFileAsync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', expandCommand], { windowsHide: true, timeout: 120000, maxBuffer: 1024 * 1024 });
+  } else if (process.platform === 'linux' && !isZipRuntimeArchive(assetUrl)) {
+    await execFileAsync('tar', ['-xzf', archivePath, '-C', runtimeDir], { timeout: 120000, maxBuffer: 1024 * 1024 });
+  } else if (process.platform === 'darwin') {
+    await execFileAsync('ditto', ['-x', '-k', archivePath, runtimeDir], { timeout: 120000, maxBuffer: 1024 * 1024 });
+  } else if (process.platform === 'linux') {
+    await execFileAsync('unzip', ['-o', archivePath, '-d', runtimeDir], { timeout: 120000, maxBuffer: 1024 * 1024 });
+  } else {
+    throw new Error(`Managed whisper.cpp runtime extraction is not supported on ${process.platform}. Configure a custom executable path.`);
+  }
+  const executablePath = await findRuntimeExecutable(runtimeDir);
+  if (executablePath) await fs.chmod(executablePath, 0o755).catch(() => undefined);
   return getVoiceInputRuntimeStatus(rootDir);
 }
 

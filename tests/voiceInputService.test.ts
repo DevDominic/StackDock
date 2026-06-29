@@ -61,13 +61,15 @@ describe('voiceInputService', () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'stackdock-voice-test-'));
     tempDirs.push(root);
     const releaseDir = path.join(getVoiceInputRuntimeDir(root), 'Release');
+    const cliName = process.platform === 'win32' ? 'whisper-cli.exe' : 'whisper-cli';
+    const mainName = process.platform === 'win32' ? 'main.exe' : 'main';
     await fs.mkdir(releaseDir, { recursive: true });
-    await fs.writeFile(path.join(releaseDir, 'main.exe'), '');
-    await fs.writeFile(path.join(releaseDir, 'whisper-cli.exe'), '');
+    await fs.writeFile(path.join(releaseDir, mainName), '');
+    await fs.writeFile(path.join(releaseDir, cliName), '');
 
     await expect(getVoiceInputRuntimeStatus(root)).resolves.toMatchObject({
       installed: true,
-      path: path.join(releaseDir, 'whisper-cli.exe'),
+      path: path.join(releaseDir, cliName),
     });
   });
 });
