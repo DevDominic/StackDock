@@ -80,7 +80,11 @@ function getFileModel(file: OpenFileTab) {
 }
 
 function getOriginalModel(file: OpenFileTab, diff: EditorDiffModel) {
-  const uri = monaco.Uri.parse(`stackdock-diff-original:///${encodeURIComponent(file.path)}?${diff.staged ? 'staged' : 'unstaged'}`);
+  // Keep the original model URI file-shaped so Monaco handles macOS absolute
+  // paths (including spaces/unicode) without parsing encoded slashes as part of
+  // a custom-scheme authority. The scheme/query still make it distinct from the
+  // editable working-tree model.
+  const uri = monaco.Uri.file(file.path).with({ scheme: 'stackdock-diff-original', query: diff.staged ? 'staged' : 'unstaged' });
   let model = monaco.editor.getModel(uri);
   if (!model) model = monaco.editor.createModel(diff.original, languageFor(file.path), uri);
   if (model.getValue() !== diff.original) model.setValue(diff.original);
@@ -90,19 +94,27 @@ function getOriginalModel(file: OpenFileTab, diff: EditorDiffModel) {
 
 function layoutEditor(editor: monaco.editor.IStandaloneCodeEditor | null, host: HTMLDivElement | null) {
   if (!editor || !host) return;
-  const rect = host.getBoundingClientRect();
-  if (rect.width > 0 && rect.height > 0) editor.layout({ width: rect.width, height: rect.height });
-  else editor.layout();
-  editor.render();
+  try {
+    const rect = host.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) editor.layout({ width: rect.width, height: rect.height });
+    else editor.layout();
+    editor.render();
+  } catch (error) {
+    console.error('Editor layout failed', error);
+  }
 }
 
 function layoutDiffEditor(editor: monaco.editor.IStandaloneDiffEditor | null, host: HTMLDivElement | null) {
   if (!editor || !host) return;
-  const rect = host.getBoundingClientRect();
-  if (rect.width > 0 && rect.height > 0) editor.layout({ width: rect.width, height: rect.height });
-  else editor.layout();
-  editor.getOriginalEditor().render();
-  editor.getModifiedEditor().render();
+  try {
+    const rect = host.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) editor.layout({ width: rect.width, height: rect.height });
+    else editor.layout();
+    editor.getOriginalEditor().render();
+    editor.getModifiedEditor().render();
+  } catch (error) {
+    console.error('Diff editor layout failed', error);
+  }
 }
 
 function MediaPreview({ file }: { file: OpenFileTab }) {
@@ -145,6 +157,7 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
   // and show the new file as a plain, full-width preview in the normal editor.
   const showAsDiff = !!activeDiff && !activeDiff.untracked;
   const [saving, setSaving] = useState(false);
+  const [editorError, setEditorError] = useState<string | null>(null);
   const editorHostRef = useRef<HTMLDivElement | null>(null);
   const diffHostRef = useRef<HTMLDivElement | null>(null);
   const compareOriginalHostRef = useRef<HTMLDivElement | null>(null);
@@ -227,52 +240,61 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
       return;
     }
 
-    const modifiedModel = getFileModel(active);
-    modelSubscriptionRef.current = modifiedModel.onDidChangeContent(() => {
-      const path = activePathRef.current;
-      if (path) onChangeFileRef.current(path, modifiedModel.getValue());
-    });
+    try {
+      setEditorError(null);
+      const modifiedModel = getFileModel(active);
+      modelSubscriptionRef.current = modifiedModel.onDidChangeContent(() => {
+        const path = activePathRef.current;
+        if (path) onChangeFileRef.current(path, modifiedModel.getValue());
+      });
 
-    if (showAsDiff && activeDiff) {
-      editor.setModel(null);
-      const originalModel = getOriginalModel(active, activeDiff);
-      if (diffMode === 'compare-only') {
-        diffEditorRef.current?.setModel(null);
-        if (!compareOriginalRef.current && compareOriginalHostRef.current) {
-          compareOriginalRef.current = monaco.editor.create(compareOriginalHostRef.current, { ...editorOptions(settings), readOnly: true, lineNumbersMinChars: 3 });
+      if (showAsDiff && activeDiff) {
+        editor.setModel(null);
+        const originalModel = getOriginalModel(active, activeDiff);
+        if (diffMode === 'compare-only') {
+          diffEditorRef.current?.setModel(null);
+          if (!compareOriginalRef.current && compareOriginalHostRef.current) {
+            compareOriginalRef.current = monaco.editor.create(compareOriginalHostRef.current, { ...editorOptions(settings), readOnly: true, lineNumbersMinChars: 3 });
+          }
+          if (!compareModifiedRef.current && compareModifiedHostRef.current) {
+            compareModifiedRef.current = monaco.editor.create(compareModifiedHostRef.current, { ...editorOptions(settings), lineNumbersMinChars: 3 });
+          }
+          compareOriginalRef.current?.setModel(originalModel);
+          compareModifiedRef.current?.setModel(modifiedModel);
+          const decorations = changedLineDecorations(originalModel.getValue(), modifiedModel.getValue());
+          compareOriginalDecorationsRef.current = compareOriginalRef.current?.deltaDecorations(compareOriginalDecorationsRef.current, decorations.originalRanges) ?? [];
+          compareModifiedDecorationsRef.current = compareModifiedRef.current?.deltaDecorations(compareModifiedDecorationsRef.current, decorations.modifiedRanges) ?? [];
+          if (visible) requestAnimationFrame(() => requestAnimationFrame(() => {
+            layoutEditor(compareOriginalRef.current, compareOriginalHostRef.current);
+            layoutEditor(compareModifiedRef.current, compareModifiedHostRef.current);
+          }));
+        } else {
+          compareOriginalRef.current?.setModel(null);
+          compareModifiedRef.current?.setModel(null);
+          if (!diffEditorRef.current && diffHostRef.current) {
+            diffEditorRef.current = monaco.editor.createDiffEditor(diffHostRef.current, {
+              ...editorOptions(settings),
+              renderSideBySide: diffMode === 'side-by-side',
+              originalEditable: false,
+            });
+          }
+          diffEditorRef.current?.setModel({ original: originalModel, modified: modifiedModel });
+          diffEditorRef.current?.updateOptions({ renderSideBySide: diffMode === 'side-by-side' });
+          if (visible) requestAnimationFrame(() => requestAnimationFrame(() => layoutDiffEditor(diffEditorRef.current, diffHostRef.current)));
         }
-        if (!compareModifiedRef.current && compareModifiedHostRef.current) {
-          compareModifiedRef.current = monaco.editor.create(compareModifiedHostRef.current, { ...editorOptions(settings), lineNumbersMinChars: 3 });
-        }
-        compareOriginalRef.current?.setModel(originalModel);
-        compareModifiedRef.current?.setModel(modifiedModel);
-        const decorations = changedLineDecorations(originalModel.getValue(), modifiedModel.getValue());
-        compareOriginalDecorationsRef.current = compareOriginalRef.current?.deltaDecorations(compareOriginalDecorationsRef.current, decorations.originalRanges) ?? [];
-        compareModifiedDecorationsRef.current = compareModifiedRef.current?.deltaDecorations(compareModifiedDecorationsRef.current, decorations.modifiedRanges) ?? [];
-        if (visible) requestAnimationFrame(() => requestAnimationFrame(() => {
-          layoutEditor(compareOriginalRef.current, compareOriginalHostRef.current);
-          layoutEditor(compareModifiedRef.current, compareModifiedHostRef.current);
-        }));
       } else {
         compareOriginalRef.current?.setModel(null);
         compareModifiedRef.current?.setModel(null);
-        if (!diffEditorRef.current && diffHostRef.current) {
-          diffEditorRef.current = monaco.editor.createDiffEditor(diffHostRef.current, {
-            ...editorOptions(settings),
-            renderSideBySide: diffMode === 'side-by-side',
-            originalEditable: false,
-          });
-        }
-        diffEditorRef.current?.setModel({ original: originalModel, modified: modifiedModel });
-        diffEditorRef.current?.updateOptions({ renderSideBySide: diffMode === 'side-by-side' });
-        if (visible) requestAnimationFrame(() => requestAnimationFrame(() => layoutDiffEditor(diffEditorRef.current, diffHostRef.current)));
+        diffEditorRef.current?.setModel(null);
+        editor.setModel(modifiedModel);
+        if (visible) requestAnimationFrame(() => requestAnimationFrame(() => layoutEditor(editor, editorHostRef.current)));
       }
-    } else {
+    } catch (error) {
+      editor.setModel(null);
+      diffEditorRef.current?.setModel(null);
       compareOriginalRef.current?.setModel(null);
       compareModifiedRef.current?.setModel(null);
-      diffEditorRef.current?.setModel(null);
-      editor.setModel(modifiedModel);
-      if (visible) requestAnimationFrame(() => requestAnimationFrame(() => layoutEditor(editor, editorHostRef.current)));
+      setEditorError(error instanceof Error ? error.message : String(error));
     }
   }, [active?.path, active?.content, activeDiff?.path, activeDiff?.original, activeDiff?.staged, showAsDiff, diffMode, visible]);
 
@@ -370,6 +392,7 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
         </div>
       ) : null}
       <div className="editor-wrap">
+        {editorError ? <div className="banner error">Editor preview failed: {editorError}</div> : null}
         {active?.mediaKind ? <MediaPreview file={active} /> : null}
         <div ref={editorHostRef} className="monaco-host" style={{ display: !active?.mediaKind && !showAsDiff ? 'block' : 'none' }} />
         <div ref={diffHostRef} className="monaco-host monaco-diff-host" style={{ display: !active?.mediaKind && showAsDiff && diffMode !== 'compare-only' ? 'block' : 'none' }} />
