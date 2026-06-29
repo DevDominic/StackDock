@@ -27,6 +27,9 @@ describe('browser bridge env', () => {
       expect(env.PLANNOTATOR_BROWSER).toMatch(/open-url\.vbs$/);
       expect(env.BROWSER).toMatch(/open-url\.cmd$/);
       expect(env.PLANNOTATOR_BROWSER).not.toBe(env.BROWSER);
+    } else if (process.platform === 'darwin') {
+      expect(env.PLANNOTATOR_BROWSER).toBe(':');
+      expect(env.BROWSER).toMatch(/open-url\.sh$/);
     } else {
       expect(env.PLANNOTATOR_BROWSER).toBe(env.BROWSER);
       expect(env.PLANNOTATOR_BROWSER).toMatch(/open-url\.sh$/);
@@ -40,7 +43,8 @@ describe('browser bridge env', () => {
     await startBrowserBridge();
 
     const env = getBridgeEnv('session-1');
-    const helperScript = await fs.readFile(env.PLANNOTATOR_BROWSER, 'utf8');
+    const helperPath = process.platform === 'darwin' ? env.BROWSER : env.PLANNOTATOR_BROWSER;
+    const helperScript = await fs.readFile(helperPath, 'utf8');
 
     expect(helperScript).toContain('/open-url');
 
@@ -50,6 +54,9 @@ describe('browser bridge env', () => {
       expect(helperScript).toContain('STACKDOCK_BRIDGE_TOKEN');
       expect(helperScript).toContain('STACKDOCK_SESSION_ID');
       expect(helperScript).toContain('rundll32 url.dll,FileProtocolHandler');
+    } else if (process.platform === 'darwin') {
+      expect(helperScript).toMatch(/^#!\/bin\/sh/);
+      expect(helperScript).toMatch(/xdg-open|open/);
     } else {
       expect(helperScript).toMatch(/^#!\/bin\/sh/);
       expect(helperScript).toMatch(/xdg-open|open/);

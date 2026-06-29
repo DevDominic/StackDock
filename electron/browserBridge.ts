@@ -36,13 +36,19 @@ function vbsHelperScriptPath() {
 export function getBridgeEnv(sessionId: string): Record<string, string> {
   if (!server) return {};
   const helper = process.platform === 'win32' ? cmdHelperScriptPath() : shHelperScriptPath();
-  const plannotatorHelper = process.platform === 'win32' ? vbsHelperScriptPath() : helper;
+  const plannotatorHelper = process.platform === 'win32'
+    ? vbsHelperScriptPath()
+    : process.platform === 'darwin'
+      ? ':'
+      : helper;
   return {
     STACKDOCK_BRIDGE_PORT: String(port),
     STACKDOCK_BRIDGE_TOKEN: token,
     STACKDOCK_SESSION_ID: sessionId,
-    // Plannotator opens this via `cmd /c start`, so use a bare .vbs path on
-    // Windows: no inline wscript args to misparse, and no visible cmd window.
+    // Plannotator special-cases PLANNOTATOR_BROWSER on macOS as an app name
+    // passed to `open -a`, so a helper script path would fail there. Use the
+    // no-op sentinel on macOS so Plannotator falls back to BROWSER, which it
+    // executes directly. Windows still needs a bare .vbs path for `cmd /c start`.
     PLANNOTATOR_BROWSER: plannotatorHelper,
     BROWSER: helper,
   };
