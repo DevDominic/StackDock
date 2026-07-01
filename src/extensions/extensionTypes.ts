@@ -78,6 +78,7 @@ export interface WorkspaceExtensionContext {
     create(target: Workspace, profileId: string): Promise<void>;
     openWorkspace(id: string): void | Promise<void>;
     close(id: string): void | Promise<void>;
+    closeMany(ids: string[]): void | Promise<void>;
     rename(id: string, name: string): void | Promise<void>;
     restart(id: string): void | Promise<void>;
     duplicate(id: string): void | Promise<void>;

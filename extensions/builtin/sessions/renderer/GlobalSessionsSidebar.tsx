@@ -19,6 +19,7 @@ interface Props {
   onSelectSession(id: string): void;
   onOpenWorkspace(id: string): void;
   onCloseSession(id: string): void;
+  onCloseSessions(ids: string[]): void;
   onRenameSession(id: string, name: string): void;
   onRestartSession(id: string): void;
   onDuplicateSession(id: string): void;
@@ -27,7 +28,7 @@ interface Props {
   onDetachSession(id: string): void;
 }
 
-export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSessionId, highlightedSessionIds, sessions, profiles, defaultProfileId, emptySessionsVisible, showSessionCwdForAll, onCreateSession, onSelectSession, onOpenWorkspace, onCloseSession, onRenameSession, onRestartSession, onDuplicateSession, onSetCwd, onSplitSession, onDetachSession }: Props) {
+export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSessionId, highlightedSessionIds, sessions, profiles, defaultProfileId, emptySessionsVisible, showSessionCwdForAll, onCreateSession, onSelectSession, onOpenWorkspace, onCloseSession, onCloseSessions, onRenameSession, onRestartSession, onDuplicateSession, onSetCwd, onSplitSession, onDetachSession }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number; width: number } | null>(null);
   const [actionMenu, setActionMenu] = useState<{ session: WorkspaceTerminalSession; x: number; y: number } | null>(null);
@@ -123,7 +124,7 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
 
   function openActionMenu(session: WorkspaceTerminalSession, x: number, y: number) {
     const menuWidth = 190;
-    const menuHeight = 250;
+    const menuHeight = 340;
     setActionMenu({
       session,
       x: Math.min(Math.max(8, x), window.innerWidth - menuWidth - 8),
@@ -134,6 +135,27 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
   function runAction(action: () => void) {
     setActionMenu(null);
     action();
+  }
+
+  function sessionGroupFor(session: WorkspaceTerminalSession) {
+    return sessions.filter((item) => item.workspaceId === session.workspaceId);
+  }
+
+  function closeAbove(session: WorkspaceTerminalSession) {
+    const group = sessionGroupFor(session);
+    const index = group.findIndex((item) => item.id === session.id);
+    if (index > 0) onCloseSessions(group.slice(0, index).map((item) => item.id));
+  }
+
+  function closeBelow(session: WorkspaceTerminalSession) {
+    const group = sessionGroupFor(session);
+    const index = group.findIndex((item) => item.id === session.id);
+    if (index >= 0 && index < group.length - 1) onCloseSessions(group.slice(index + 1).map((item) => item.id));
+  }
+
+  function closeOthers(session: WorkspaceTerminalSession) {
+    const group = sessionGroupFor(session).filter((item) => item.id !== session.id);
+    if (group.length) onCloseSessions(group.map((item) => item.id));
   }
 
   function renderSession(session: WorkspaceTerminalSession, index: number) {
@@ -184,6 +206,12 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
     if (!group.length) return <div className="muted global-empty">No sessions</div>;
     return group.map(renderSession);
   }
+
+  const actionMenuGroup = actionMenu ? sessionGroupFor(actionMenu.session) : [];
+  const actionMenuIndex = actionMenu ? actionMenuGroup.findIndex((session) => session.id === actionMenu.session.id) : -1;
+  const canCloseAbove = actionMenuIndex > 0;
+  const canCloseBelow = actionMenuIndex >= 0 && actionMenuIndex < actionMenuGroup.length - 1;
+  const canCloseOthers = actionMenuGroup.length >= 2;
 
   const createMenu = menuOpen && menuPosition ? createPortal(
     <div ref={createMenuRef} className="new-session-menu session-create-menu" role="menu" style={{ left: menuPosition.x, top: menuPosition.y, width: menuPosition.width }}>
@@ -242,6 +270,9 @@ export function GlobalSessionsSidebar({ workspaces, activeWorkspaceId, activeSes
           <button className="context-menu-item" onClick={() => runAction(() => onSplitSession(actionMenu.session.id, 'right'))}>Split Right</button>
           <button className="context-menu-item" onClick={() => runAction(() => onSplitSession(actionMenu.session.id, 'down'))}>Split Down</button>
           {actionMenu.session.splitGroupId ? <button className="context-menu-item" onClick={() => runAction(() => onDetachSession(actionMenu.session.id))}>Detach from Split</button> : null}
+          {canCloseBelow ? <button className="context-menu-item danger" onClick={() => runAction(() => closeBelow(actionMenu.session))}>Close Below</button> : null}
+          {canCloseAbove ? <button className="context-menu-item danger" onClick={() => runAction(() => closeAbove(actionMenu.session))}>Close Above</button> : null}
+          {canCloseOthers ? <button className="context-menu-item danger" onClick={() => runAction(() => closeOthers(actionMenu.session))}>Close Others</button> : null}
           <button className="context-menu-item danger" onClick={() => runAction(() => onCloseSession(actionMenu.session.id))}>Close</button>
         </div>
       ) : null}

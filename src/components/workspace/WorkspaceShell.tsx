@@ -1217,6 +1217,10 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     await sessionStore.closeSession(id);
   }
 
+  async function closeTerminals(ids: string[]) {
+    for (const id of ids) await sessionStore.closeSession(id);
+  }
+
   function showGitError(error: unknown) {
     setGitError(error instanceof Error ? error.message : String(error));
   }
@@ -1603,6 +1607,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       create: async (target, profileId) => { const setup = automation?.workspaces[target.id]; const profile = profiles.find((item) => item.id === profileId); const startupCommand = resolveTerminalStartupCommand({ profileStartupCommand: profile?.startupCommand, workspaceStartupCommand: setup?.newSessionCommand }); await sessionStore.createSession({ workspaceId: target.id, workspaceName: target.name, workspacePath: target.path, profileId, cwd: target.path, name: 'Terminal', startupCommand }); if (target.id !== workspace.id) await onOpenWorkspace(target.id); },
       openWorkspace: (id) => void onOpenWorkspace(id),
       close: (id) => void closeTerminal(id),
+      closeMany: (ids) => void closeTerminals(ids),
       rename: renameTerminal,
       restart: (id) => void restartTerminal(id),
       duplicate: (id) => void duplicateTerminal(id),

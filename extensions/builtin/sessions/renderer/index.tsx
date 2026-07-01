@@ -26,6 +26,7 @@ export const sessionsExtension: NativeExtension = {
         onSelectSession={ctx.actions.selectSession}
         onOpenWorkspace={ctx.sessionActions.openWorkspace}
         onCloseSession={ctx.sessionActions.close}
+        onCloseSessions={ctx.sessionActions.closeMany}
         onRenameSession={ctx.sessionActions.rename}
         onRestartSession={ctx.sessionActions.restart}
         onDuplicateSession={ctx.sessionActions.duplicate}
