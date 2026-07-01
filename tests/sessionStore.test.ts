@@ -11,11 +11,11 @@ const update = vi.fn((id: string, patch: Partial<TerminalSession>) => {
   return Promise.resolve(next as TerminalSession);
 });
 
-function nextTerminal(): TerminalSession {
+function nextTerminal(restoreId?: string): TerminalSession {
   createCount += 1;
   return {
     id: `term-${createCount}`,
-    restoreId: `restore-${createCount}`,
+    restoreId: restoreId ?? `restore-${createCount}`,
     name: `Terminal ${createCount}`,
     profileId: 'powershell',
     cwd: 'C:/repo',
@@ -33,7 +33,7 @@ beforeEach(() => {
   vi.stubGlobal('window', {
     stackdock: {
       terminal: {
-        create: vi.fn(() => Promise.resolve(nextTerminal())),
+        create: vi.fn((_profileId: string, _cwd: string, _name?: string, _startupCommand?: string, restoreId?: string) => Promise.resolve(nextTerminal(restoreId))),
         update,
         kill,
         forgetSnapshot,
@@ -110,6 +110,16 @@ describe('sessionStore active fallback', () => {
     expect(updated.splitDirection).toBeUndefined();
     expect(updated.splitGroupOrder).toBeUndefined();
     expect(store.getState().activeSessionId).toBe(a.id);
+  });
+
+  it('reuses an existing restored session instead of creating duplicates', async () => {
+    const store = await loadStore();
+    const first = await store.getState().createSession({ workspaceId: 'workspace-a', workspaceName: 'A', workspacePath: 'C:/a', profileId: 'powershell', restoreId: 'restore-stable' });
+    const second = await store.getState().createSession({ workspaceId: 'workspace-a', workspaceName: 'A', workspacePath: 'C:/a', profileId: 'powershell', restoreId: 'restore-stable' });
+
+    expect(second).toBe(first);
+    expect(window.stackdock.terminal.create).toHaveBeenCalledTimes(1);
+    expect(store.getState().sessions).toHaveLength(1);
   });
 
   it('clears the active session when the last session is removed', async () => {

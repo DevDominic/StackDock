@@ -72,6 +72,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   activeSessionId: null,
   activeWorkspaceId: null,
   async createSession(input) {
+    if (!input.headless && input.restoreId) {
+      const existing = get().sessions.find((session) => session.restoreId === input.restoreId);
+      if (existing) {
+        set({ activeSessionId: existing.id, activeWorkspaceId: existing.workspaceId });
+        persistActiveSession(existing);
+        return existing;
+      }
+    }
     const terminal = await api.terminal.create(input.profileId, input.cwd ?? input.workspacePath, input.name, input.startupCommand, input.restoreId, { workspaceId: input.workspaceId, workspaceName: input.workspaceName, workspacePath: input.workspacePath, headless: input.headless, commandLabel: input.commandLabel });
     const session: WorkspaceTerminalSession = { ...terminal, workspaceId: input.workspaceId, workspaceName: input.workspaceName, workspacePath: input.workspacePath };
     if (input.headless) {
