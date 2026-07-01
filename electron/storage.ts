@@ -1,9 +1,26 @@
 import { app } from 'electron';
 import fs from 'fs/promises';
+import os from 'os';
 import path from 'path';
 
+function fallbackAppDataDir() {
+  if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support');
+  if (process.platform === 'win32') return process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming');
+  return process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), '.config');
+}
+
+function getSafeAppDataDir() {
+  const appData = app.getPath('appData');
+  // Electron should return a native absolute path, but inherited Windows-style
+  // APPDATA values (or tests/mocks) are relative filenames on POSIX. Never let
+  // `C:\Users\...` become a directory inside the current project on macOS/Linux.
+  if (process.platform !== 'win32' && path.win32.isAbsolute(appData) && !path.isAbsolute(appData)) return fallbackAppDataDir();
+  if (!path.isAbsolute(appData)) return fallbackAppDataDir();
+  return appData;
+}
+
 export function getDataDir() {
-  return path.join(app.getPath('appData'), 'StackDock');
+  return path.join(getSafeAppDataDir(), 'StackDock');
 }
 
 export function getWorkspacesPath() {
