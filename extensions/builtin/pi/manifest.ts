@@ -5,7 +5,7 @@ export const piExtensionManifest: ExtensionManifest = {
   name: 'Pi Sessions',
   version: '1.0.0',
   description: 'Adds stable Pi session IDs and StackDock-managed Pi session storage for terminal profiles that start Pi.',
-  defaultEnabled: true,
+  defaultEnabled: false,
   source: 'bundled',
   capabilities: ['terminal-session-resume'],
   contributes: {
