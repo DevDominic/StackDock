@@ -419,11 +419,15 @@ app.on('before-quit', (event) => {
   if (quittingAfterSnapshotFlush) return;
   event.preventDefault();
   quittingAfterSnapshotFlush = true;
-  void saveOpenTerminalState().catch((error) => logError('saveOpenTerminalState', error)).finally(() => app.quit());
+  const saveWithTimeout = Promise.race([
+    saveOpenTerminalState(),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('saveOpenTerminalState timeout')), 3000)),
+  ]);
+  void saveWithTimeout.catch((error) => logError('saveOpenTerminalState', error)).finally(() => app.quit());
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  app.quit();
 });
 
 process.on('uncaughtException', (error) => {

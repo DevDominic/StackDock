@@ -27,6 +27,17 @@ export function serializeTerminalAttachments(attachments: TerminalAttachment[], 
   return `${options.leadingText ?? ''}${tokens.join(' ')}${options.trailingText ?? ' '}`;
 }
 
+export function removeSerializedAttachmentToken(text: string, token: string) {
+  for (const marker of [token, token.trim()]) {
+    const index = marker ? text.indexOf(marker) : -1;
+    if (index < 0) continue;
+    const next = `${text.slice(0, index)}${text.slice(index + marker.length)}`;
+    // Collapse only the doubled space left at the cut point, never elsewhere.
+    return index > 0 && next[index - 1] === ' ' && next[index] === ' ' ? `${next.slice(0, index)}${next.slice(index + 1)}` : next;
+  }
+  return text;
+}
+
 export function summarizeTerminalAttachments(attachments: TerminalAttachment[]) {
   if (!attachments.length) return '';
   const large = attachments.filter((attachment) => attachment.isLarge).length;

@@ -7,6 +7,8 @@ import { useVoiceInputRecorder, type VoiceInputConfig } from './voiceInputRecord
 interface Props {
   activeSessionId: string | null;
   config: VoiceInputConfig;
+  variant?: 'floating' | 'embedded';
+  onTranscript?(text: string): void;
 }
 
 interface ModelStatus {
@@ -17,13 +19,18 @@ interface RuntimeStatus {
   installed: boolean;
 }
 
-export function VoiceInputTerminalButton({ activeSessionId, config }: Props) {
+export function VoiceInputTerminalButton({ activeSessionId, config, variant = 'floating', onTranscript }: Props) {
   const { showToast } = useToast();
   const [modelInstalled, setModelInstalled] = useState(false);
   const [runtimeInstalled, setRuntimeInstalled] = useState(false);
   const hasCustomModel = !!config.modelPath.trim();
   const hasCustomRuntime = !!config.executablePath.trim();
   const recorder = useVoiceInputRecorder(config, async (text) => {
+    if (onTranscript) {
+      onTranscript(text);
+      showToast('Voice text inserted into Smart Input', 'success');
+      return;
+    }
     if (!activeSessionId) return;
     await api.terminal.write(activeSessionId, text);
     showToast('Voice text pasted into terminal', 'success');
@@ -72,7 +79,7 @@ export function VoiceInputTerminalButton({ activeSessionId, config }: Props) {
 
   return (
     <button
-      className={`voice-terminal-button${recorder.recording ? ' recording' : ''}`}
+      className={`voice-terminal-button${variant === 'embedded' ? ' embedded icon-btn ghost' : ''}${recorder.recording ? ' recording' : ''}`}
       disabled={recorder.busy}
       title={recorder.recording ? 'Stop and paste voice input' : 'Record voice input'}
       aria-label={recorder.recording ? 'Stop and paste voice input' : 'Record voice input'}

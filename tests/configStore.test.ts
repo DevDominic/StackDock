@@ -1,10 +1,23 @@
-import { describe, expect, it, vi } from 'vitest';
+import fs from 'fs/promises';
+import path from 'path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/stackdock-test' },
 }));
 
-import { getDefaultSettings } from '../electron/configStore';
+import { getDefaultSettings, loadSettings } from '../electron/configStore';
+
+const configPath = path.join('/tmp/stackdock-test', 'StackDock', 'config.json');
+
+async function writeConfig(config: unknown) {
+  await fs.mkdir(path.dirname(configPath), { recursive: true });
+  await fs.writeFile(configPath, JSON.stringify(config), 'utf8');
+}
+
+afterEach(async () => {
+  await fs.rm(configPath, { force: true });
+});
 
 describe('configStore terminal defaults', () => {
   it('uses macOS shells for darwin defaults', () => {
@@ -38,5 +51,30 @@ describe('configStore terminal defaults', () => {
     const settings = getDefaultSettings('win32');
 
     expect(settings.permissions).toEqual({ microphone: 'prompt' });
+  });
+
+  it('defaults Smart Input to disabled, Enter-to-send, no automatic execute', () => {
+    const settings = getDefaultSettings('darwin');
+
+    expect(settings.terminal.smartInput).toEqual({ enabled: false, enterToSend: true, sendEnter: false });
+  });
+});
+
+describe('configStore Smart Input migration', () => {
+  it('fills Smart Input defaults for configs saved before the feature existed', async () => {
+    await writeConfig({ terminal: { fontSize: 15 } });
+
+    const settings = await loadSettings();
+
+    expect(settings.terminal.fontSize).toBe(15);
+    expect(settings.terminal.smartInput).toEqual({ enabled: false, enterToSend: true, sendEnter: false });
+  });
+
+  it('preserves explicit Smart Input choices', async () => {
+    await writeConfig({ terminal: { smartInput: { enabled: true, enterToSend: false, sendEnter: true } } });
+
+    const settings = await loadSettings();
+
+    expect(settings.terminal.smartInput).toEqual({ enabled: true, enterToSend: false, sendEnter: true });
   });
 });

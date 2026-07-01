@@ -17,6 +17,10 @@ export const voiceInputExtension: NativeExtension = {
     const config = getExtensionConfig(ctx.settings, voiceInputExtensionManifest.id, DEFAULTS);
     return <VoiceInputTerminalButton activeSessionId={session.id} config={{ executablePath: String(config.executablePath ?? ''), modelPath: String(config.modelPath ?? ''), modelSize: String(config.modelSize ?? 'tiny'), language: String(config.language ?? 'en') }} />;
   },
+  renderTerminalSmartInputAction: (ctx, session, smartInput) => {
+    const config = getExtensionConfig(ctx.settings, voiceInputExtensionManifest.id, DEFAULTS);
+    return <VoiceInputTerminalButton activeSessionId={session.id} variant="embedded" onTranscript={smartInput.insertText} config={{ executablePath: String(config.executablePath ?? ''), modelPath: String(config.modelPath ?? ''), modelSize: String(config.modelSize ?? 'tiny'), language: String(config.language ?? 'en') }} />;
+  },
   getCommands: (ctx) => [
     { id: 'stackdock.voiceInput.show', label: 'Show Voice Input', run: () => ctx.actions.openView('stackdock.voiceInput.view') },
   ],

@@ -95,12 +95,17 @@ export interface ExtensionSettingsContext {
   setConfig(patch: Record<string, ExtensionConfigPrimitive>): void;
 }
 
+export interface TerminalSmartInputActionContext {
+  insertText(text: string): void;
+}
+
 export interface NativeExtension {
   manifest: ExtensionManifest;
   activateRenderer?(ctx: ExtensionRendererContext): NativeExtension;
   renderView?(contribution: ExtensionViewContribution, ctx: WorkspaceExtensionContext): ReactNode;
   renderStatusBar?(contribution: ExtensionStatusBarContribution, ctx: WorkspaceExtensionContext): ReactNode;
   renderTerminalOverlay?(ctx: WorkspaceExtensionContext, session: WorkspaceTerminalSession): ReactNode;
+  renderTerminalSmartInputAction?(ctx: WorkspaceExtensionContext, session: WorkspaceTerminalSession, smartInput: TerminalSmartInputActionContext): ReactNode;
   renderSettings?(ctx: ExtensionSettingsContext): ReactNode;
   getCommands?(ctx: WorkspaceExtensionContext): ExtensionCommand[];
 }

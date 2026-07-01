@@ -122,6 +122,27 @@
   opacity: 1;
 }
 
+.voice-terminal-button.embedded {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  border-color: var(--border);
+  background: transparent;
+  box-shadow: none;
+  opacity: 1;
+  color: var(--muted);
+}
+
+.voice-terminal-button.embedded:hover,
+.voice-terminal-button.embedded:focus-visible {
+  color: var(--primary);
+}
+
+.voice-terminal-button.embedded.recording {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
 .voice-terminal-button svg {
   width: 18px;
   height: 18px;

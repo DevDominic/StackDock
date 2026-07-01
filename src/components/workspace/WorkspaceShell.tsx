@@ -35,6 +35,39 @@ type EditorSplitOrientation = 'horizontal' | 'vertical';
 const SESSION_DRAG_MIME = 'application/x-stackdock-session-id';
 const FILE_TAB_DRAG_MIME = 'application/x-stackdock-file-tab';
 const MOVABLE_WORKSPACE_VIEW_IDS = new Set(['stackdock.git.view', 'stackdock.voiceInput.view']);
+const PI_EXTENSION_ID = 'stackdock.pi';
+const PI_RESUME_COMMAND_PATTERN = /^\s*pi\b(?=.*(?:^|\s)--session(?:-id)?(?:\s|=))/i;
+
+function piResumeRestoringEnabled(settings: StackDockSettings) {
+  return settings.extensions.config?.[PI_EXTENSION_ID]?.resumeRestoredTerminals !== false;
+}
+
+function isPiResumeState(resumeState: TerminalPersistedTab['resumeState'] | null | undefined) {
+  return resumeState?.integrationId === PI_EXTENSION_ID;
+}
+
+function isPiResumeCommand(command: string | undefined) {
+  return !!command && PI_RESUME_COMMAND_PATTERN.test(command);
+}
+
+function restoredTerminalStartupCommand(session: WorkspaceLayout['terminals'][number] | TerminalPersistedTab, snapshot: Awaited<ReturnType<typeof api.terminal.snapshot>>, settings: StackDockSettings) {
+  const persistedResumeCommand = 'resumeStartupCommand' in session ? session.resumeStartupCommand : undefined;
+  const suppressPiResume = !piResumeRestoringEnabled(settings) && (
+    isPiResumeState(session.resumeState)
+    || isPiResumeState(snapshot?.resumeState)
+    || isPiResumeCommand(persistedResumeCommand)
+    || isPiResumeCommand(session.startupCommand)
+  );
+  if (!suppressPiResume) {
+    const resumeCommand = persistedResumeCommand ?? session.resumeState?.resumeCommand ?? snapshot?.resumeState?.resumeCommand;
+    if (resumeCommand) return resumeCommand;
+  }
+  if (suppressPiResume && isPiResumeCommand(session.startupCommand)) {
+    return session.originalStartupCommand && !isPiResumeCommand(session.originalStartupCommand) ? session.originalStartupCommand : 'pi';
+  }
+  return session.startupCommand;
+}
+
 function sideToDirection(side: TerminalSplitSide): 'row' | 'column' { return side === 'left' || side === 'right' ? 'row' : 'column'; }
 function isBeforeSide(side: TerminalSplitSide) { return side === 'left' || side === 'up'; }
 function getDropSide(event: DragEvent, element: HTMLElement): TerminalSplitSide {
@@ -313,8 +346,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
               ?? (session.workspacePath ? workspaces.find((item) => item.path === session.workspacePath) : null);
             if (!targetWorkspace) continue;
             const snapshot = session.restoreId ? await api.terminal.snapshot(session.restoreId).catch(() => null) : null;
-            const resumeCommand = 'resumeStartupCommand' in session ? session.resumeStartupCommand : session.resumeState?.resumeCommand || snapshot?.resumeState?.resumeCommand;
-            const startupCommand = resumeCommand || session.startupCommand;
+            const startupCommand = restoredTerminalStartupCommand(session, snapshot, loadedSettings);
             const created = await sessionStore.createSession({ workspaceId: targetWorkspace.id, workspaceName: targetWorkspace.name, workspacePath: targetWorkspace.path, profileId: session.profileId, cwd: session.cwd, name: session.name, startupCommand, restoreId: session.restoreId });
             const restoredSession = { ...created, originalStartupCommand: session.originalStartupCommand ?? session.startupCommand, resumeState: session.resumeState ?? snapshot?.resumeState, restoredFromSnapshot: true, resumeStartupCommand: session.resumeStartupCommand ?? '', splitGroupId: session.splitGroupId, splitDirection: session.splitDirection, splitGroupOrder: session.splitGroupOrder };
             sessionStore.replaceSession(created.id, restoredSession);
@@ -342,8 +374,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         if (!sessionsRef.current.length && !restoredCurrentWorkspace && terminalsToRestore.length) {
           for (const session of terminalsToRestore) {
             const snapshot = session.restoreId ? await api.terminal.snapshot(session.restoreId).catch(() => null) : null;
-            const resumeCommand = 'resumeStartupCommand' in session ? session.resumeStartupCommand : session.resumeState?.resumeCommand ?? snapshot?.resumeState?.resumeCommand;
-            const startupCommand = resumeCommand || session.startupCommand;
+            const startupCommand = restoredTerminalStartupCommand(session, snapshot, loadedSettings);
             const created = await sessionStore.createSession({ workspaceId: workspace.id, workspaceName: workspace.name, workspacePath: workspace.path, profileId: session.profileId, cwd: session.cwd, name: session.name, startupCommand, restoreId: session.restoreId });
             const restoredSession = { ...created, originalStartupCommand: session.originalStartupCommand ?? session.startupCommand, resumeState: session.resumeState ?? snapshot?.resumeState, restoredFromSnapshot: true, ...('resumeStartupCommand' in session ? { resumeStartupCommand: session.resumeStartupCommand ?? '' } : {}), splitGroupId: session.splitGroupId, splitDirection: session.splitDirection, splitGroupOrder: session.splitGroupOrder };
             sessionStore.replaceSession(created.id, restoredSession);
@@ -1652,9 +1683,20 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const safePanelSizes = getSafePanelSizes(panelSizes, sidebarVisible, sessionsVisible);
   const extensionCommands = enabledExtensions.flatMap((manifest) => extensionRegistry.nativeExtensions.get(manifest.id)?.getCommands?.(extensionCtx) ?? []);
   function renderTerminalOverlays(session: WorkspaceTerminalSession) {
+    const smartInputEnabled = settings?.terminal.smartInput?.enabled === true;
     return enabledExtensions.flatMap((manifest) => {
-      const overlay = extensionRegistry.nativeExtensions.get(manifest.id)?.renderTerminalOverlay?.(extensionCtx, session);
+      const extension = extensionRegistry.nativeExtensions.get(manifest.id);
+      // Extensions embedded in the Smart Input composer drop their floating overlay while it is open.
+      if (smartInputEnabled && extension?.renderTerminalSmartInputAction) return [];
+      const overlay = extension?.renderTerminalOverlay?.(extensionCtx, session);
       return overlay ? [<div key={manifest.id} className="terminal-extension-overlay-item">{overlay}</div>] : [];
+    });
+  }
+
+  function renderTerminalSmartInputActions(session: WorkspaceTerminalSession, insertText: (text: string) => void) {
+    return enabledExtensions.flatMap((manifest) => {
+      const action = extensionRegistry.nativeExtensions.get(manifest.id)?.renderTerminalSmartInputAction?.(extensionCtx, session, { insertText });
+      return action ? [<div key={manifest.id} className="terminal-smart-input-action-item">{action}</div>] : [];
     });
   }
 
@@ -2019,7 +2061,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
             {paneWebSplit === 'left' || paneWebSplit === 'up' ? paneWebPane : null}
             <Panel key="primary" id={`main-primary-${session.id}`} order={paneWebSplit === 'left' || paneWebSplit === 'up' ? 2 : 1} minSize={20}>
               <div className="main-tab-pane" style={{ display: panePrimaryView === 'terminal' ? 'flex' : 'none' }}>
-                <TerminalPanel key={`${session.id}:${terminalReloadTokens[session.id] ?? 0}`} sessions={[session]} activeId={session.id} onOpenLink={(url) => openLinkFor(session.id, url)} settings={settings} isVisible={isPaneVisible && panePrimaryView === 'terminal'} onAttachmentError={(message) => showToast(message, 'error')} />
+                <TerminalPanel key={`${session.id}:${terminalReloadTokens[session.id] ?? 0}`} sessions={[session]} activeId={session.id} onOpenLink={(url) => openLinkFor(session.id, url)} settings={settings} isVisible={isPaneVisible && panePrimaryView === 'terminal'} onAttachmentError={(message) => showToast(message, 'error')} renderSmartInputActions={renderTerminalSmartInputActions} />
                 {isPaneVisible && panePrimaryView === 'terminal' ? <div className="terminal-overlay-host">{renderTerminalOverlays(session)}</div> : null}
               </div>
               <div className="main-tab-pane" style={{ display: panePrimaryView === 'editor' ? 'flex' : 'none' }}>

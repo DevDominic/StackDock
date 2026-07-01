@@ -61,7 +61,7 @@ export interface StackDockSettings {
   ui: { fontFamily: string; fontSize: number };
   code: { ligatures: boolean };
   editor: { fontSize: number; fontFamily: string; tabSize: number; wordWrap: 'on' | 'off'; /** @deprecated Use StackDockSettings.themeId. */ themeId?: string; /** @deprecated Use StackDockSettings.importedThemes. */ importedThemes?: StackDockTheme[] };
-  terminal: { fontSize: number; fontFamily: string; cursorBlink: boolean; startAtBottom: boolean; markdownFormatting: boolean; persistentSessionCache?: boolean };
+  terminal: { fontSize: number; fontFamily: string; cursorBlink: boolean; startAtBottom: boolean; markdownFormatting: boolean; persistentSessionCache?: boolean; smartInput?: { enabled: boolean; enterToSend: boolean; sendEnter: boolean } };
   terminalProfiles: TerminalProfile[];
   extensions: ExtensionSettings;
   workspaceViewState: WorkspaceViewState;
@@ -455,6 +455,7 @@ export interface StackDockApi {
     writeClipboardText(text: string): void;
     inspectPath(path: string, source: TerminalAttachmentSource, options?: TerminalAttachmentOptions): Promise<TerminalAttachment>;
     savePastedImage(dataUrl: string, name?: string, options?: TerminalAttachmentOptions): Promise<TerminalAttachment>;
+    readImageThumbnailDataUrl(path: string): string;
     saveClipboardImage(name?: string, options?: TerminalAttachmentOptions): Promise<TerminalAttachment | null>;
   };
   terminal: {

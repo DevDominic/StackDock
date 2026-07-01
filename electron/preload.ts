@@ -1,4 +1,4 @@
-import { clipboard, contextBridge, ipcRenderer, webUtils } from 'electron';
+import { clipboard, contextBridge, ipcRenderer, nativeImage, webUtils } from 'electron';
 import os from 'os';
 import type { StackDockApi } from '../src/shared/types';
 import { getWindowControlsConfig } from '../src/shared/windowControls';
@@ -116,6 +116,10 @@ const api: StackDockApi = {
     writeClipboardText: (text) => clipboard.writeText(text),
     inspectPath: (targetPath, source, options) => ipcRenderer.invoke('attachments:inspectPath', targetPath, source, options),
     savePastedImage: (dataUrl, name, options) => ipcRenderer.invoke('attachments:savePastedImage', dataUrl, name, options),
+    readImageThumbnailDataUrl: (targetPath) => {
+      const image = nativeImage.createFromPath(targetPath);
+      return image.isEmpty() ? '' : image.resize({ height: 60 }).toDataURL();
+    },
     saveClipboardImage: (name, options) => {
       const image = clipboard.readImage();
       if (image.isEmpty()) return Promise.resolve(null);

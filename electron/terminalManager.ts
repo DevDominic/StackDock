@@ -180,13 +180,13 @@ function integrationOwnsCommand(command: string | undefined, terminalIntegration
   return !!command && terminalIntegrations.some((integration) => integration.ownsCommand?.(command));
 }
 
-function terminalPersistedTab(entry: RecordEntry): TerminalPersistedTab {
+function terminalPersistedTab(entry: RecordEntry, terminalIntegrations: TerminalCommandIntegration[]): TerminalPersistedTab {
   const restoreId = entry.session.restoreId ?? entry.session.id;
   const snapshot = snapshots.get(restoreId);
-  if (snapshot) hydrateSnapshotResumeState(snapshot, entry.terminalIntegrations);
-  const resumeCommandResult = buildResumeCommandResult(entry.session, snapshot, entry.terminalIntegrations);
+  if (snapshot) hydrateSnapshotResumeState(snapshot, terminalIntegrations);
+  const resumeCommandResult = buildResumeCommandResult(entry.session, snapshot, terminalIntegrations);
   const resumeState = resumeCommandResult.suppressed ? undefined : entry.session.resumeState ?? snapshot?.resumeState;
-  const suppressIntegratedStartup = !resumeCommandResult.command && integrationOwnsCommand(entry.session.startupCommand, entry.terminalIntegrations);
+  const suppressIntegratedStartup = !resumeCommandResult.command && integrationOwnsCommand(entry.session.startupCommand, terminalIntegrations);
   return {
     ...entry.session,
     ...entry.context,
@@ -199,7 +199,10 @@ function terminalPersistedTab(entry: RecordEntry): TerminalPersistedTab {
 
 export async function saveOpenTerminalState(): Promise<TerminalPersistedState> {
   await flushTerminalSnapshots();
-  const state: TerminalPersistedState = { version: 1, savedAt: new Date().toISOString(), tabs: [...terminals.values()].map(terminalPersistedTab) };
+  const settings = await loadSettings().catch(() => getDefaultSettings());
+  await ensureExtensionsLoaded(settings);
+  const terminalIntegrations = getEnabledTerminalIntegrations(settings);
+  const state: TerminalPersistedState = { version: 1, savedAt: new Date().toISOString(), tabs: [...terminals.values()].map((entry) => terminalPersistedTab(entry, terminalIntegrations)) };
   await ensureDataDirs();
   await fsp.writeFile(getTerminalStatePath(), JSON.stringify(state, null, 2), 'utf8');
   return state;

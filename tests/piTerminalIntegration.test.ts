@@ -49,7 +49,8 @@ describe('Pi terminal integration', () => {
     const result = integration.resolveStartupCommand?.('pi', { restoreId: 'restore_abc', cwd: 'C:\\repo' });
 
     expect(result?.command).toContain('--session-id "stackdock.restore_abc"');
-    expect(result?.command).toContain('--session-dir "C:\\Users\\domin\\AppData\\Roaming\\StackDock\\extensions\\stackdock.pi\\sessions"');
+    expect(result?.resumeState?.storagePath).toMatch(/[\\/]StackDock[\\/]extensions[\\/]stackdock\.pi[\\/]sessions$/);
+    expect(result?.command).toContain(`--session-dir "${result?.resumeState?.storagePath}"`);
     expect(result?.command).not.toContain('C:\\\\Users');
   });
 
