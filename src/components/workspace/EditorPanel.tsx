@@ -129,6 +129,22 @@ function MediaPreview({ file }: { file: OpenFileTab }) {
   );
 }
 
+function firstChangedLine(original: string, modified: string) {
+  const originalLines = original.split('\n');
+  const modifiedLines = modified.split('\n');
+  const max = Math.max(originalLines.length, modifiedLines.length);
+  for (let index = 0; index < max; index += 1) {
+    if ((originalLines[index] ?? '') !== (modifiedLines[index] ?? '')) return index + 1;
+  }
+  return null;
+}
+
+function revealLineInEditor(editor: monaco.editor.ICodeEditor | null | undefined, line: number) {
+  const lineCount = editor?.getModel()?.getLineCount();
+  if (!editor || !lineCount) return;
+  editor.revealLineInCenter(Math.max(1, Math.min(line, lineCount)), monaco.editor.ScrollType.Immediate);
+}
+
 function changedLineDecorations(original: string, modified: string) {
   const originalLines = original.split('\n');
   const modifiedLines = modified.split('\n');
@@ -168,6 +184,7 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
   const compareModifiedRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const compareOriginalDecorationsRef = useRef<string[]>([]);
   const compareModifiedDecorationsRef = useRef<string[]>([]);
+  const autoRevealedDiffKeyRef = useRef<string | null>(null);
   const findKeybindingDisposablesRef = useRef<monaco.IDisposable[]>([]);
   const modelSubscriptionRef = useRef<monaco.IDisposable | null>(null);
   const activePathRef = useRef<string | null>(null);
@@ -188,6 +205,12 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
     editor.focus();
     void editor.getAction('actions.find')?.run();
   }, [getActiveCodeEditor]);
+
+  function shouldAutoRevealDiff(key: string) {
+    if (!visible || autoRevealedDiffKeyRef.current === key) return false;
+    autoRevealedDiffKeyRef.current = key;
+    return true;
+  }
 
   useEffect(() => {
     onChangeFileRef.current = onChangeFile;
@@ -251,6 +274,8 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
       if (showAsDiff && activeDiff) {
         editor.setModel(null);
         const originalModel = getOriginalModel(active, activeDiff);
+        const autoRevealKey = `${active.path}\0${activeDiff.staged ? 'staged' : 'unstaged'}\0${diffMode}\0${activeDiff.original}`;
+        const autoReveal = shouldAutoRevealDiff(autoRevealKey);
         if (diffMode === 'compare-only') {
           diffEditorRef.current?.setModel(null);
           if (!compareOriginalRef.current && compareOriginalHostRef.current) {
@@ -267,6 +292,13 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
           if (visible) requestAnimationFrame(() => requestAnimationFrame(() => {
             layoutEditor(compareOriginalRef.current, compareOriginalHostRef.current);
             layoutEditor(compareModifiedRef.current, compareModifiedHostRef.current);
+            if (autoReveal) {
+              const line = firstChangedLine(originalModel.getValue(), modifiedModel.getValue());
+              if (line) {
+                revealLineInEditor(compareOriginalRef.current, line);
+                revealLineInEditor(compareModifiedRef.current, line);
+              }
+            }
           }));
         } else {
           compareOriginalRef.current?.setModel(null);
@@ -281,7 +313,10 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
           }
           diffEditorRef.current?.setModel({ original: originalModel, modified: modifiedModel });
           diffEditorRef.current?.updateOptions({ renderSideBySide: diffMode === 'side-by-side', useInlineViewWhenSpaceIsLimited: false });
-          if (visible) requestAnimationFrame(() => requestAnimationFrame(() => layoutDiffEditor(diffEditorRef.current, diffHostRef.current)));
+          if (visible) requestAnimationFrame(() => requestAnimationFrame(() => {
+            layoutDiffEditor(diffEditorRef.current, diffHostRef.current);
+            if (autoReveal) diffEditorRef.current?.revealFirstDiff();
+          }));
         }
       } else {
         compareOriginalRef.current?.setModel(null);
