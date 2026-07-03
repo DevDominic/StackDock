@@ -75,7 +75,7 @@ function languageArg(value: unknown) {
 }
 
 function modelSizeArg(value: unknown): VoiceInputModelSize {
-  const modelSize = typeof value === 'string' && value.trim() ? value.trim() : 'tiny';
+  const modelSize = typeof value === 'string' && value.trim() ? value.trim() : 'base';
   if (modelSize !== 'tiny' && modelSize !== 'base') throw new Error('modelSize must be tiny or base');
   return modelSize;
 }

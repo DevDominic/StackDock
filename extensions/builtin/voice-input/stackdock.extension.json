@@ -12,10 +12,11 @@
     "configuration": {
       "title": "Voice Input settings",
       "fields": [
-        { "key": "executablePath", "label": "Custom whisper.cpp executable path", "type": "text", "default": "", "description": "Optional. Overrides the managed whisper.cpp runtime installed from the Voice Input panel." },
-        { "key": "modelSize", "label": "Managed model", "type": "select", "default": "tiny", "options": [{ "label": "Tiny (fastest)", "value": "tiny" }, { "label": "Base (more accurate)", "value": "base" }], "description": "StackDock can download and use this model automatically." },
+        { "key": "executablePath", "label": "Custom whisper.cpp executable path", "type": "text", "default": "", "description": "Optional. Overrides the managed whisper.cpp runtime installed from Voice Input settings." },
+        { "key": "modelSize", "label": "Managed model", "type": "select", "default": "base", "options": [{ "label": "Base (more accurate)", "value": "base" }, { "label": "Tiny (fastest)", "value": "tiny" }], "description": "StackDock can download and use this model automatically." },
+        { "key": "microphoneDeviceId", "label": "Microphone", "type": "text", "default": "", "description": "Input device id selected from Voice Input settings. Empty uses the system default." },
         { "key": "modelPath", "label": "Custom model path", "type": "text", "default": "", "description": "Optional. Overrides the managed model when set." },
-        { "key": "language", "label": "Language", "type": "text", "default": "en", "description": "whisper.cpp language code. Use en for tiny.en models." }
+        { "key": "language", "label": "Language", "type": "text", "default": "en", "description": "whisper.cpp language code. Use en for managed English models." }
       ]
     }
   }

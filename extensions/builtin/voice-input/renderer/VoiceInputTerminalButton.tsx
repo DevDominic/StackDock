@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { api } from '../../../../src/lib/api';
 import { useToast } from '../../../../src/components/common/ToastProvider';
 import { MicrophoneIcon } from '../../../../src/components/icons';
@@ -11,20 +10,8 @@ interface Props {
   onTranscript?(text: string): void;
 }
 
-interface ModelStatus {
-  installed: boolean;
-}
-
-interface RuntimeStatus {
-  installed: boolean;
-}
-
 export function VoiceInputTerminalButton({ activeSessionId, config, variant = 'floating', onTranscript }: Props) {
   const { showToast } = useToast();
-  const [modelInstalled, setModelInstalled] = useState(false);
-  const [runtimeInstalled, setRuntimeInstalled] = useState(false);
-  const hasCustomModel = !!config.modelPath.trim();
-  const hasCustomRuntime = !!config.executablePath.trim();
   const recorder = useVoiceInputRecorder(config, async (text) => {
     if (onTranscript) {
       onTranscript(text);
@@ -35,39 +22,10 @@ export function VoiceInputTerminalButton({ activeSessionId, config, variant = 'f
     await api.terminal.write(activeSessionId, text);
     showToast('Voice text pasted into terminal', 'success');
   });
-  const configured = !!activeSessionId && (hasCustomRuntime || runtimeInstalled) && (hasCustomModel || modelInstalled);
-
-  useEffect(() => {
-    if (hasCustomModel) {
-      setModelInstalled(true);
-      return;
-    }
-    let active = true;
-    api.extensions.invoke('stackdock.voiceInput', 'modelStatus', [config.modelSize]).then((result) => {
-      if (active) setModelInstalled((result as ModelStatus).installed === true);
-    }).catch(() => {
-      if (active) setModelInstalled(false);
-    });
-    return () => { active = false; };
-  }, [config.modelSize, hasCustomModel]);
-
-  useEffect(() => {
-    if (hasCustomRuntime) {
-      setRuntimeInstalled(true);
-      return;
-    }
-    let active = true;
-    api.extensions.invoke('stackdock.voiceInput', 'runtimeStatus').then((result) => {
-      if (active) setRuntimeInstalled((result as RuntimeStatus).installed === true);
-    }).catch(() => {
-      if (active) setRuntimeInstalled(false);
-    });
-    return () => { active = false; };
-  }, [hasCustomRuntime]);
 
   async function onClick() {
-    if (!configured) {
-      showToast('Set up Voice Input from the Voice Input panel before recording.', 'info');
+    if (!activeSessionId) {
+      showToast('Open a terminal before recording voice input.', 'info');
       return;
     }
     try {

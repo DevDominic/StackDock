@@ -6,6 +6,7 @@ export interface VoiceInputConfig {
   modelPath: string;
   modelSize: string;
   language: string;
+  microphoneDeviceId?: string;
 }
 
 interface RecorderHandle {
@@ -91,7 +92,9 @@ export function useVoiceInputRecorder(config: VoiceInputConfig, onText: (text: s
 
   async function startRecording() {
     setStatus('Requesting microphone...');
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+    const audio: MediaTrackConstraints = { channelCount: 1, echoCancellation: true, noiseSuppression: true };
+    if (config.microphoneDeviceId?.trim()) audio.deviceId = { exact: config.microphoneDeviceId.trim() };
+    const stream = await navigator.mediaDevices.getUserMedia({ audio });
     const context = new AudioContext();
     const source = context.createMediaStreamSource(stream);
     const processor = context.createScriptProcessor(4096, 1, 1);
