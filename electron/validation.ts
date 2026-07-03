@@ -81,6 +81,7 @@ export function assertTerminalSessionContext(value: unknown): TerminalSessionCon
     workspaceName: context.workspaceName == null ? undefined : assertNonEmptyString(context.workspaceName, 'context.workspaceName'),
     workspacePath: context.workspacePath == null ? undefined : assertAbsolutePath(context.workspacePath, 'context.workspacePath'),
     headless: context.headless === true ? true : undefined,
+    keepAlive: context.keepAlive === true ? true : undefined,
     commandLabel: context.commandLabel == null ? undefined : assertNonEmptyString(context.commandLabel, 'context.commandLabel'),
   };
 }

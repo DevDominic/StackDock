@@ -6,7 +6,7 @@ import os from 'os';
 import path from 'path';
 import { addWorkspace, createWorkspace, listWorkspaces, loadLayout, loadRestoreState, removeWorkspace, saveLayout, saveRestoreState, updateWorkspace } from './workspaceStore';
 import { createFile, createFolder, deletePath, pathExists, readDirectory, readFile, readFileDataUrl, renamePath, revealInExplorer, writeFile } from './fileService';
-import { createTerminal, forgetTerminalSnapshot, getTerminalProfiles, getTerminalSnapshot, killTerminal, loadOpenTerminalState, markTerminalReady, resizeTerminal, saveOpenTerminalState, setTerminalWindow, setVisibleTerminals, updateTerminalSession, writeTerminal } from './terminalManager';
+import { createTerminal, forgetTerminalSnapshot, getTerminalProfiles, getTerminalSnapshot, killAllHeadlessProcesses, killTerminal, loadOpenTerminalState, markTerminalReady, resizeTerminal, saveOpenTerminalState, setTerminalWindow, setVisibleTerminals, updateTerminalSession, writeTerminal } from './terminalManager';
 import { setBridgeWindow, startBrowserBridge } from './browserBridge';
 import { ensureDataDirs, getLocalExtensionsDir } from './storage';
 import { logError } from './log';
@@ -419,6 +419,7 @@ app.on('before-quit', (event) => {
   if (quittingAfterSnapshotFlush) return;
   event.preventDefault();
   quittingAfterSnapshotFlush = true;
+  killAllHeadlessProcesses();
   const saveWithTimeout = Promise.race([
     saveOpenTerminalState(),
     new Promise<never>((_, reject) => setTimeout(() => reject(new Error('saveOpenTerminalState timeout')), 3000)),

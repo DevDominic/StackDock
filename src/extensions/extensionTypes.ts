@@ -36,7 +36,7 @@ export interface WorkspaceExtensionContext {
     createSession(): void | Promise<void>;
     runTerminalCommand(name: string, command: string, cwd?: string, profileId?: string): Promise<WorkspaceTerminalSession>;
     killTerminal(id: string): void | Promise<void>;
-    runHeadlessCommand(name: string, command: string, cwd?: string): Promise<WorkspaceTerminalSession>;
+    runHeadlessCommand(name: string, command: string, cwd?: string, options?: { keepAlive?: boolean }): Promise<WorkspaceTerminalSession>;
   };
   workspaces: Workspace[];
   profiles: TerminalProfile[];

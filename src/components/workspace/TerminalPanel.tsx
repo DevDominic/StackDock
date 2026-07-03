@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent as ReactChangeEvent, type ClipboardEvent as ReactClipboardEvent, type DragEvent as ReactDragEvent, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { Terminal, type ILink, type ITerminalAddon } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { LigaturesAddon } from '@xterm/addon-ligatures';
 import { sanitizeSnapshotReplay } from '../../shared/terminalSnapshot';
-import type { StackDockSettings, TerminalAttachment, TerminalAttachmentSource, TerminalSession } from '../../shared/types';
+import type { DirectoryEntry, StackDockSettings, TerminalAttachment, TerminalAttachmentSource, TerminalSession } from '../../shared/types';
 import { api } from '../../lib/api';
 import { removeSerializedAttachmentToken, serializeTerminalAttachments, summarizeTerminalAttachments } from '../../lib/terminalAttachments';
 import { createTerminalMarkdownState, flushTerminalMarkdownState, formatTerminalMarkdownChunk, shouldFormatTerminalMarkdown } from '../../lib/terminalMarkdown';
+import { getTerminalCsiUSequence } from '../../lib/terminalKeyboard';
 import { useToast } from '../common/ToastProvider';
 
 import '@xterm/xterm/css/xterm.css';
@@ -27,6 +28,64 @@ const URL_PATTERN = /https?:\/\/[^\s"'`<>)\]}]+/g;
 const CODE_FONT_FAMILY = '"Cascadia Code", Consolas, monospace';
 const CODE_FONT_FEATURES = '"calt" on, "liga" on, "dlig" on';
 const EXPLORER_PATH_MIME = 'application/x-stackdock-explorer-path';
+
+type StagedTerminalAttachment = TerminalAttachment & { token: string; thumbUrl?: string };
+type TerminalInputTarget = 'terminal' | 'smartInput';
+
+type SmartInputDraft = {
+  text: string;
+  stagedAttachments: StagedTerminalAttachment[];
+};
+
+type SmartInputFileMention = {
+  start: number;
+  end: number;
+  query: string;
+};
+
+type SmartInputFileSuggestion = {
+  name: string;
+  path: string;
+  relativePath: string;
+  isDirectory: boolean;
+};
+
+const smartInputDraftCache = new Map<string, SmartInputDraft>();
+const MAX_SMART_INPUT_FILE_RESULTS = 80;
+
+function cacheSmartInputDraft(sessionId: string, text: string, stagedAttachments: StagedTerminalAttachment[]) {
+  if (!text && !stagedAttachments.length) {
+    smartInputDraftCache.delete(sessionId);
+    return;
+  }
+  smartInputDraftCache.set(sessionId, { text, stagedAttachments: [...stagedAttachments] });
+}
+
+function getSessionWorkspaceRoot(session: TerminalSession) {
+  const workspacePath = (session as TerminalSession & { workspacePath?: string }).workspacePath;
+  return workspacePath || session.cwd;
+}
+
+function relativeWorkspacePath(rootPath: string, targetPath: string) {
+  return targetPath.slice(rootPath.length).replace(/^[\\/]/, '').replace(/\\/g, '/');
+}
+
+function findSmartInputFileMention(text: string, caret: number): SmartInputFileMention | null {
+  const beforeCaret = text.slice(0, caret);
+  const atIndex = beforeCaret.lastIndexOf('@');
+  if (atIndex < 0) return null;
+  const prefix = atIndex === 0 ? '' : beforeCaret[atIndex - 1];
+  if (prefix && !/\s/.test(prefix)) return null;
+  const query = beforeCaret.slice(atIndex + 1);
+  if (/\s/.test(query)) return null;
+  return { start: atIndex, end: caret, query };
+}
+
+function matchesSmartInputFile(entry: DirectoryEntry, relativePath: string, query: string) {
+  if (!query) return true;
+  const normalized = query.toLowerCase().replace(/\\/g, '/');
+  return entry.name.toLowerCase().includes(normalized) || relativePath.toLowerCase().includes(normalized);
+}
 
 function cssVar(name: string, fallback: string) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
@@ -97,10 +156,18 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
   const smartInputTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const smartInputHoldRef = useRef<{ key: string; startedAt: number } | null>(null);
   const { showToast } = useToast();
+  const cachedSmartInputDraft = smartInputDraftCache.get(session.id);
   const [dragOver, setDragOver] = useState(false);
   const [attachmentStatus, setAttachmentStatus] = useState<string | null>(null);
-  const [smartInputText, setSmartInputText] = useState('');
-  const [stagedAttachments, setStagedAttachments] = useState<Array<TerminalAttachment & { token: string; thumbUrl?: string }>>([]);
+  const [smartInputText, setSmartInputText] = useState(() => cachedSmartInputDraft?.text ?? '');
+  const [stagedAttachments, setStagedAttachments] = useState<StagedTerminalAttachment[]>(() => cachedSmartInputDraft?.stagedAttachments ?? []);
+  const [smartInputFileMention, setSmartInputFileMention] = useState<SmartInputFileMention | null>(null);
+  const [smartInputFileSuggestions, setSmartInputFileSuggestions] = useState<SmartInputFileSuggestion[]>([]);
+  const [smartInputFileSuggestionIndex, setSmartInputFileSuggestionIndex] = useState(0);
+  const [smartInputFileSearching, setSmartInputFileSearching] = useState(false);
+  const smartInputTextRef = useRef(smartInputText);
+  const stagedAttachmentsRef = useRef(stagedAttachments);
+  const activeInputTargetRef = useRef<TerminalInputTarget>('terminal');
   const [terminalMenu, setTerminalMenu] = useState<{ x: number; y: number; canCopy: boolean; canPaste: boolean } | null>(null);
   const [hideTerminalCursor, setHideTerminalCursor] = useState(false);
   const cliCursorStateRef = useRef({ altScreen: false, appCursorHidden: false, tail: '' });
@@ -108,9 +175,13 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
   const onAttachmentErrorRef = useRef(onAttachmentError);
   onOpenLinkRef.current = onOpenLink;
   onAttachmentErrorRef.current = onAttachmentError;
+  smartInputTextRef.current = smartInputText;
+  stagedAttachmentsRef.current = stagedAttachments;
+
   const smartInputEnabled = settings?.terminal.smartInput?.enabled === true;
   const smartInputEnterToSend = settings?.terminal.smartInput?.enterToSend !== false;
   const smartInputSendEnter = settings?.terminal.smartInput?.sendEnter === true;
+  const smartInputFileRoot = getSessionWorkspaceRoot(session);
 
   const resizeTerminal = async () => {
     const mount = mountRef.current;
@@ -143,12 +214,14 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       cursorBlink: settings?.terminal.cursorBlink ?? true,
       theme: terminalThemeFromCss(),
     });
-    // Let app-level shortcuts win over the shell: returning false stops xterm
-    // from sending the key to the PTY (no stray ^P), while the DOM event still
-    // bubbles to the window handler that opens the session switcher.
+    // Forward modified key chords that legacy terminal input cannot represent
+    // reliably (for example pi's Ctrl+Alt+P hotkeys). Returning false stops
+    // xterm from also sending a downgraded legacy sequence to the PTY. App-level
+    // shortcuts such as Ctrl+P still bubble to the window handlers below.
     terminal.attachCustomKeyEventHandler((event) => {
-      if (event.type === 'keydown' && event.key === 'Enter' && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
-        void api.terminal.write(session.id, '\x1b[13;2u');
+      const csiUSequence = getTerminalCsiUSequence(event);
+      if (csiUSequence) {
+        void api.terminal.write(session.id, csiUSequence);
         return false;
       }
       if (event.type === 'keydown' && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'p') {
@@ -346,6 +419,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     if (!focused) return;
     window.requestAnimationFrame(() => {
       void resizeTerminal();
+      activeInputTargetRef.current = 'terminal';
       terminalRef.current?.focus();
     });
   }, [focused, session.id]);
@@ -382,12 +456,60 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     setSmartInputText((current) => `${current}${text}`);
   }
 
+  function updateSmartInputFileMention(text: string, caret: number) {
+    const mention = findSmartInputFileMention(text, caret);
+    setSmartInputFileMention(mention);
+    setSmartInputFileSuggestionIndex(0);
+    if (!mention) {
+      setSmartInputFileSuggestions([]);
+      setSmartInputFileSearching(false);
+    }
+  }
+
+  function handleSmartInputChange(event: ReactChangeEvent<HTMLTextAreaElement>) {
+    const nextText = event.target.value;
+    setSmartInputText(nextText);
+    cacheSmartInputDraft(session.id, nextText, stagedAttachmentsRef.current);
+    updateSmartInputFileMention(nextText, event.target.selectionStart);
+  }
+
+  function insertSmartInputFileSuggestion(suggestion: SmartInputFileSuggestion) {
+    const textarea = smartInputTextareaRef.current;
+    const mention = smartInputFileMention;
+    if (!textarea || !mention) return;
+    const insertedReference = `@${suggestion.relativePath}${suggestion.isDirectory ? '/' : ''} `;
+    const nextText = `${smartInputText.slice(0, mention.start)}${insertedReference}${smartInputText.slice(mention.end)}`;
+    const nextCaret = mention.start + insertedReference.length;
+    setSmartInputText(nextText);
+    cacheSmartInputDraft(session.id, nextText, stagedAttachmentsRef.current);
+    setSmartInputFileMention(null);
+    setSmartInputFileSuggestions([]);
+    setSmartInputFileSearching(false);
+    window.requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(nextCaret, nextCaret);
+    });
+  }
+
   async function sendSmartInput() {
     if (!smartInputText) return;
     await api.terminal.write(session.id, smartInputSendEnter ? `${smartInputText}\r` : smartInputText);
     setSmartInputText('');
     setStagedAttachments([]);
+    cacheSmartInputDraft(session.id, '', []);
     window.requestAnimationFrame(() => smartInputTextareaRef.current?.focus());
+  }
+
+  function eventTargetIsSmartInput(target: EventTarget | null | undefined) {
+    return target instanceof HTMLElement && !!target.closest('.terminal-smart-input');
+  }
+
+  function getSelectedInputTarget(eventTarget?: EventTarget | null): TerminalInputTarget {
+    const activeElement = document.activeElement;
+    if (smartInputEnabled && smartInputTextareaRef.current && activeElement === smartInputTextareaRef.current) return 'smartInput';
+    if (activeElement && mountRef.current?.contains(activeElement)) return 'terminal';
+    if (smartInputEnabled && eventTargetIsSmartInput(eventTarget)) return 'smartInput';
+    return smartInputEnabled && activeInputTargetRef.current === 'smartInput' ? 'smartInput' : 'terminal';
   }
 
   function stageAttachmentObjects(attachments: TerminalAttachment[]) {
@@ -402,33 +524,34 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     showAttachmentStatus(summarizeTerminalAttachments(attachments));
   }
 
-  async function insertAttachmentObjects(attachments: TerminalAttachment[]) {
+  async function insertAttachmentObjects(attachments: TerminalAttachment[], target: TerminalInputTarget = getSelectedInputTarget()) {
     if (!attachments.length) throw new Error('No attachable files found');
-    if (smartInputEnabled) {
+    if (target === 'smartInput' && smartInputEnabled) {
       stageAttachmentObjects(attachments);
       return;
     }
     const text = serializeTerminalAttachments(attachments, { formatter: 'auto' });
     await api.terminal.write(session.id, text);
+    activeInputTargetRef.current = 'terminal';
     terminalRef.current?.focus();
     showAttachmentStatus(summarizeTerminalAttachments(attachments));
   }
 
-  async function insertAttachments(files: File[], source: TerminalAttachmentSource) {
+  async function insertAttachments(files: File[], source: TerminalAttachmentSource, target: TerminalInputTarget = getSelectedInputTarget()) {
     if (!files.length) return;
     try {
       const attachments = (await Promise.all(files.map((file) => attachmentFromFile(file, source)))).filter(Boolean) as TerminalAttachment[];
-      await insertAttachmentObjects(attachments);
+      await insertAttachmentObjects(attachments, target);
     } catch (error) {
       reportAttachmentError(error);
     }
   }
 
-  async function insertAttachmentPaths(paths: string[]) {
+  async function insertAttachmentPaths(paths: string[], target: TerminalInputTarget = getSelectedInputTarget()) {
     if (!paths.length) return;
     try {
       const attachments = await Promise.all(paths.map((targetPath) => api.attachments.inspectPath(targetPath, 'drop')));
-      await insertAttachmentObjects(attachments);
+      await insertAttachmentObjects(attachments, target);
     } catch (error) {
       reportAttachmentError(error);
     }
@@ -490,11 +613,11 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     void api.shell.openPath(attachment.path).catch((error) => showToast(error instanceof Error ? error.message : String(error), 'error'));
   }
 
-  async function insertClipboardImage() {
+  async function insertClipboardImage(target: TerminalInputTarget = getSelectedInputTarget()) {
     try {
       const attachment = await api.attachments.saveClipboardImage('pasted-image');
       if (!attachment) return false;
-      await insertAttachmentObjects([attachment]);
+      await insertAttachmentObjects([attachment], target);
       return true;
     } catch (error) {
       reportAttachmentError(error, 'Could not paste image');
@@ -502,14 +625,15 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     }
   }
 
-  async function pasteClipboard() {
+  async function pasteClipboard(target: TerminalInputTarget = getSelectedInputTarget()) {
     const terminal = terminalRef.current;
     if (api.attachments.hasClipboardText()) {
       try {
         const text = api.attachments.readClipboardText();
         if (text) {
-          if (smartInputEnabled) insertSmartInputText(text);
+          if (target === 'smartInput' && smartInputEnabled) insertSmartInputText(text);
           else {
+            activeInputTargetRef.current = 'terminal';
             terminal?.paste(text);
             terminal?.focus();
           }
@@ -522,9 +646,9 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
         return false;
       }
     } else if (api.attachments.hasClipboardImage()) {
-      const attached = await insertClipboardImage();
+      const attached = await insertClipboardImage(target);
       if (attached) showToast('Attached clipboard image', 'success');
-      terminal?.focus();
+      if (target === 'terminal') terminal?.focus();
       return attached;
     }
 
@@ -562,8 +686,9 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     if (!explorerPaths.length && !files.length) return;
     event.preventDefault();
     setDragOver(false);
-    if (explorerPaths.length) void insertAttachmentPaths(explorerPaths);
-    else void insertAttachments(files, 'drop');
+    const target = getSelectedInputTarget(event.target);
+    if (explorerPaths.length) void insertAttachmentPaths(explorerPaths, target);
+    else void insertAttachments(files, 'drop', target);
   }
 
   function handlePaste(event: ReactClipboardEvent<HTMLDivElement>) {
@@ -572,20 +697,20 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     const text = event.clipboardData.getData('text/plain');
     if (text) {
       event.preventDefault();
-      if (smartInputEnabled) insertSmartInputText(text);
-      else {
-        terminalRef.current?.paste(text);
-        terminalRef.current?.focus();
-      }
+      activeInputTargetRef.current = 'terminal';
+      terminalRef.current?.paste(text);
+      terminalRef.current?.focus();
       return;
     }
     const files = filesFromDataTransfer(event.clipboardData);
     if (!files.length) return;
     event.preventDefault();
-    void insertAttachments(files, 'paste-file');
+    void insertAttachments(files, 'paste-file', 'terminal');
   }
 
   function handleKeyDownCapture(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (eventTargetIsSmartInput(event.target)) return;
+    activeInputTargetRef.current = 'terminal';
     if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
     const key = event.key.toLowerCase();
     const terminal = terminalRef.current;
@@ -600,7 +725,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     if (!event.shiftKey && key === 'v' && clipboardHasPasteableContent()) {
       event.preventDefault();
       event.stopPropagation();
-      void pasteClipboard();
+      void pasteClipboard('terminal');
     }
   }
 
@@ -608,7 +733,8 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     const files = filesFromDataTransfer(event.clipboardData);
     if (!files.length) return;
     event.preventDefault();
-    void insertAttachments(files, 'paste-file');
+    activeInputTargetRef.current = 'smartInput';
+    void insertAttachments(files, 'paste-file', 'smartInput');
   }
 
   function setSmartInputSelection(start: number, end = start) {
@@ -633,7 +759,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
   }
 
   function accelerateSmartInputNavigation(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
-    const editableKeys = new Set(['Backspace', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
+    const editableKeys = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
     if (!editableKeys.has(event.key) || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
       smartInputHoldRef.current = null;
       return false;
@@ -649,14 +775,6 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
 
-    if (event.key === 'Backspace') {
-      const deleteStart = start === end ? Math.max(0, start - step) : start;
-      const next = `${textarea.value.slice(0, deleteStart)}${textarea.value.slice(end)}`;
-      setSmartInputText(next);
-      setSmartInputSelection(deleteStart);
-      return true;
-    }
-
     const nextPosition = event.key === 'ArrowLeft'
       ? Math.max(0, start - step)
       : event.key === 'ArrowRight'
@@ -667,17 +785,72 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
   }
 
   function handleSmartInputKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    if (smartInputFileMention && (smartInputFileSuggestions.length || smartInputFileSearching)) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setSmartInputFileSuggestionIndex((value) => Math.min(value + 1, Math.max(0, smartInputFileSuggestions.length - 1)));
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setSmartInputFileSuggestionIndex((value) => Math.max(0, value - 1));
+        return;
+      }
+      if ((event.key === 'Enter' || event.key === 'Tab') && smartInputFileSuggestions.length) {
+        event.preventDefault();
+        insertSmartInputFileSuggestion(smartInputFileSuggestions[smartInputFileSuggestionIndex] ?? smartInputFileSuggestions[0]);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setSmartInputFileMention(null);
+        setSmartInputFileSuggestions([]);
+        setSmartInputFileSearching(false);
+        return;
+      }
+    }
     if (accelerateSmartInputNavigation(event)) return;
     if (event.key !== 'Enter' || !smartInputEnterToSend || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
     event.preventDefault();
     void sendSmartInput();
   }
 
-  function handleSmartInputKeyUp() {
+  function handleSmartInputKeyUp(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
     smartInputHoldRef.current = null;
+    if (['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(event.key)) return;
+    updateSmartInputFileMention(event.currentTarget.value, event.currentTarget.selectionStart);
+  }
+
+  function handleSmartInputBlur() {
+    smartInputHoldRef.current = null;
+    setSmartInputFileMention(null);
+    setSmartInputFileSuggestions([]);
+    setSmartInputFileSearching(false);
+  }
+
+  function handleSmartInputCursorChange(event: ReactMouseEvent<HTMLTextAreaElement>) {
+    const textarea = event.currentTarget;
+    window.requestAnimationFrame(() => updateSmartInputFileMention(textarea.value, textarea.selectionStart));
+  }
+
+  function handleShellFocusCapture(event: ReactFocusEvent<HTMLDivElement>) {
+    activeInputTargetRef.current = eventTargetIsSmartInput(event.target) ? 'smartInput' : 'terminal';
+  }
+
+  function handleShellMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
+    if (eventTargetIsSmartInput(event.target)) {
+      activeInputTargetRef.current = 'smartInput';
+      return;
+    }
+    activeInputTargetRef.current = 'terminal';
+    terminalRef.current?.focus();
   }
 
   function handleContextMenu(event: ReactMouseEvent<HTMLDivElement>) {
+    if (eventTargetIsSmartInput(event.target)) {
+      activeInputTargetRef.current = 'smartInput';
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     const menuWidth = 180;
@@ -689,8 +862,53 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       canCopy: !!terminalRef.current?.hasSelection(),
       canPaste: clipboardHasPasteableContent(),
     });
+    activeInputTargetRef.current = 'terminal';
     terminalRef.current?.focus();
   }
+
+  useEffect(() => {
+    if (!smartInputEnabled || !smartInputFileMention || !smartInputFileRoot) {
+      setSmartInputFileSuggestions([]);
+      setSmartInputFileSearching(false);
+      return;
+    }
+    let cancelled = false;
+    setSmartInputFileSearching(true);
+    const timer = window.setTimeout(async () => {
+      const results: SmartInputFileSuggestion[] = [];
+      const visit = async (folder: string, depth = 0) => {
+        if (cancelled || results.length >= MAX_SMART_INPUT_FILE_RESULTS || depth > 8) return;
+        let entries: DirectoryEntry[] = [];
+        try { entries = await api.fs.readDirectory(folder); } catch { return; }
+        for (const entry of entries) {
+          const relativePath = relativeWorkspacePath(smartInputFileRoot, entry.path);
+          if (relativePath && matchesSmartInputFile(entry, relativePath, smartInputFileMention.query)) {
+            results.push({ name: entry.name, path: entry.path, relativePath, isDirectory: entry.isDirectory });
+          }
+          if (entry.isDirectory) await visit(entry.path, depth + 1);
+          if (cancelled || results.length >= MAX_SMART_INPUT_FILE_RESULTS) break;
+        }
+      };
+      await visit(smartInputFileRoot);
+      if (!cancelled) {
+        setSmartInputFileSuggestions(results);
+        setSmartInputFileSuggestionIndex(0);
+        setSmartInputFileSearching(false);
+      }
+    }, 140);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [smartInputEnabled, smartInputFileMention, smartInputFileRoot]);
+
+  useEffect(() => {
+    cacheSmartInputDraft(session.id, smartInputText, stagedAttachments);
+  }, [session.id, smartInputText, stagedAttachments]);
+
+  useEffect(() => () => {
+    cacheSmartInputDraft(session.id, smartInputTextRef.current, stagedAttachmentsRef.current);
+  }, [session.id]);
 
   useEffect(() => {
     if (!stagedAttachments.length) return;
@@ -721,14 +939,15 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       onDrop={handleDrop}
       onPaste={handlePaste}
       onKeyDownCapture={handleKeyDownCapture}
+      onFocusCapture={handleShellFocusCapture}
       onContextMenu={handleContextMenu}
-      onMouseDown={() => terminalRef.current?.focus()}
+      onMouseDown={handleShellMouseDown}
     >
       <div className="terminal-mount">
         <div ref={mountRef} className="terminal-xterm-inner" />
       </div>
       {smartInputEnabled ? (
-        <div className="terminal-smart-input" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="terminal-smart-input" onMouseDown={(event) => { activeInputTargetRef.current = 'smartInput'; event.stopPropagation(); }}>
           {stagedAttachments.length ? (
             <div className="terminal-smart-input-chips ws-chips" aria-label="Staged attachments">
               {stagedAttachments.map((attachment) => (
@@ -740,6 +959,28 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
               ))}
             </div>
           ) : null}
+          {smartInputFileMention ? (
+            <div className="terminal-smart-input-file-menu" onMouseDown={(event) => event.preventDefault()}>
+              <div className="terminal-smart-input-file-menu-title">Attach workspace path</div>
+              {smartInputFileSearching ? <div className="terminal-smart-input-file-empty">Searching…</div> : null}
+              {!smartInputFileSearching && !smartInputFileSuggestions.length ? <div className="terminal-smart-input-file-empty">No matching files</div> : null}
+              {smartInputFileSuggestions.map((suggestion, suggestionIndex) => (
+                <button
+                  key={suggestion.path}
+                  type="button"
+                  className={suggestionIndex === smartInputFileSuggestionIndex ? 'terminal-smart-input-file-item active' : 'terminal-smart-input-file-item'}
+                  onMouseEnter={() => setSmartInputFileSuggestionIndex(suggestionIndex)}
+                  onClick={() => insertSmartInputFileSuggestion(suggestion)}
+                >
+                  <span className="terminal-smart-input-file-icon" aria-hidden>{suggestion.isDirectory ? '📁' : '📄'}</span>
+                  <span className="terminal-smart-input-file-copy">
+                    <b>{suggestion.name}</b>
+                    <small>@{suggestion.relativePath}{suggestion.isDirectory ? '/' : ''}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div className="terminal-smart-input-row">
             <textarea
               ref={smartInputTextareaRef}
@@ -747,10 +988,12 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
               value={smartInputText}
               rows={1}
               placeholder={smartInputEnterToSend ? `Type a command… Enter to ${smartInputSendEnter ? 'run' : 'send'}, Shift+Enter for newline` : `Type a command… Click Send to ${smartInputSendEnter ? 'run' : 'send'}`}
-              onChange={(event) => setSmartInputText(event.target.value)}
+              onChange={handleSmartInputChange}
               onKeyDown={handleSmartInputKeyDown}
               onKeyUp={handleSmartInputKeyUp}
-              onBlur={handleSmartInputKeyUp}
+              onClick={handleSmartInputCursorChange}
+              onSelect={(event) => updateSmartInputFileMention(event.currentTarget.value, event.currentTarget.selectionStart)}
+              onBlur={handleSmartInputBlur}
               onPaste={handleSmartInputPaste}
             />
             <div className="terminal-smart-input-actions">

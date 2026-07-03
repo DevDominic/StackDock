@@ -379,6 +379,26 @@ function headlessSpawnArgs(profile: TerminalProfile, command: string) {
   return null;
 }
 
+function killHeadlessChildTree(child: ChildProcessWithoutNullStreams | null) {
+  if (!child || child.pid == null) return;
+  // On Windows child.kill() only terminates the wrapper shell, leaving the
+  // actual command (e.g. a long-running server) orphaned and holding its port.
+  if (process.platform === 'win32') spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true });
+  else child.kill();
+}
+
+export function killAllHeadlessProcesses() {
+  for (const entry of headlessProcesses.values()) {
+    if (entry.timer) {
+      clearTimeout(entry.timer);
+      entry.timer = null;
+    }
+    entry.resultSent = true;
+    killHeadlessChildTree(entry.process);
+  }
+  headlessProcesses.clear();
+}
+
 function appendHeadlessProcessOutput(entry: HeadlessProcessEntry, data: string) {
   entry.output = (entry.output + data).slice(-HEADLESS_OUTPUT_MAX_BYTES);
   mainWindow?.webContents.send('terminal:headlessData', { id: entry.session.id, data });
@@ -428,11 +448,13 @@ function runHeadlessProcess(session: TerminalSession, profile: TerminalProfile, 
       sendHeadlessProcessResult(entry, null);
     });
     child.on('exit', (exitCode) => sendHeadlessProcessResult(entry, exitCode));
-    entry.timer = setTimeout(() => {
-      entry.timedOut = true;
-      sendHeadlessProcessResult(entry, null);
-      child.kill();
-    }, HEADLESS_TIMEOUT_MS);
+    if (!context?.keepAlive) {
+      entry.timer = setTimeout(() => {
+        entry.timedOut = true;
+        sendHeadlessProcessResult(entry, null);
+        killHeadlessChildTree(child);
+      }, HEADLESS_TIMEOUT_MS);
+    }
     child.stdin.on('error', (error) => {
       appendHeadlessProcessOutput(entry, `${error.message}\n`);
       sendHeadlessProcessResult(entry, null);
@@ -612,7 +634,7 @@ export async function killTerminal(id: string, preserveSnapshot = false) {
       clearTimeout(headlessEntry.timer);
       headlessEntry.timer = null;
     }
-    headlessEntry.process?.kill();
+    killHeadlessChildTree(headlessEntry.process);
     sendHeadlessProcessResult(headlessEntry, null);
     if (!preserveSnapshot) await forgetTerminalSnapshot(headlessEntry.session.restoreId ?? id);
     return;

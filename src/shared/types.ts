@@ -231,6 +231,7 @@ export interface TerminalSessionContext {
   workspaceName?: string;
   workspacePath?: string;
   headless?: boolean;
+  keepAlive?: boolean;
   commandLabel?: string;
 }
 

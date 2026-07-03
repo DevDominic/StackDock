@@ -455,6 +455,8 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     });
     const disposeResult = api.onTerminalHeadlessResult((payload) => {
       sessionStore.removeSessionLocal(payload.id);
+      // Runs removed ahead of a deliberate kill should finish silently.
+      if (!useSessionStore.getState().headlessRuns.some((run) => run.id === payload.id)) return;
       sessionStore.completeHeadlessRun(payload.id, payload);
       const output = useSessionStore.getState().headlessRuns.find((run) => run.id === payload.id)?.output.trim() || payload.output.trim();
       const displayOutput = output || (payload.timedOut ? 'Timed out' : 'Completed');
@@ -1206,18 +1208,18 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     if (!requireTrusted('splitting terminals')) return;
     const target = allSessions.find((session) => session.id === id);
     if (!target) return;
-    if (target.workspaceId !== workspace.id) { showToast('Open that workspace before splitting its session.', 'info'); return; }
     const anchor = activeTerminalId ? sessions.find((session) => session.id === activeTerminalId) : null;
+    if (target.workspaceId !== workspace.id && !anchor) { showToast('Open a local session before splitting in a session from another workspace.', 'info'); return; }
     const direction = sideToDirection(side);
     try {
       if (anchor && anchor.id !== target.id) {
         const groupId = crypto.randomUUID();
         const targetFirst = isBeforeSide(side);
         const oldGroups = new Set([anchor.splitGroupId, target.splitGroupId].filter(Boolean));
-        await Promise.all(sessions.filter((session) => session.splitGroupId && oldGroups.has(session.splitGroupId) && session.id !== anchor.id && session.id !== target.id).map((session) => sessionStore.updateSessionMetadata(session.id, { splitGroupId: null, splitDirection: null, splitGroupOrder: null })));
+        await Promise.all(allSessions.filter((session) => session.splitGroupId && oldGroups.has(session.splitGroupId) && session.id !== anchor.id && session.id !== target.id).map((session) => sessionStore.updateSessionMetadata(session.id, { splitGroupId: null, splitDirection: null, splitGroupOrder: null })));
         await sessionStore.updateSessionMetadata(anchor.id, { splitGroupId: groupId, splitDirection: direction, splitGroupOrder: targetFirst ? 1 : 0 });
         await sessionStore.updateSessionMetadata(target.id, { splitGroupId: groupId, splitDirection: direction, splitGroupOrder: targetFirst ? 0 : 1 });
-        sessionStore.setActiveSession(targetFirst ? target.id : anchor.id);
+        sessionStore.setActiveSession(target.workspaceId === workspace.id && targetFirst ? target.id : anchor.id);
         return;
       }
       if (!target) return;
@@ -1580,16 +1582,23 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
         return session;
       },
       killTerminal: async (id) => {
-        if (sessions.some((session) => session.id === id)) await closeTerminal(id);
-        else await api.terminal.kill(id);
+        if (sessions.some((session) => session.id === id)) {
+          await closeTerminal(id);
+          return;
+        }
+        // Remove the headless run before killing so the exit result arriving
+        // from the deliberate kill doesn't surface a completion toast or leave
+        // a completed entry behind in the Commands list.
+        if (useSessionStore.getState().headlessRuns.some((run) => run.id === id)) sessionStore.removeHeadlessRun(id);
+        await api.terminal.kill(id);
       },
-      runHeadlessCommand: async (name, command, cwd = workspace.path) => {
+      runHeadlessCommand: async (name, command, cwd = workspace.path, options) => {
         if (!requireTrusted('running extension commands')) throw new Error('Workspace is not trusted');
         const requested = workspaceSetup?.defaultTerminalProfile ?? defaultProfile?.id ?? 'powershell';
         const effectiveProfile = profiles.some((profile) => profile.id === requested) ? requested : defaultProfile?.id ?? 'powershell';
         const selectedProfile = profiles.find((profile) => profile.id === effectiveProfile);
         const startupCommand = resolveTerminalStartupCommand({ explicitStartupCommand: command, profileStartupCommand: selectedProfile?.startupCommand });
-        const session = await sessionStore.createSession({ workspaceId: workspace.id, workspaceName: workspace.name, workspacePath: workspace.path, profileId: effectiveProfile, cwd, name, startupCommand, headless: true, commandLabel: name });
+        const session = await sessionStore.createSession({ workspaceId: workspace.id, workspaceName: workspace.name, workspacePath: workspace.path, profileId: effectiveProfile, cwd, name, startupCommand, headless: true, keepAlive: options?.keepAlive, commandLabel: name });
         showToast(`Running ${name} under Commands`, 'info');
         openView('stackdock.headless.view');
         return session;
@@ -1952,9 +1961,9 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }, [launcherOpen, launcherActions, settings?.keybinds]);
 
   const activeSession = activeTerminalId ? sessions.find((session) => session.id === activeTerminalId) ?? null : null;
-  const activeSplitGroup = activeSession?.splitGroupId ? sessions.filter((session) => session.splitGroupId === activeSession.splitGroupId) : [];
+  const activeSplitGroup = activeSession?.splitGroupId ? allSessions.filter((session) => session.splitGroupId === activeSession.splitGroupId) : [];
   const visibleSessionPanes = activeSplitGroup.length >= 2
-    ? [...activeSplitGroup].sort((a, b) => (a.splitGroupOrder ?? sessions.indexOf(a)) - (b.splitGroupOrder ?? sessions.indexOf(b)))
+    ? [...activeSplitGroup].sort((a, b) => (a.splitGroupOrder ?? allSessions.indexOf(a)) - (b.splitGroupOrder ?? allSessions.indexOf(b)))
     : activeSession ? [activeSession] : [];
   const sessionSplitDirection = activeSession?.splitDirection ?? 'row';
   const persistentSessionCache = settings?.terminal.persistentSessionCache !== false;
@@ -1969,13 +1978,13 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }, [visibleTerminalKey]);
 
   useEffect(() => {
-    const liveIds = new Set(sessions.map((session) => session.id));
+    const liveIds = new Set(allSessions.map((session) => session.id));
     setMountedTerminalSessionIds((current) => {
       const next = persistentSessionCache ? current.filter((id) => liveIds.has(id)) : [];
       for (const id of visibleTerminalIds) if (!next.includes(id)) next.push(id);
       return next.length === current.length && next.every((id, index) => id === current[index]) ? current : next;
     });
-  }, [persistentSessionCache, sessions, visibleTerminalKey]);
+  }, [persistentSessionCache, allSessions, visibleTerminalKey]);
 
   function startTerminalTabDrag(event: DragEvent<HTMLDivElement>, sessionId: string) {
     event.dataTransfer.effectAllowed = 'move';
@@ -2012,7 +2021,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       </>
     ) : null;
     return (
-      <div key={session.id} className={`workspace-main-area main-tabbed session-pane${session.id === activeTerminalId ? ' active' : ''}`} style={{ display: isPaneVisible ? 'flex' : 'none' }} onMouseDown={() => sessionStore.setActiveSession(session.id)}>
+      <div key={session.id} className={`workspace-main-area main-tabbed session-pane${session.id === activeTerminalId ? ' active' : ''}`} style={{ display: isPaneVisible ? 'flex' : 'none' }} onMouseDown={() => { if (session.workspaceId === workspace.id) sessionStore.setActiveSession(session.id); }}>
         {paneContentTabCount > 0 ? (
           <div className="editor-tabbar main-tabbar">
             <div className="tab-strip">

@@ -33,7 +33,7 @@ function cleanHeadlessOutput(output: string, command: string) {
     .join('\n');
 }
 
-interface CreateInput { workspaceId: string; workspaceName: string; workspacePath: string; profileId: string; cwd?: string; name?: string; startupCommand?: string; restoreId?: string; headless?: boolean; commandLabel?: string; }
+interface CreateInput { workspaceId: string; workspaceName: string; workspacePath: string; profileId: string; cwd?: string; name?: string; startupCommand?: string; restoreId?: string; headless?: boolean; keepAlive?: boolean; commandLabel?: string; }
 interface SessionState {
   sessions: WorkspaceTerminalSession[];
   headlessRuns: HeadlessCommandRun[];
@@ -80,7 +80,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         return existing;
       }
     }
-    const terminal = await api.terminal.create(input.profileId, input.cwd ?? input.workspacePath, input.name, input.startupCommand, input.restoreId, { workspaceId: input.workspaceId, workspaceName: input.workspaceName, workspacePath: input.workspacePath, headless: input.headless, commandLabel: input.commandLabel });
+    const terminal = await api.terminal.create(input.profileId, input.cwd ?? input.workspacePath, input.name, input.startupCommand, input.restoreId, { workspaceId: input.workspaceId, workspaceName: input.workspaceName, workspacePath: input.workspacePath, headless: input.headless, keepAlive: input.keepAlive, commandLabel: input.commandLabel });
     const session: WorkspaceTerminalSession = { ...terminal, workspaceId: input.workspaceId, workspaceName: input.workspaceName, workspacePath: input.workspacePath };
     if (input.headless) {
       const run: HeadlessCommandRun = {
