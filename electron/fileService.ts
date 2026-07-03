@@ -1,9 +1,13 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { shell } from 'electron';
-import type { DirectoryEntry, ReadFileDataUrlResult, ReadFileResult } from '../src/shared/types';
+import type { DirectoryEntry, ReadFileDataUrlResult, ReadFileResult, WorkspaceFileSearchOptions } from '../src/shared/types';
 
 const noisyFolders = new Set(['node_modules', 'dist', 'build', 'target', '.cache']);
+const searchIgnoredFolders = new Set([...noisyFolders, '.git', '.hg', '.svn', '.next', '.nuxt', '.turbo', '.vite', '.parcel-cache', '.pytest_cache', '__pycache__', 'coverage']);
+const DEFAULT_SEARCH_MAX_RESULTS = 100;
+const HARD_SEARCH_MAX_RESULTS = 500;
+const DEFAULT_SEARCH_MAX_DEPTH = 10;
 
 const mimeByExtension: Record<string, string> = {
   '.apng': 'image/apng',
@@ -48,14 +52,85 @@ export async function readDirectory(dirPath: string): Promise<DirectoryEntry[]> 
   }
   return entries
     .filter((entry) => !noisyFolders.has(entry.name))
-    .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name))
-    .map((entry) => ({
-      name: entry.name,
-      path: path.join(dirPath, entry.name),
-      isDirectory: entry.isDirectory(),
-      isFile: entry.isFile(),
-      hidden: entry.name.startsWith('.'),
-    }));
+    .sort(compareDirents)
+    .map((entry) => directoryEntry(dirPath, entry));
+}
+
+function compareDirents(a: import('fs').Dirent, b: import('fs').Dirent) {
+  return Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name);
+}
+
+function directoryEntry(parentPath: string, entry: import('fs').Dirent): DirectoryEntry {
+  return {
+    name: entry.name,
+    path: path.join(parentPath, entry.name),
+    isDirectory: entry.isDirectory(),
+    isFile: entry.isFile(),
+    hidden: entry.name.startsWith('.'),
+  };
+}
+
+function normalizedRelativePath(rootPath: string, targetPath: string) {
+  return path.relative(rootPath, targetPath).replace(/\\/g, '/');
+}
+
+function searchScore(entry: DirectoryEntry, relativePath: string, query: string) {
+  if (!query) return 0;
+  const name = entry.name.toLowerCase();
+  const relative = relativePath.toLowerCase();
+  if (name === query || relative === query) return 0;
+  if (name.startsWith(query)) return 1;
+  if (relative.startsWith(query)) return 2;
+  const nameIndex = name.indexOf(query);
+  if (nameIndex >= 0) return 3 + nameIndex / 1000;
+  const relativeIndex = relative.indexOf(query);
+  if (relativeIndex >= 0) return 4 + relativeIndex / 1000;
+  return null;
+}
+
+export async function searchWorkspace(rootPath: string, options: WorkspaceFileSearchOptions = {}): Promise<DirectoryEntry[]> {
+  const query = (options.query ?? '').trim().toLowerCase().replace(/\\/g, '/');
+  const maxResults = Math.min(Math.max(Math.floor(options.maxResults ?? DEFAULT_SEARCH_MAX_RESULTS), 1), HARD_SEARCH_MAX_RESULTS);
+  const maxDepth = Math.min(Math.max(Math.floor(options.maxDepth ?? DEFAULT_SEARCH_MAX_DEPTH), 0), 25);
+  const includeFiles = options.includeFiles !== false;
+  const includeDirectories = options.includeDirectories !== false;
+
+  if (!query) {
+    const entries = await readDirectory(rootPath);
+    return entries.filter((entry) => (entry.isDirectory ? includeDirectories : includeFiles)).slice(0, maxResults);
+  }
+
+  const candidates: Array<{ entry: DirectoryEntry; score: number; relativePath: string; depth: number }> = [];
+  const queue: Array<{ folder: string; depth: number }> = [{ folder: rootPath, depth: 0 }];
+  const candidateLimit = Math.min(maxResults * 4, HARD_SEARCH_MAX_RESULTS);
+  let queueIndex = 0;
+
+  while (queueIndex < queue.length && candidates.length < candidateLimit) {
+    const current = queue[queueIndex++];
+    let entries: import('fs').Dirent[] = [];
+    try {
+      entries = await fs.readdir(current.folder, { withFileTypes: true });
+    } catch (error) {
+      if (isNodeErrorWithCode(error, 'ENOENT') || isNodeErrorWithCode(error, 'EACCES') || isNodeErrorWithCode(error, 'EPERM')) continue;
+      throw error;
+    }
+
+    for (const dirent of entries.sort(compareDirents)) {
+      if (dirent.isDirectory() && searchIgnoredFolders.has(dirent.name)) continue;
+      const entry = directoryEntry(current.folder, dirent);
+      const relativePath = normalizedRelativePath(rootPath, entry.path);
+      const canInclude = entry.isDirectory ? includeDirectories : includeFiles;
+      const score = canInclude ? searchScore(entry, relativePath, query) : null;
+      if (score != null) candidates.push({ entry, score, relativePath, depth: current.depth });
+      if (entry.isDirectory && current.depth < maxDepth) queue.push({ folder: entry.path, depth: current.depth + 1 });
+      if (candidates.length >= candidateLimit) break;
+    }
+  }
+
+  return candidates
+    .sort((a, b) => a.score - b.score || a.depth - b.depth || Number(b.entry.isDirectory) - Number(a.entry.isDirectory) || a.relativePath.localeCompare(b.relativePath))
+    .slice(0, maxResults)
+    .map((candidate) => candidate.entry);
 }
 
 export async function pathExists(filePath: string): Promise<boolean> {

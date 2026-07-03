@@ -5,7 +5,7 @@ import { watch, type FSWatcher } from 'fs';
 import os from 'os';
 import path from 'path';
 import { addWorkspace, createWorkspace, listWorkspaces, loadLayout, loadRestoreState, removeWorkspace, saveLayout, saveRestoreState, updateWorkspace } from './workspaceStore';
-import { createFile, createFolder, deletePath, pathExists, readDirectory, readFile, readFileDataUrl, renamePath, revealInExplorer, writeFile } from './fileService';
+import { createFile, createFolder, deletePath, pathExists, readDirectory, readFile, readFileDataUrl, renamePath, revealInExplorer, searchWorkspace, writeFile } from './fileService';
 import { createTerminal, forgetTerminalSnapshot, getTerminalProfiles, getTerminalSnapshot, killAllHeadlessProcesses, killTerminal, loadOpenTerminalState, markTerminalReady, resizeTerminal, saveOpenTerminalState, setTerminalWindow, setVisibleTerminals, updateTerminalSession, writeTerminal } from './terminalManager';
 import { setBridgeWindow, startBrowserBridge } from './browserBridge';
 import { ensureDataDirs, getLocalExtensionsDir } from './storage';
@@ -16,7 +16,7 @@ import { applySafeModeSettings, enableSafeModeForNextLaunch, exportDiagnostics, 
 import { ExtensionHost } from './extensionHost';
 import { loadAutomation, loadAutomationRaw, saveAutomationRaw } from './automationStore';
 import { inspectAttachmentPath, savePastedImageAttachment } from './attachmentService';
-import { assertAbsolutePath, assertBoolean, assertLayoutLike, assertNonEmptyString, assertNumber, assertRestoreStateLike, assertSafeFileName, assertString, assertTerminalAttachmentOptions, assertTerminalAttachmentSource, assertTerminalSessionContext, assertTerminalSessionUpdate, assertWorkspaceLike } from './validation';
+import { assertAbsolutePath, assertBoolean, assertLayoutLike, assertNonEmptyString, assertNumber, assertRestoreStateLike, assertSafeFileName, assertString, assertTerminalAttachmentOptions, assertTerminalAttachmentSource, assertTerminalSessionContext, assertTerminalSessionUpdate, assertWorkspaceFileSearchOptions, assertWorkspaceLike } from './validation';
 import { getWindowControlsConfig } from '../src/shared/windowControls';
 
 let mainWindow: BrowserWindow | null = null;
@@ -303,6 +303,7 @@ function registerIpc() {
 
   ipcMain.handle('fs:pathExists', async (_event, targetPath: unknown) => pathExists(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('fs:readDirectory', async (_event, targetPath: unknown) => readDirectory(assertAbsolutePath(targetPath, 'targetPath')));
+  ipcMain.handle('fs:searchWorkspace', async (_event, targetPath: unknown, options?: unknown) => searchWorkspace(assertAbsolutePath(targetPath, 'targetPath'), assertWorkspaceFileSearchOptions(options)));
   ipcMain.handle('fs:readFile', async (_event, targetPath: unknown) => readFile(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('fs:readFileDataUrl', async (_event, targetPath: unknown) => readFileDataUrl(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('fs:watchWorkspace', async (_event, targetPath: unknown) => watchWorkspace(assertAbsolutePath(targetPath, 'targetPath')));

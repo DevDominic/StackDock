@@ -312,6 +312,14 @@ export interface DirectoryEntry {
   hidden: boolean;
 }
 
+export interface WorkspaceFileSearchOptions {
+  query?: string;
+  maxResults?: number;
+  maxDepth?: number;
+  includeFiles?: boolean;
+  includeDirectories?: boolean;
+}
+
 export type TerminalAttachmentSource = 'drop' | 'paste-file' | 'paste-image';
 
 export interface TerminalAttachment {
@@ -398,6 +406,7 @@ export interface StackDockApi {
   fs: {
     pathExists(path: string): Promise<boolean>;
     readDirectory(path: string): Promise<DirectoryEntry[]>;
+    searchWorkspace(path: string, options?: WorkspaceFileSearchOptions): Promise<DirectoryEntry[]>;
     readFile(path: string): Promise<ReadFileResult>;
     readFileDataUrl(path: string): Promise<ReadFileDataUrlResult>;
     watchWorkspace(path: string): Promise<void>;

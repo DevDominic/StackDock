@@ -1,5 +1,5 @@
 import path from 'path';
-import type { AppRestoreState, ExtensionSettings, TerminalAttachmentOptions, TerminalAttachmentSource, TerminalSessionContext, TerminalSessionUpdate, Workspace, WorkspaceLayout } from '../src/shared/types';
+import type { AppRestoreState, ExtensionSettings, TerminalAttachmentOptions, TerminalAttachmentSource, TerminalSessionContext, TerminalSessionUpdate, Workspace, WorkspaceFileSearchOptions, WorkspaceLayout } from '../src/shared/types';
 
 export function assertString(value: unknown, name: string): string {
   if (typeof value !== 'string') throw new Error(`${name} must be string`);
@@ -110,4 +110,17 @@ export function assertTerminalAttachmentOptions(value: unknown): TerminalAttachm
   const options = value as TerminalAttachmentOptions;
   if (options.largeFileThresholdBytes == null) return {};
   return { largeFileThresholdBytes: assertNumber(options.largeFileThresholdBytes, 'largeFileThresholdBytes', 1, 1024 * 1024 * 1024) };
+}
+
+export function assertWorkspaceFileSearchOptions(value: unknown): WorkspaceFileSearchOptions | undefined {
+  if (value == null) return undefined;
+  if (typeof value !== 'object') throw new Error('workspace file search options invalid');
+  const options = value as WorkspaceFileSearchOptions;
+  return {
+    query: options.query == null ? undefined : assertString(options.query, 'query'),
+    maxResults: options.maxResults == null ? undefined : assertNumber(options.maxResults, 'maxResults', 1, 500),
+    maxDepth: options.maxDepth == null ? undefined : assertNumber(options.maxDepth, 'maxDepth', 0, 25),
+    includeFiles: options.includeFiles == null ? undefined : assertBoolean(options.includeFiles, 'includeFiles'),
+    includeDirectories: options.includeDirectories == null ? undefined : assertBoolean(options.includeDirectories, 'includeDirectories'),
+  };
 }

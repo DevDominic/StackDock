@@ -3,7 +3,7 @@ import { Terminal, type ILink, type ITerminalAddon } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { LigaturesAddon } from '@xterm/addon-ligatures';
 import { sanitizeSnapshotReplay } from '../../shared/terminalSnapshot';
-import type { DirectoryEntry, StackDockSettings, TerminalAttachment, TerminalAttachmentSource, TerminalSession } from '../../shared/types';
+import type { StackDockSettings, TerminalAttachment, TerminalAttachmentSource, TerminalSession } from '../../shared/types';
 import { api } from '../../lib/api';
 import { removeSerializedAttachmentToken, serializeTerminalAttachments, summarizeTerminalAttachments } from '../../lib/terminalAttachments';
 import { createTerminalMarkdownState, flushTerminalMarkdownState, formatTerminalMarkdownChunk, shouldFormatTerminalMarkdown } from '../../lib/terminalMarkdown';
@@ -79,12 +79,6 @@ function findSmartInputFileMention(text: string, caret: number): SmartInputFileM
   const query = beforeCaret.slice(atIndex + 1);
   if (/\s/.test(query)) return null;
   return { start: atIndex, end: caret, query };
-}
-
-function matchesSmartInputFile(entry: DirectoryEntry, relativePath: string, query: string) {
-  if (!query) return true;
-  const normalized = query.toLowerCase().replace(/\\/g, '/');
-  return entry.name.toLowerCase().includes(normalized) || relativePath.toLowerCase().includes(normalized);
 }
 
 function cssVar(name: string, fallback: string) {
@@ -182,6 +176,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
   const smartInputEnterToSend = settings?.terminal.smartInput?.enterToSend !== false;
   const smartInputSendEnter = settings?.terminal.smartInput?.sendEnter === true;
   const smartInputFileRoot = getSessionWorkspaceRoot(session);
+  const smartInputFileQuery = smartInputFileMention?.query ?? null;
 
   const resizeTerminal = async () => {
     const mount = mountRef.current;
@@ -867,7 +862,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
   }
 
   useEffect(() => {
-    if (!smartInputEnabled || !smartInputFileMention || !smartInputFileRoot) {
+    if (!smartInputEnabled || smartInputFileQuery == null || !smartInputFileRoot) {
       setSmartInputFileSuggestions([]);
       setSmartInputFileSearching(false);
       return;
@@ -875,32 +870,32 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     let cancelled = false;
     setSmartInputFileSearching(true);
     const timer = window.setTimeout(async () => {
-      const results: SmartInputFileSuggestion[] = [];
-      const visit = async (folder: string, depth = 0) => {
-        if (cancelled || results.length >= MAX_SMART_INPUT_FILE_RESULTS || depth > 8) return;
-        let entries: DirectoryEntry[] = [];
-        try { entries = await api.fs.readDirectory(folder); } catch { return; }
-        for (const entry of entries) {
+      try {
+        const entries = await api.fs.searchWorkspace(smartInputFileRoot, {
+          query: smartInputFileQuery,
+          maxResults: MAX_SMART_INPUT_FILE_RESULTS,
+          maxDepth: 8,
+          includeFiles: true,
+          includeDirectories: true,
+        });
+        if (cancelled) return;
+        const results = entries.map((entry): SmartInputFileSuggestion | null => {
           const relativePath = relativeWorkspacePath(smartInputFileRoot, entry.path);
-          if (relativePath && matchesSmartInputFile(entry, relativePath, smartInputFileMention.query)) {
-            results.push({ name: entry.name, path: entry.path, relativePath, isDirectory: entry.isDirectory });
-          }
-          if (entry.isDirectory) await visit(entry.path, depth + 1);
-          if (cancelled || results.length >= MAX_SMART_INPUT_FILE_RESULTS) break;
-        }
-      };
-      await visit(smartInputFileRoot);
-      if (!cancelled) {
+          return relativePath ? { name: entry.name, path: entry.path, relativePath, isDirectory: entry.isDirectory } : null;
+        }).filter(Boolean) as SmartInputFileSuggestion[];
         setSmartInputFileSuggestions(results);
         setSmartInputFileSuggestionIndex(0);
-        setSmartInputFileSearching(false);
+      } catch {
+        if (!cancelled) setSmartInputFileSuggestions([]);
+      } finally {
+        if (!cancelled) setSmartInputFileSearching(false);
       }
-    }, 140);
+    }, smartInputFileQuery ? 80 : 0);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [smartInputEnabled, smartInputFileMention, smartInputFileRoot]);
+  }, [smartInputEnabled, smartInputFileQuery, smartInputFileRoot]);
 
   useEffect(() => {
     cacheSmartInputDraft(session.id, smartInputText, stagedAttachments);

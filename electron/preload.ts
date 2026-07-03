@@ -57,6 +57,7 @@ const api: StackDockApi = {
   fs: {
     pathExists: (targetPath) => ipcRenderer.invoke('fs:pathExists', targetPath),
     readDirectory: (targetPath) => ipcRenderer.invoke('fs:readDirectory', targetPath),
+    searchWorkspace: (targetPath, options) => ipcRenderer.invoke('fs:searchWorkspace', targetPath, options),
     readFile: (targetPath) => ipcRenderer.invoke('fs:readFile', targetPath),
     readFileDataUrl: (targetPath) => ipcRenderer.invoke('fs:readFileDataUrl', targetPath),
     watchWorkspace: (targetPath) => ipcRenderer.invoke('fs:watchWorkspace', targetPath),
