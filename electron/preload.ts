@@ -65,6 +65,7 @@ const api: StackDockApi = {
     createFile: (targetPath) => ipcRenderer.invoke('fs:createFile', targetPath),
     createFolder: (targetPath) => ipcRenderer.invoke('fs:createFolder', targetPath),
     renamePath: (oldPath, newPath) => ipcRenderer.invoke('fs:renamePath', oldPath, newPath),
+    copyFileToFolder: (sourcePath, folderPath) => ipcRenderer.invoke('fs:copyFileToFolder', sourcePath, folderPath),
     deletePath: (targetPath) => ipcRenderer.invoke('fs:deletePath', targetPath),
     revealInExplorer: (targetPath) => ipcRenderer.invoke('fs:revealInExplorer', targetPath),
   },

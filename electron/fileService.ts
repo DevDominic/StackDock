@@ -174,6 +174,26 @@ export async function renamePath(oldPath: string, newPath: string) {
   await fs.rename(oldPath, newPath);
 }
 
+async function uniqueCopyPath(sourcePath: string, folderPath: string) {
+  const parsed = path.parse(sourcePath);
+  let candidate = path.join(folderPath, `${parsed.name} copy${parsed.ext}`);
+  let index = 2;
+  while (await pathExists(candidate)) {
+    candidate = path.join(folderPath, `${parsed.name} copy ${index}${parsed.ext}`);
+    index += 1;
+  }
+  return candidate;
+}
+
+export async function copyFileToFolder(sourcePath: string, folderPath: string) {
+  const [sourceStat, folderStat] = await Promise.all([fs.stat(sourcePath), fs.stat(folderPath)]);
+  if (!sourceStat.isFile()) throw new Error('Only files can be copied');
+  if (!folderStat.isDirectory()) throw new Error('Paste destination must be a folder');
+  const targetPath = await uniqueCopyPath(sourcePath, folderPath);
+  await fs.copyFile(sourcePath, targetPath);
+  return targetPath;
+}
+
 export async function deletePath(targetPath: string) {
   try {
     await shell.trashItem(targetPath);

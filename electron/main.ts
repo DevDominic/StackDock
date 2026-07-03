@@ -5,7 +5,7 @@ import { watch, type FSWatcher } from 'fs';
 import os from 'os';
 import path from 'path';
 import { addWorkspace, createWorkspace, listWorkspaces, loadLayout, loadRestoreState, removeWorkspace, saveLayout, saveRestoreState, updateWorkspace } from './workspaceStore';
-import { createFile, createFolder, deletePath, pathExists, readDirectory, readFile, readFileDataUrl, renamePath, revealInExplorer, searchWorkspace, writeFile } from './fileService';
+import { copyFileToFolder, createFile, createFolder, deletePath, pathExists, readDirectory, readFile, readFileDataUrl, renamePath, revealInExplorer, searchWorkspace, writeFile } from './fileService';
 import { createTerminal, forgetTerminalSnapshot, getTerminalProfiles, getTerminalSnapshot, killAllHeadlessProcesses, killTerminal, loadOpenTerminalState, markTerminalReady, resizeTerminal, saveOpenTerminalState, setTerminalWindow, setVisibleTerminals, updateTerminalSession, writeTerminal } from './terminalManager';
 import { setBridgeWindow, startBrowserBridge } from './browserBridge';
 import { ensureDataDirs, getLocalExtensionsDir } from './storage';
@@ -311,6 +311,7 @@ function registerIpc() {
   ipcMain.handle('fs:createFile', async (_event, targetPath: unknown) => createFile(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('fs:createFolder', async (_event, targetPath: unknown) => createFolder(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('fs:renamePath', async (_event, oldPath: unknown, newPath: unknown) => renamePath(assertAbsolutePath(oldPath, 'oldPath'), assertAbsolutePath(newPath, 'newPath')));
+  ipcMain.handle('fs:copyFileToFolder', async (_event, sourcePath: unknown, folderPath: unknown) => copyFileToFolder(assertAbsolutePath(sourcePath, 'sourcePath'), assertAbsolutePath(folderPath, 'folderPath')));
   ipcMain.handle('fs:deletePath', async (_event, targetPath: unknown) => deletePath(assertAbsolutePath(targetPath, 'targetPath')));
   ipcMain.handle('fs:revealInExplorer', async (_event, targetPath: unknown) => revealInExplorer(assertAbsolutePath(targetPath, 'targetPath')));
 

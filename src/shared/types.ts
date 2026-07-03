@@ -414,6 +414,7 @@ export interface StackDockApi {
     createFile(path: string): Promise<void>;
     createFolder(path: string): Promise<void>;
     renamePath(oldPath: string, newPath: string): Promise<void>;
+    copyFileToFolder(sourcePath: string, folderPath: string): Promise<string>;
     deletePath(path: string): Promise<void>;
     revealInExplorer(path: string): Promise<void>;
   };

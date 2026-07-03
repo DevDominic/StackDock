@@ -161,6 +161,7 @@ export function FileTree({ rootPath, gitFiles, canAddToContext, onOpenFile, onPr
   const [searchIndexing, setSearchIndexing] = useState(false);
   const [selectedEntries, setSelectedEntries] = useState<DirectoryEntry[]>([]);
   const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
+  const [copiedFile, setCopiedFile] = useState<DirectoryEntry | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
@@ -295,6 +296,16 @@ export function FileTree({ rootPath, gitFiles, canAddToContext, onOpenFile, onPr
     const target = joinPath(parentPath(entry.path), name.trim());
     await api.fs.renamePath(entry.path, target);
     await afterAction(entry.isFile ? target : undefined);
+  }
+  function copyFile(entry: DirectoryEntry) {
+    if (!entry.isFile) return;
+    setCopiedFile(entry);
+    setMenu(null);
+  }
+  async function pasteFileIn(folderPath: string) {
+    if (!copiedFile) return;
+    const target = await api.fs.copyFileToFolder(copiedFile.path, folderPath);
+    await afterAction(target);
   }
   async function remove(entry: DirectoryEntry) {
     if (!(await promptDialog.confirm({ title: `Delete ${entry.name}?`, message: 'This removes item from disk.', confirmLabel: 'Delete', danger: true }))) return;
@@ -448,6 +459,8 @@ export function FileTree({ rootPath, gitFiles, canAddToContext, onOpenFile, onPr
           {menu.entry ? <button className="context-menu-item" disabled={!canAddToContext} onClick={() => { void addEntriesToContext(menuEntries); }}>{hasMultiSelection ? 'Add selected to context' : 'Add to context'}</button> : null}
           {!hasMultiSelection && (menu.entry?.isDirectory || !menu.entry) ? <button className="context-menu-item" onClick={() => createFileIn(menu.entry?.path ?? rootPath)}>New file</button> : null}
           {!hasMultiSelection && (menu.entry?.isDirectory || !menu.entry) ? <button className="context-menu-item" onClick={() => createFolderIn(menu.entry?.path ?? rootPath)}>New folder</button> : null}
+          {!hasMultiSelection && menu.entry?.isFile ? <button className="context-menu-item" onClick={() => copyFile(menu.entry!)}>Copy file</button> : null}
+          {!hasMultiSelection && (menu.entry?.isDirectory || !menu.entry) ? <button className="context-menu-item" disabled={!copiedFile} onClick={() => pasteFileIn(menu.entry?.path ?? rootPath)}>Paste file</button> : null}
           {!hasMultiSelection && menu.entry ? <button className="context-menu-item" onClick={() => rename(menu.entry!)}>Rename</button> : null}
           {menu.entry ? <button className="context-menu-item" onClick={() => { void api.fs.revealInExplorer(menuEntries[0].path); setMenu(null); }}>{hasMultiSelection ? 'Reveal first in Explorer' : 'Reveal in Explorer'}</button> : null}
           {!hasMultiSelection && menu.entry && menu.entry.isFile && isHtmlFile(menu.entry.path) ? <button className="context-menu-item" onClick={() => { onPreviewFile(menu.entry!.path); setMenu(null); }}>Preview</button> : null}
