@@ -19,8 +19,9 @@ describe('terminal keyboard CSI-u encoding', () => {
     expect(getTerminalCsiUSequence({ type: 'keydown', key: 'p', altKey: true })).toBeNull();
   });
 
-  it('encodes modified special keys such as Shift+Enter', () => {
+  it('encodes modified special keys such as Shift+Enter and Shift+Tab', () => {
     expect(getTerminalCsiUSequence({ type: 'keydown', key: 'Enter', shiftKey: true })).toBe('\x1b[13;2u');
+    expect(getTerminalCsiUSequence({ type: 'keydown', key: 'Tab', shiftKey: true })).toBe('\x1b[9;2u');
     expect(getTerminalCsiUSequence({ type: 'keydown', key: 'Enter', ctrlKey: true, altKey: true })).toBe('\x1b[13;7u');
   });
 

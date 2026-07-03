@@ -216,6 +216,8 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     terminal.attachCustomKeyEventHandler((event) => {
       const csiUSequence = getTerminalCsiUSequence(event);
       if (csiUSequence) {
+        event.preventDefault();
+        event.stopPropagation();
         void api.terminal.write(session.id, csiUSequence);
         return false;
       }
@@ -706,9 +708,17 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
   function handleKeyDownCapture(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (eventTargetIsSmartInput(event.target)) return;
     activeInputTargetRef.current = 'terminal';
+    const terminal = terminalRef.current;
+    const csiUSequence = getTerminalCsiUSequence(event);
+    if (csiUSequence) {
+      event.preventDefault();
+      event.stopPropagation();
+      void api.terminal.write(session.id, csiUSequence);
+      terminal?.focus();
+      return;
+    }
     if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
     const key = event.key.toLowerCase();
-    const terminal = terminalRef.current;
 
     if (!event.shiftKey && key === 'c' && terminal?.hasSelection()) {
       event.preventDefault();
