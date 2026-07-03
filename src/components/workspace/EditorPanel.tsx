@@ -219,7 +219,7 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
     applyTheme(settings?.themeId ?? DEFAULT_THEME_ID, settings?.importedThemes ?? []);
     const nextOptions = editorOptions(settings);
     editorRef.current?.updateOptions(nextOptions);
-    diffEditorRef.current?.updateOptions({ ...nextOptions, renderSideBySide: diffMode === 'side-by-side' });
+    diffEditorRef.current?.updateOptions({ ...nextOptions, renderSideBySide: diffMode === 'side-by-side', useInlineViewWhenSpaceIsLimited: false });
     compareOriginalRef.current?.updateOptions({ ...nextOptions, readOnly: true, lineNumbersMinChars: 3 });
     compareModifiedRef.current?.updateOptions({ ...nextOptions, lineNumbersMinChars: 3 });
   }, [settings?.editor.fontSize, settings?.editor.fontFamily, settings?.editor.tabSize, settings?.editor.wordWrap, settings?.code.ligatures, settings?.themeId, settings?.importedThemes, diffMode]);
@@ -275,11 +275,12 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
             diffEditorRef.current = monaco.editor.createDiffEditor(diffHostRef.current, {
               ...editorOptions(settings),
               renderSideBySide: diffMode === 'side-by-side',
+              useInlineViewWhenSpaceIsLimited: false,
               originalEditable: false,
             });
           }
           diffEditorRef.current?.setModel({ original: originalModel, modified: modifiedModel });
-          diffEditorRef.current?.updateOptions({ renderSideBySide: diffMode === 'side-by-side' });
+          diffEditorRef.current?.updateOptions({ renderSideBySide: diffMode === 'side-by-side', useInlineViewWhenSpaceIsLimited: false });
           if (visible) requestAnimationFrame(() => requestAnimationFrame(() => layoutDiffEditor(diffEditorRef.current, diffHostRef.current)));
         }
       } else {
