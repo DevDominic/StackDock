@@ -16,6 +16,7 @@ export const gitExtensionManifest: ExtensionManifest = {
         { key: 'confirmBeforeDiscard', label: 'Confirm before discard', type: 'boolean', default: true },
         { key: 'confirmBeforeRemoteActions', label: 'Confirm before pull/push', type: 'boolean', default: true },
         { key: 'refreshIntervalSeconds', label: 'Refresh interval (seconds)', type: 'number', default: 1, min: 1, step: 1 },
+        { key: 'autoFetchIntervalSeconds', label: 'Auto-fetch interval (seconds, 0 disables)', type: 'number', default: 180, min: 0, step: 30 },
       ],
     },
   },

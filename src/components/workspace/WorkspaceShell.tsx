@@ -255,7 +255,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   const workspaceSetup = workspaceTrusted ? automation?.workspaces[workspace.id] : undefined;
   const isRepo = !!git?.isRepo;
   const gitExtensionId = extensionRegistry.extensions.find((manifest) => manifest.capabilities?.includes('git'))?.id;
-  const gitConfig = getExtensionConfig(settings, gitExtensionId ?? '', { confirmBeforeDiscard: true, confirmBeforeRemoteActions: true, refreshIntervalSeconds: 1 });
+  const gitConfig = getExtensionConfig(settings, gitExtensionId ?? '', { confirmBeforeDiscard: true, confirmBeforeRemoteActions: true, refreshIntervalSeconds: 1, autoFetchIntervalSeconds: 180 });
 
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -582,6 +582,25 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     window.addEventListener('focus', tick);
     return () => { window.clearInterval(interval); window.removeEventListener('focus', tick); };
   }, [workspace.path, gitConfig.refreshIntervalSeconds, selectedGitFile?.path]);
+
+  // Auto-fetch so behind/ahead counts track the actual remote instead of the
+  // stale local tracking ref. Fires on workspace open, then on an interval.
+  const autoFetchBusy = useRef(false);
+  useEffect(() => {
+    if (!isRepo || !workspaceTrusted) return;
+    const configured = Number(gitConfig.autoFetchIntervalSeconds);
+    const everySeconds = Number.isFinite(configured) ? configured : 180;
+    if (everySeconds <= 0) return;
+    const run = async () => {
+      if (autoFetchBusy.current) return;
+      autoFetchBusy.current = true;
+      try { await api.git.fetch(workspace.path); } catch { /* offline/auth: stay silent, counts reflect last successful fetch */ }
+      finally { autoFetchBusy.current = false; }
+    };
+    void run();
+    const interval = window.setInterval(() => { if (document.visibilityState === 'visible') void run(); }, Math.max(30, everySeconds) * 1000);
+    return () => window.clearInterval(interval);
+  }, [workspace.path, isRepo, workspaceTrusted, gitConfig.autoFetchIntervalSeconds]);
 
   // If the repo goes away (or never existed), clear Source Control selection
   // without changing the global view toggles.
