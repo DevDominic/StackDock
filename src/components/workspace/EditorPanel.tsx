@@ -43,6 +43,8 @@ interface Props {
   showTabs?: boolean;
   /** Whether the editor pane is currently visible. Used to force Monaco layout after tab switches. */
   visible?: boolean;
+  /** Whether this editor group owns workspace-level editor shortcuts. */
+  isActiveGroup?: boolean;
 }
 
 const CODE_FONT_FAMILY = '"Cascadia Code", Consolas, monospace';
@@ -163,7 +165,7 @@ function changedLineDecorations(original: string, modified: string) {
   return { originalRanges, modifiedRanges };
 }
 
-export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, onSaveFile, onCloseFile, settings, diff, diffMode = 'side-by-side', showTabs = true, visible = true }: Props) {
+export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, onSaveFile, onCloseFile, settings, diff, diffMode = 'side-by-side', showTabs = true, visible = true, isActiveGroup = true }: Props) {
   const active = openFiles.find((file) => file.path === activePath) ?? null;
   const activeDiff = active && !active.mediaKind && diff?.path === active.path ? diff : null;
   // An untracked/new file has no original revision to diff against. Any diff
@@ -341,7 +343,7 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
       .map((editor) => editor!.addAction({
         id: `stackdock.find.${crypto.randomUUID()}`,
         label: 'Find',
-        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF],
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF, monaco.KeyMod.WinCtrl | monaco.KeyCode.KeyF],
         run: () => openFind(),
       }));
     return () => {
@@ -381,22 +383,24 @@ export function EditorPanel({ openFiles, activePath, onOpenFile, onChangeFile, o
 
   useEffect(() => {
     const onKeyDown = async (event: KeyboardEvent) => {
-      if (!visible) return;
+      if (!visible || !isActiveGroup) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f' && active && !active.mediaKind) {
         event.preventDefault();
+        event.stopPropagation();
         openFind();
         return;
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's' && active) {
         event.preventDefault();
+        event.stopPropagation();
         setSaving(true);
         await onSaveFile(active.path);
         setSaving(false);
       }
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [active, onSaveFile, openFind, visible]);
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
+  }, [active, isActiveGroup, onSaveFile, openFind, visible]);
 
   return (
     <section className={`panel editor-panel${showAsDiff ? ' diff-active' : ''}`}>

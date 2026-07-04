@@ -2102,7 +2102,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
                             {group.activeFile && htmlPreviewBySession[session.id] === group.activeFile ? (
                               <WebTabPanel tabs={[{ id: `preview:${group.activeFile}`, url: fileUrlFromPath(group.activeFile), name: baseName(group.activeFile) }]} activeId={`preview:${group.activeFile}`} onTitle={() => undefined} showToolbar={false} />
                             ) : (
-                              <EditorPanel openFiles={group.openFiles} activePath={group.activeFile} onOpenFile={(path) => selectFileFor(session.id, path, group.id)} onChangeFile={(path, content) => changeFileFor(session.id, path, content)} onSaveFile={(path) => saveFileFor(session.id, path)} onCloseFile={(path) => closeFileFor(session.id, path, group.id)} settings={settings ?? undefined} diff={editorDiff} diffMode={diffMode} showTabs={false} visible={panePrimaryView === 'editor'} />
+                              <EditorPanel openFiles={group.openFiles} activePath={group.activeFile} onOpenFile={(path) => selectFileFor(session.id, path, group.id)} onChangeFile={(path, content) => changeFileFor(session.id, path, content)} onSaveFile={(path) => saveFileFor(session.id, path)} onCloseFile={(path) => closeFileFor(session.id, path, group.id)} settings={settings ?? undefined} diff={editorDiff} diffMode={diffMode} showTabs={false} visible={panePrimaryView === 'editor'} isActiveGroup={group.id === paneEditors.activeEditorGroup} />
                             )}
                           </div>
                         </Panel>,
