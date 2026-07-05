@@ -157,6 +157,29 @@ function mediaKindForPath(targetPath: string): MediaKind | null {
   return mediaExtensions[ext] ?? null;
 }
 
+function fallbackKindAfterWebClose(editors: SessionEditors): MainTabKind {
+  return editors.editorGroups.some((group) => group.openFiles.length) ? 'editor' : 'terminal';
+}
+
+function closeWebTabInEditors(prev: SessionEditors, id: string): SessionEditors {
+  const index = prev.openLinks.findIndex((link) => link.id === id);
+  if (index < 0) return prev;
+  const openLinks = prev.openLinks.filter((link) => link.id !== id);
+  let activeWeb = prev.activeWeb;
+  let activeKind = prev.activeKind;
+  if (prev.activeWeb === id) {
+    activeWeb = openLinks[index]?.id ?? openLinks[index - 1]?.id ?? null;
+    // Only move away from the web view if it was the user's current main view.
+    // Auto-closing a background web tab (for example a Plannotator approval tab)
+    // must not steal focus from the terminal or an editor tab the user selected.
+    if (!activeWeb && prev.activeKind === 'web') activeKind = fallbackKindAfterWebClose(prev);
+  } else if (!openLinks.length && prev.activeKind === 'web') {
+    activeKind = fallbackKindAfterWebClose(prev);
+    activeWeb = null;
+  }
+  return { ...prev, openLinks, activeWeb, activeKind, webSplit: openLinks.length ? prev.webSplit : null };
+}
+
 function isHtmlFile(targetPath: string) {
   return /\.html?$/i.test(targetPath);
 }
@@ -955,18 +978,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
   }
 
   function closeLink(id: string) {
-    patchActive((prev) => {
-      const index = prev.openLinks.findIndex((link) => link.id === id);
-      if (index < 0) return prev;
-      const openLinks = prev.openLinks.filter((link) => link.id !== id);
-      let activeWeb = prev.activeWeb;
-      let activeKind = prev.activeKind;
-      if (prev.activeWeb === id) {
-        activeWeb = openLinks[index]?.id ?? openLinks[index - 1]?.id ?? null;
-        if (!activeWeb) activeKind = prev.editorGroups.some((group) => group.openFiles.length) ? 'editor' : 'terminal';
-      }
-      return { ...prev, openLinks, activeWeb, activeKind, webSplit: openLinks.length ? prev.webSplit : null };
-    });
+    patchActive((prev) => closeWebTabInEditors(prev, id));
   }
 
   function showTerminalFor(sessionId: string) { patchSession(sessionId, (prev) => ({ ...prev, activeKind: 'terminal' })); }
@@ -1092,18 +1104,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     });
   }
   function closeLinkFor(sessionId: string, id: string) {
-    patchSession(sessionId, (prev) => {
-      const index = prev.openLinks.findIndex((link) => link.id === id);
-      if (index < 0) return prev;
-      const openLinks = prev.openLinks.filter((link) => link.id !== id);
-      let activeWeb = prev.activeWeb;
-      let activeKind = prev.activeKind;
-      if (prev.activeWeb === id) {
-        activeWeb = openLinks[index]?.id ?? openLinks[index - 1]?.id ?? null;
-        if (!activeWeb) activeKind = prev.editorGroups.some((group) => group.openFiles.length) ? 'editor' : 'terminal';
-      }
-      return { ...prev, openLinks, activeWeb, activeKind, webSplit: openLinks.length ? prev.webSplit : null };
-    });
+    patchSession(sessionId, (prev) => closeWebTabInEditors(prev, id));
   }
 
   function setWebTitle(id: string, title: string) {
