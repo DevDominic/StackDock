@@ -165,15 +165,19 @@ describe('sessionStore active fallback', () => {
     const store = await loadStore();
     const session = await store.getState().createSession({ workspaceId: 'workspace-a', workspaceName: 'A', workspacePath: 'C:/a', profileId: 'powershell', startupCommand: 'pi --mode json -p "hello"', headless: true });
 
-    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: 'runtime thinking' } })}\n`);
+    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: 'runtime ' } })}\n`);
+    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: 'thinking' } })}\n`);
     store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'Runtime' } })}\n`);
     store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: ' answer' } })}\n`);
-    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_delta', delta: 'reading files' } })}\n`);
+    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_delta', delta: 'reading ' } })}\n`);
+    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_delta', delta: 'files' } })}\n`);
 
     const run = store.getState().headlessRuns.find((item) => item.id === session.id)!;
     expect(run.outputFormat).toBe('pi-json');
     expect(run.progress).toContain('runtime thinking');
+    expect(run.progress).not.toContain('runtime \nthinking');
     expect(run.progress).toContain('reading files');
+    expect(run.progress).not.toContain('reading \nfiles');
     expect(run.output).toBe('Runtime answer');
   });
 

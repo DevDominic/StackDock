@@ -41,6 +41,7 @@ interface PiJsonRunState {
   progress: string;
   assistantText: string;
   preJsonText: string;
+  streamingProgressKind: 'thinking' | 'toolcall' | null;
 }
 
 const piJsonStates = new Map<string, PiJsonRunState>();
@@ -57,7 +58,19 @@ function appendBounded(current: string, next: string, limit = HEADLESS_OUTPUT_MA
 function appendProgressLine(state: PiJsonRunState, line: string) {
   const clean = stripAnsi(line).trim();
   if (!clean) return;
-  state.progress = appendBounded(`${state.progress}${state.progress ? '\n' : ''}${clean}`, '', PI_JSON_PROGRESS_MAX_CHARS);
+  const separator = state.progress && !state.progress.endsWith('\n') ? '\n' : '';
+  state.progress = appendBounded(`${state.progress}${separator}${clean}`, '', PI_JSON_PROGRESS_MAX_CHARS);
+  state.streamingProgressKind = null;
+}
+
+function appendProgressDelta(state: PiJsonRunState, kind: 'thinking' | 'toolcall', value: string) {
+  const clean = stripAnsi(value);
+  if (!clean) return;
+  if (state.streamingProgressKind !== kind && state.progress && !state.progress.endsWith('\n')) {
+    state.progress = appendBounded(state.progress, '\n', PI_JSON_PROGRESS_MAX_CHARS);
+  }
+  state.progress = appendBounded(state.progress, clean, PI_JSON_PROGRESS_MAX_CHARS);
+  state.streamingProgressKind = kind;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -133,9 +146,17 @@ function formatPiJsonEvent(event: unknown, state: PiJsonRunState): Partial<Headl
   if (type === 'message_update' && assistantEvent) {
     const eventType = getString(assistantEvent.type);
     const delta = getDeltaText(assistantEvent.delta);
-    if (eventType === 'thinking_delta') appendProgressLine(state, delta || getString(assistantEvent.thinking_delta) || 'Thinking…');
+    if (eventType === 'thinking_delta') {
+      const text = delta || getString(assistantEvent.thinking_delta);
+      if (text) appendProgressDelta(state, 'thinking', text);
+      else appendProgressLine(state, 'Thinking…');
+    }
     if (eventType === 'text_delta') state.assistantText = appendBounded(state.assistantText, delta || getString(assistantEvent.text_delta));
-    if (eventType === 'toolcall_delta') appendProgressLine(state, delta || getString(assistantEvent.toolcall_delta) || 'Tool call updated');
+    if (eventType === 'toolcall_delta') {
+      const text = delta || getString(assistantEvent.toolcall_delta);
+      if (text) appendProgressDelta(state, 'toolcall', text);
+      else appendProgressLine(state, 'Tool call updated');
+    }
   }
 
   if (type === 'message_end' || type === 'turn_end' || type === 'agent_end') {
@@ -153,7 +174,7 @@ function commandLooksLikePiJson(command: string) {
 function getPiJsonState(id: string, command: string) {
   let state = piJsonStates.get(id);
   if (!state) {
-    state = { pending: '', detection: commandLooksLikePiJson(command) ? 'pi-json' : 'unknown', progress: '', assistantText: '', preJsonText: '' };
+    state = { pending: '', detection: commandLooksLikePiJson(command) ? 'pi-json' : 'unknown', progress: '', assistantText: '', preJsonText: '', streamingProgressKind: null };
     piJsonStates.set(id, state);
   }
   return state;
