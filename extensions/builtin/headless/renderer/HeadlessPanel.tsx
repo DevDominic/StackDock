@@ -15,6 +15,12 @@ function elapsedLabel(startedAt: number, now: number) {
   return `${minutes}m ${seconds % 60}s`;
 }
 
+function displayRunOutput(run: HeadlessCommandRun) {
+  if (run.outputFormat !== 'pi-json') return run.output;
+  if (run.completedAt && run.output) return run.output;
+  return [run.progress, run.output ? `Assistant:\n${run.output}` : ''].filter(Boolean).join('\n\n');
+}
+
 export function HeadlessPanel({ runs, inspectRunId, onTerminate, onDelete }: Props) {
   const [inspectingRunId, setInspectingRunId] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -49,7 +55,7 @@ export function HeadlessPanel({ runs, inspectRunId, onTerminate, onDelete }: Pro
       </div>
       <div className="headless-list">
         {runs.map((run) => {
-          const snippet = !run.completedAt && run.progress ? run.progress : run.output;
+          const snippet = displayRunOutput(run);
           return (
           <button key={run.id} className={`headless-run${run.completedAt ? ' completed' : ''}`} title={snippet || run.command} onClick={() => setInspectingRunId(run.id)}>
             <span className="headless-run-copy">
@@ -84,25 +90,7 @@ export function HeadlessPanel({ runs, inspectRunId, onTerminate, onDelete }: Pro
               <button className="ghost" onClick={() => setInspectingRunId(null)}>Close</button>
             </div>
             <div className="headless-command muted">{inspectingRun.command}</div>
-            {inspectingRun.outputFormat === 'pi-json' && inspectingRun.progress ? (
-              inspectingRun.completedAt ? (
-                <>
-                  <small className="muted">Output</small>
-                  <pre ref={outputRef} className="headless-output">{inspectingRun.output || 'No output yet.'}</pre>
-                  <small className="muted">Progress</small>
-                  <pre className="headless-output">{inspectingRun.progress}</pre>
-                </>
-              ) : (
-                <>
-                  <small className="muted">Progress</small>
-                  <pre ref={outputRef} className="headless-output">{inspectingRun.progress}</pre>
-                  <small className="muted">Output</small>
-                  <pre className="headless-output">{inspectingRun.output || 'No output yet.'}</pre>
-                </>
-              )
-            ) : (
-              <pre ref={outputRef} className="headless-output">{inspectingRun.output || 'No output yet.'}</pre>
-            )}
+            <pre ref={outputRef} className="headless-output">{displayRunOutput(inspectingRun) || 'No output yet.'}</pre>
           </div>
         </div>
       ) : null}
