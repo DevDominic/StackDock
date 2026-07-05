@@ -1966,18 +1966,42 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     { id: 'open-folder', label: 'Open Workspace Folder', run: () => api.shell.openPath(workspace.path) },
   ];
 
+  const reserveTerminalStackDockKeybinds = settings?.terminal.reserveStackDockKeybinds !== false;
+  const terminalReservedKeybinds = reserveTerminalStackDockKeybinds
+    ? [settings?.keybinds['stackdock.commandPalette.open'], settings?.keybinds['stackdock.sessions.switcher.open'], ...launcherActions.map((item) => item.keybind)].filter((binding): binding is string => !!binding)
+    : [];
+
+  function eventTargetIsTerminalKeybindTarget(target: EventTarget | null) {
+    const element = target as HTMLElement | null;
+    return !!element?.closest?.('.terminal-shell') && !element.closest('.terminal-smart-input');
+  }
+
+  function findStackDockKeybindRunner(event: KeyboardEvent) {
+    if (keybindMatchesEvent(settings?.keybinds['stackdock.commandPalette.open'], event)) return () => setLauncherOpen(true);
+    if (keybindMatchesEvent(settings?.keybinds['stackdock.sessions.switcher.open'], event)) return () => setSessionSwitcherOpen(true);
+    if (!eventTargetIsTerminalKeybindTarget(event.target) && isEditableTarget(event.target)) return null;
+    const action = launcherActions.find((item) => item.keybind && keybindMatchesEvent(item.keybind, event));
+    return action ? () => { void action.run(); } : null;
+  }
+
+  function runReservedTerminalKeybind(event: KeyboardEvent) {
+    if (launcherOpen) return false;
+    const run = findStackDockKeybindRunner(event);
+    if (!run) return false;
+    run();
+    return true;
+  }
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (launcherOpen) return;
-      if (keybindMatchesEvent(settings?.keybinds['stackdock.commandPalette.open'], event)) { event.preventDefault(); setLauncherOpen(true); return; }
-      if (keybindMatchesEvent(settings?.keybinds['stackdock.sessions.switcher.open'], event)) { event.preventDefault(); setSessionSwitcherOpen(true); return; }
-      if (isEditableTarget(event.target)) return;
-      const action = launcherActions.find((item) => item.keybind && keybindMatchesEvent(item.keybind, event));
-      if (action) { event.preventDefault(); void action.run(); }
+      if (!reserveTerminalStackDockKeybinds && eventTargetIsTerminalKeybindTarget(event.target) && findStackDockKeybindRunner(event)) return;
+      const run = findStackDockKeybindRunner(event);
+      if (run) { event.preventDefault(); run(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [launcherOpen, launcherActions, settings?.keybinds]);
+  }, [launcherOpen, launcherActions, reserveTerminalStackDockKeybinds, settings?.keybinds]);
 
   const activeSession = activeTerminalId ? sessions.find((session) => session.id === activeTerminalId) ?? null : null;
   const activeSplitGroup = activeSession?.splitGroupId ? allSessions.filter((session) => session.splitGroupId === activeSession.splitGroupId) : [];
@@ -2089,7 +2113,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
             {paneWebSplit === 'left' || paneWebSplit === 'up' ? paneWebPane : null}
             <Panel key="primary" id={`main-primary-${session.id}`} order={paneWebSplit === 'left' || paneWebSplit === 'up' ? 2 : 1} minSize={20}>
               <div className="main-tab-pane" style={{ display: panePrimaryView === 'terminal' ? 'flex' : 'none' }}>
-                <TerminalPanel key={`${session.id}:${terminalReloadTokens[session.id] ?? 0}`} sessions={[session]} activeId={session.id} onOpenLink={(url) => openLinkFor(session.id, url)} settings={settings} isVisible={isPaneVisible && panePrimaryView === 'terminal'} onAttachmentError={(message) => showToast(message, 'error')} renderSmartInputActions={renderTerminalSmartInputActions} />
+                <TerminalPanel key={`${session.id}:${terminalReloadTokens[session.id] ?? 0}`} sessions={[session]} activeId={session.id} onOpenLink={(url) => openLinkFor(session.id, url)} settings={settings} isVisible={isPaneVisible && panePrimaryView === 'terminal'} onAttachmentError={(message) => showToast(message, 'error')} reservedKeybinds={terminalReservedKeybinds} onReservedKeybind={runReservedTerminalKeybind} renderSmartInputActions={renderTerminalSmartInputActions} />
                 {isPaneVisible && panePrimaryView === 'terminal' ? <div className="terminal-overlay-host">{renderTerminalOverlays(session)}</div> : null}
               </div>
               <div className="main-tab-pane" style={{ display: panePrimaryView === 'editor' ? 'flex' : 'none' }}>

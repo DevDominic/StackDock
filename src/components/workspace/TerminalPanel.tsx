@@ -8,6 +8,7 @@ import { api } from '../../lib/api';
 import { removeSerializedAttachmentToken, serializeTerminalAttachments, summarizeTerminalAttachments } from '../../lib/terminalAttachments';
 import { createTerminalMarkdownState, flushTerminalMarkdownState, formatTerminalMarkdownChunk, shouldFormatTerminalMarkdown } from '../../lib/terminalMarkdown';
 import { getTerminalCsiUSequence } from '../../lib/terminalKeyboard';
+import { keybindMatchesEvent } from '../../shared/keybinds';
 import { useToast } from '../common/ToastProvider';
 
 import '@xterm/xterm/css/xterm.css';
@@ -19,6 +20,8 @@ interface Props {
   settings?: StackDockSettings | null;
   isVisible?: boolean;
   onAttachmentError?(message: string): void;
+  reservedKeybinds?: string[];
+  onReservedKeybind?(event: KeyboardEvent): boolean;
   renderSmartInputActions?(session: TerminalSession, insertText: (text: string) => void): ReactNode;
 }
 
@@ -123,7 +126,7 @@ function getCliCursorVisibilityState(data: string, previousTail: string) {
   };
 }
 
-export function TerminalPanel({ sessions, activeId, onOpenLink, settings, isVisible = true, onAttachmentError, renderSmartInputActions }: Props) {
+export function TerminalPanel({ sessions, activeId, onOpenLink, settings, isVisible = true, onAttachmentError, reservedKeybinds = [], onReservedKeybind, renderSmartInputActions }: Props) {
   const active = sessions.find((session) => session.id === activeId) ?? sessions[0] ?? null;
   const visibleSessions = active?.splitGroupId ? sessions.filter((session) => session.splitGroupId === active.splitGroupId) : active ? [active] : [];
   const splitDirection = active?.splitDirection ?? 'row';
@@ -133,7 +136,7 @@ export function TerminalPanel({ sessions, activeId, onOpenLink, settings, isVisi
       <div className="terminal-main">
         {sessions.length ? (
           <div className={visibleSessions.length > 1 ? `terminal-views split-${splitDirection}` : 'terminal-views'}>
-            {visibleSessions.map((session) => <TerminalView key={session.id} session={session} focused={session.id === active?.id} onOpenLink={onOpenLink} settings={settings} onAttachmentError={onAttachmentError} renderSmartInputActions={renderSmartInputActions} />)}
+            {visibleSessions.map((session) => <TerminalView key={session.id} session={session} focused={session.id === active?.id} onOpenLink={onOpenLink} settings={settings} onAttachmentError={onAttachmentError} reservedKeybinds={reservedKeybinds} onReservedKeybind={onReservedKeybind} renderSmartInputActions={renderSmartInputActions} />)}
           </div>
         ) : (
           <div className="empty-pad muted">Open terminal from Sessions.</div>
@@ -143,7 +146,7 @@ export function TerminalPanel({ sessions, activeId, onOpenLink, settings, isVisi
   );
 }
 
-function TerminalView({ session, focused, onOpenLink, settings, onAttachmentError, renderSmartInputActions }: { session: TerminalSession; focused: boolean; onOpenLink?(url: string): void; settings?: StackDockSettings | null; onAttachmentError?(message: string): void; renderSmartInputActions?(session: TerminalSession, insertText: (text: string) => void): ReactNode }) {
+function TerminalView({ session, focused, onOpenLink, settings, onAttachmentError, reservedKeybinds, onReservedKeybind, renderSmartInputActions }: { session: TerminalSession; focused: boolean; onOpenLink?(url: string): void; settings?: StackDockSettings | null; onAttachmentError?(message: string): void; reservedKeybinds: string[]; onReservedKeybind?(event: KeyboardEvent): boolean; renderSmartInputActions?(session: TerminalSession, insertText: (text: string) => void): ReactNode }) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -167,8 +170,12 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
   const cliCursorStateRef = useRef({ altScreen: false, appCursorHidden: false, tail: '' });
   const onOpenLinkRef = useRef(onOpenLink);
   const onAttachmentErrorRef = useRef(onAttachmentError);
+  const reservedKeybindsRef = useRef(reservedKeybinds);
+  const onReservedKeybindRef = useRef(onReservedKeybind);
   onOpenLinkRef.current = onOpenLink;
   onAttachmentErrorRef.current = onAttachmentError;
+  reservedKeybindsRef.current = reservedKeybinds;
+  onReservedKeybindRef.current = onReservedKeybind;
   smartInputTextRef.current = smartInputText;
   stagedAttachmentsRef.current = stagedAttachments;
 
@@ -177,6 +184,10 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
   const smartInputSendEnter = settings?.terminal.smartInput?.sendEnter === true;
   const smartInputFileRoot = getSessionWorkspaceRoot(session);
   const smartInputFileQuery = smartInputFileMention?.query ?? null;
+
+  function isReservedStackDockKeybind(event: KeyboardEvent | ReactKeyboardEvent<HTMLElement>) {
+    return reservedKeybindsRef.current.some((binding) => keybindMatchesEvent(binding, event));
+  }
 
   const resizeTerminal = async () => {
     const mount = mountRef.current;
@@ -211,17 +222,20 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     });
     // Forward modified key chords that legacy terminal input cannot represent
     // reliably (for example pi's Ctrl+Alt+P hotkeys). Returning false stops
-    // xterm from also sending a downgraded legacy sequence to the PTY. App-level
-    // shortcuts such as Ctrl+P still bubble to the window handlers below.
+    // xterm from also sending a downgraded legacy sequence to the PTY. Bound
+    // StackDock shortcuts are reserved before they reach the PTY when enabled.
     terminal.attachCustomKeyEventHandler((event) => {
+      if (isReservedStackDockKeybind(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+        onReservedKeybindRef.current?.(event);
+        return false;
+      }
       const csiUSequence = getTerminalCsiUSequence(event);
       if (csiUSequence) {
         event.preventDefault();
         event.stopPropagation();
         void api.terminal.write(session.id, csiUSequence);
-        return false;
-      }
-      if (event.type === 'keydown' && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'p') {
         return false;
       }
       return true;
@@ -709,6 +723,12 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     if (eventTargetIsSmartInput(event.target)) return;
     activeInputTargetRef.current = 'terminal';
     const terminal = terminalRef.current;
+    if (isReservedStackDockKeybind(event) && onReservedKeybindRef.current?.(event.nativeEvent)) {
+      event.preventDefault();
+      event.stopPropagation();
+      terminal?.focus();
+      return;
+    }
     const csiUSequence = getTerminalCsiUSequence(event);
     if (csiUSequence) {
       event.preventDefault();

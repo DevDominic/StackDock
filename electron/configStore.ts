@@ -165,7 +165,7 @@ export function getDefaultSettings(platform = process.platform): StackDockSettin
     ui: { fontFamily: UI_FONT_FAMILY, fontSize: 13 },
     code: { ligatures: true },
     editor: { fontSize: 13, fontFamily: CODE_FONT_FAMILY, tabSize: 2, wordWrap: 'off' },
-    terminal: { fontSize: 14, fontFamily: CODE_FONT_FAMILY, cursorBlink: true, startAtBottom: false, markdownFormatting: true, persistentSessionCache: true, smartInput: { enabled: false, enterToSend: true, sendEnter: false } },
+    terminal: { fontSize: 14, fontFamily: CODE_FONT_FAMILY, cursorBlink: true, startAtBottom: false, markdownFormatting: true, persistentSessionCache: true, reserveStackDockKeybinds: true, smartInput: { enabled: false, enterToSend: true, sendEnter: false } },
     workspaceViewState: DEFAULT_WORKSPACE_VIEW_STATE,
     permissions: { microphone: 'prompt' },
     keybinds: DEFAULT_KEYBINDS,
@@ -255,6 +255,7 @@ export async function loadSettings(): Promise<StackDockSettings> {
         startAtBottom: rawTerminal.startAtBottom === true,
         markdownFormatting: rawTerminal.markdownFormatting !== false,
         persistentSessionCache: rawTerminal.persistentSessionCache !== false,
+        reserveStackDockKeybinds: rawTerminal.reserveStackDockKeybinds !== false,
         smartInput: {
           enabled: rawTerminal.smartInput?.enabled === true,
           enterToSend: rawTerminal.smartInput?.enterToSend !== false,

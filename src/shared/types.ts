@@ -61,7 +61,7 @@ export interface StackDockSettings {
   ui: { fontFamily: string; fontSize: number };
   code: { ligatures: boolean };
   editor: { fontSize: number; fontFamily: string; tabSize: number; wordWrap: 'on' | 'off'; /** @deprecated Use StackDockSettings.themeId. */ themeId?: string; /** @deprecated Use StackDockSettings.importedThemes. */ importedThemes?: StackDockTheme[] };
-  terminal: { fontSize: number; fontFamily: string; cursorBlink: boolean; startAtBottom: boolean; markdownFormatting: boolean; persistentSessionCache?: boolean; smartInput?: { enabled: boolean; enterToSend: boolean; sendEnter: boolean } };
+  terminal: { fontSize: number; fontFamily: string; cursorBlink: boolean; startAtBottom: boolean; markdownFormatting: boolean; persistentSessionCache?: boolean; reserveStackDockKeybinds?: boolean; smartInput?: { enabled: boolean; enterToSend: boolean; sendEnter: boolean } };
   terminalProfiles: TerminalProfile[];
   extensions: ExtensionSettings;
   workspaceViewState: WorkspaceViewState;
