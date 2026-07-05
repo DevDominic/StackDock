@@ -34,6 +34,7 @@ function cleanHeadlessOutput(output: string, command: string) {
 }
 
 type PiJsonDetection = 'unknown' | 'plain' | 'pi-json';
+type PiJsonStreamingProgressKind = 'thinking' | 'toolcall' | 'tool-output';
 
 interface PiJsonRunState {
   pending: string;
@@ -41,7 +42,8 @@ interface PiJsonRunState {
   progress: string;
   assistantText: string;
   preJsonText: string;
-  streamingProgressKind: 'thinking' | 'toolcall' | null;
+  streamingProgressKind: PiJsonStreamingProgressKind | null;
+  toolOutputTextByCallId: Record<string, string>;
 }
 
 const piJsonStates = new Map<string, PiJsonRunState>();
@@ -63,7 +65,7 @@ function appendProgressLine(state: PiJsonRunState, line: string) {
   state.streamingProgressKind = null;
 }
 
-function appendProgressDelta(state: PiJsonRunState, kind: 'thinking' | 'toolcall', value: string) {
+function appendProgressDelta(state: PiJsonRunState, kind: PiJsonStreamingProgressKind, value: string) {
   const clean = stripAnsi(value);
   if (!clean) return;
   if (state.streamingProgressKind !== kind && state.progress && !state.progress.endsWith('\n')) {
@@ -92,10 +94,53 @@ function getDeltaText(value: unknown) {
   }
 }
 
+function extractTextContent(value: unknown): string {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(extractTextContent).filter(Boolean).join('');
+  if (!isRecord(value)) return '';
+  if (typeof value.text === 'string') return value.text;
+  if (typeof value.content === 'string') return value.content;
+  if (Array.isArray(value.content)) return value.content.map(extractTextContent).filter(Boolean).join('');
+  return '';
+}
+
+function formatToolName(event: Record<string, unknown>) {
+  return getString(event.toolName) || getString(event.name) || 'Tool';
+}
+
+function formatToolInvocation(event: Record<string, unknown>) {
+  const toolName = formatToolName(event);
+  const args = isRecord(event.args) ? event.args : isRecord(event.input) ? event.input : null;
+  const command = args ? getString(args.command) : '';
+  const path = args ? getString(args.path) : '';
+  if (command) return `${toolName}: ${command}`;
+  if (path) return `${toolName}: ${path}`;
+  return toolName;
+}
+
+function appendToolExecutionUpdate(state: PiJsonRunState, event: Record<string, unknown>) {
+  const text = extractTextContent(event.partialResult ?? event.result ?? event.output);
+  if (!text.trim()) return;
+  const key = getString(event.toolCallId) || getString(event.id) || formatToolName(event);
+  const previous = state.toolOutputTextByCallId[key] ?? '';
+  let delta = '';
+  if (text.startsWith(previous)) {
+    delta = text.slice(previous.length);
+    state.toolOutputTextByCallId[key] = text;
+  } else if (previous && previous.endsWith(text)) {
+    return;
+  } else {
+    delta = text;
+    state.toolOutputTextByCallId[key] = appendBounded(previous, text, PI_JSON_PROGRESS_MAX_CHARS);
+  }
+  appendProgressDelta(state, 'tool-output', delta.replace(/^\n+/, ''));
+}
+
 function isPiJsonEvent(value: unknown): boolean {
   if (!isRecord(value)) return false;
   const type = getString(value.type);
-  if (['agent_start', 'turn_start', 'message_update', 'tool_execution_start', 'tool_execution_end', 'message_end', 'turn_end', 'agent_end', 'auto_retry_start', 'compaction_start', 'compaction_end'].includes(type)) return true;
+  if (['agent_start', 'turn_start', 'message_update', 'tool_execution_start', 'tool_execution_update', 'tool_execution_end', 'message_end', 'turn_end', 'agent_end', 'auto_retry_start', 'compaction_start', 'compaction_end'].includes(type)) return true;
   if (isRecord(value.assistantMessageEvent)) return true;
   if (isRecord(value.message) || Array.isArray(value.messages)) return true;
   return false;
@@ -136,8 +181,12 @@ function formatPiJsonEvent(event: unknown, state: PiJsonRunState): Partial<Headl
   const type = getString(event.type);
   if (type === 'agent_start') appendProgressLine(state, 'Agent started');
   else if (type === 'turn_start') appendProgressLine(state, 'Thinking…');
-  else if (type === 'tool_execution_start') appendProgressLine(state, `Running ${getString(event.toolName) || getString(event.name) || 'tool'}…`);
-  else if (type === 'tool_execution_end') appendProgressLine(state, `${getString(event.toolName) || getString(event.name) || 'Tool'} ${event.isError ? 'failed' : 'completed'}`);
+  else if (type === 'tool_execution_start') appendProgressLine(state, `Running ${formatToolInvocation(event)}…`);
+  else if (type === 'tool_execution_update') appendToolExecutionUpdate(state, event);
+  else if (type === 'tool_execution_end') {
+    appendToolExecutionUpdate(state, event);
+    appendProgressLine(state, `${formatToolName(event)} ${event.isError ? 'failed' : 'completed'}`);
+  }
   else if (type === 'auto_retry_start') appendProgressLine(state, 'Retrying…');
   else if (type === 'compaction_start') appendProgressLine(state, 'Compacting context…');
   else if (type === 'compaction_end') appendProgressLine(state, 'Context compacted');
@@ -174,7 +223,7 @@ function commandLooksLikePiJson(command: string) {
 function getPiJsonState(id: string, command: string) {
   let state = piJsonStates.get(id);
   if (!state) {
-    state = { pending: '', detection: commandLooksLikePiJson(command) ? 'pi-json' : 'unknown', progress: '', assistantText: '', preJsonText: '', streamingProgressKind: null };
+    state = { pending: '', detection: commandLooksLikePiJson(command) ? 'pi-json' : 'unknown', progress: '', assistantText: '', preJsonText: '', streamingProgressKind: null, toolOutputTextByCallId: {} };
     piJsonStates.set(id, state);
   }
   return state;

@@ -181,6 +181,25 @@ describe('sessionStore active fallback', () => {
     expect(run.output).toBe('Runtime answer');
   });
 
+  it('formats Pi JSON tool execution updates without raw JSON or duplicate partials', async () => {
+    const store = await loadStore();
+    const session = await store.getState().createSession({ workspaceId: 'workspace-a', workspaceName: 'A', workspacePath: 'C:/a', profileId: 'powershell', startupCommand: 'pi --mode json -p "hello"', headless: true });
+
+    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'bash', args: { command: 'npm test' } })}\n`);
+    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'tool_execution_update', toolCallId: 'call-1', toolName: 'bash', partialResult: { content: [{ type: 'text', text: 'line one\n' }] } })}\n`);
+    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'tool_execution_update', toolCallId: 'call-1', toolName: 'bash', partialResult: { content: [{ type: 'text', text: 'line one\nline two\n' }] } })}\n`);
+    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'tool_execution_end', toolCallId: 'call-1', toolName: 'bash' })}\n`);
+
+    const run = store.getState().headlessRuns.find((item) => item.id === session.id)!;
+    expect(run.outputFormat).toBe('pi-json');
+    expect(run.progress).toContain('Running bash: npm test…');
+    expect(run.progress).toContain('line one');
+    expect(run.progress).toContain('line two');
+    expect(run.progress).toContain('bash completed');
+    expect(run.progress).not.toContain('tool_execution_update');
+    expect(run.progress?.match(/line one/g) ?? []).toHaveLength(1);
+  });
+
   it('buffers split Pi JSON lines before parsing', async () => {
     const store = await loadStore();
     const session = await store.getState().createSession({ workspaceId: 'workspace-a', workspaceName: 'A', workspacePath: 'C:/a', profileId: 'powershell', startupCommand: 'pi --mode json -p "hello"', headless: true });
