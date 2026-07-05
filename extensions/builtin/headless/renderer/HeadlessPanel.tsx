@@ -37,7 +37,7 @@ export function HeadlessPanel({ runs, inspectRunId, onTerminate, onDelete }: Pro
   useEffect(() => {
     const node = outputRef.current;
     if (node) node.scrollTop = node.scrollHeight;
-  }, [inspectingRun?.output]);
+  }, [inspectingRun?.output, inspectingRun?.progress]);
 
   if (!runs.length) return null;
 
@@ -48,12 +48,14 @@ export function HeadlessPanel({ runs, inspectRunId, onTerminate, onDelete }: Pro
         <small>{runs.length}</small>
       </div>
       <div className="headless-list">
-        {runs.map((run) => (
-          <button key={run.id} className={`headless-run${run.completedAt ? ' completed' : ''}`} title={run.output || run.command} onClick={() => setInspectingRunId(run.id)}>
+        {runs.map((run) => {
+          const snippet = !run.completedAt && run.progress ? run.progress : run.output;
+          return (
+          <button key={run.id} className={`headless-run${run.completedAt ? ' completed' : ''}`} title={snippet || run.command} onClick={() => setInspectingRunId(run.id)}>
             <span className="headless-run-copy">
               <span className="headless-run-label">{run.label}</span>
               <small>{run.completedAt ? (run.timedOut ? 'Timed out' : run.exitCode === 0 ? 'Completed' : `Exited ${run.exitCode ?? '?'}`) : `Running · ${elapsedLabel(run.startedAt, now)}`}</small>
-              {run.output ? <span className="headless-run-output">{run.output}</span> : null}
+              {snippet ? <span className="headless-run-output">{snippet}</span> : null}
             </span>
             <span
               role="button"
@@ -71,7 +73,8 @@ export function HeadlessPanel({ runs, inspectRunId, onTerminate, onDelete }: Pro
               }}
             >×</span>
           </button>
-        ))}
+        );
+        })}
       </div>
       {inspectingRun ? (
         <div className="modal-backdrop" onMouseDown={() => setInspectingRunId(null)}>
@@ -81,7 +84,25 @@ export function HeadlessPanel({ runs, inspectRunId, onTerminate, onDelete }: Pro
               <button className="ghost" onClick={() => setInspectingRunId(null)}>Close</button>
             </div>
             <div className="headless-command muted">{inspectingRun.command}</div>
-            <pre ref={outputRef} className="headless-output">{inspectingRun.output || 'No output yet.'}</pre>
+            {inspectingRun.outputFormat === 'pi-json' && inspectingRun.progress ? (
+              inspectingRun.completedAt ? (
+                <>
+                  <small className="muted">Output</small>
+                  <pre ref={outputRef} className="headless-output">{inspectingRun.output || 'No output yet.'}</pre>
+                  <small className="muted">Progress</small>
+                  <pre className="headless-output">{inspectingRun.progress}</pre>
+                </>
+              ) : (
+                <>
+                  <small className="muted">Progress</small>
+                  <pre ref={outputRef} className="headless-output">{inspectingRun.progress}</pre>
+                  <small className="muted">Output</small>
+                  <pre className="headless-output">{inspectingRun.output || 'No output yet.'}</pre>
+                </>
+              )
+            ) : (
+              <pre ref={outputRef} className="headless-output">{inspectingRun.output || 'No output yet.'}</pre>
+            )}
           </div>
         </div>
       ) : null}

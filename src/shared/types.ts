@@ -222,6 +222,8 @@ export interface HeadlessCommandRun {
   startedAt: number;
   completedAt?: number;
   output: string;
+  progress?: string;
+  outputFormat?: 'plain' | 'pi-json';
   exitCode?: number | null;
   timedOut?: boolean;
 }

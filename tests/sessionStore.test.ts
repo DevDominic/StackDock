@@ -143,4 +143,76 @@ describe('sessionStore active fallback', () => {
 
     expect(store.getState().headlessRuns.find((run) => run.id === session.id)?.output.trim()).toBe('pass');
   });
+
+  it('parses Pi JSON thinking and text deltas without showing raw JSON', async () => {
+    const store = await loadStore();
+    const session = await store.getState().createSession({ workspaceId: 'workspace-a', workspaceName: 'A', workspacePath: 'C:/a', profileId: 'powershell', startupCommand: 'pi --mode json -p "hello"', headless: true });
+
+    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'turn_start' })}\n`);
+    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', thinking_delta: 'checking repo' } })}\n`);
+    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', text_delta: 'Hello' } })}\n`);
+    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', text_delta: ' world' } })}\n`);
+
+    const run = store.getState().headlessRuns.find((item) => item.id === session.id)!;
+    expect(run.outputFormat).toBe('pi-json');
+    expect(run.progress).toContain('Thinking…');
+    expect(run.progress).toContain('checking repo');
+    expect(run.output).toBe('Hello world');
+    expect(run.output).not.toContain('message_update');
+  });
+
+  it('parses Pi JSON assistantMessageEvent delta fields from runtime schema', async () => {
+    const store = await loadStore();
+    const session = await store.getState().createSession({ workspaceId: 'workspace-a', workspaceName: 'A', workspacePath: 'C:/a', profileId: 'powershell', startupCommand: 'pi --mode json -p "hello"', headless: true });
+
+    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: 'runtime thinking' } })}\n`);
+    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'Runtime' } })}\n`);
+    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: ' answer' } })}\n`);
+    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_delta', delta: 'reading files' } })}\n`);
+
+    const run = store.getState().headlessRuns.find((item) => item.id === session.id)!;
+    expect(run.outputFormat).toBe('pi-json');
+    expect(run.progress).toContain('runtime thinking');
+    expect(run.progress).toContain('reading files');
+    expect(run.output).toBe('Runtime answer');
+  });
+
+  it('buffers split Pi JSON lines before parsing', async () => {
+    const store = await loadStore();
+    const session = await store.getState().createSession({ workspaceId: 'workspace-a', workspaceName: 'A', workspacePath: 'C:/a', profileId: 'powershell', startupCommand: 'pi --mode json -p "hello"', headless: true });
+    const line = JSON.stringify({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', text_delta: 'split ok' } }) + '\n';
+
+    store.getState().appendHeadlessOutput(session.id, line.slice(0, 20));
+    expect(store.getState().headlessRuns.find((run) => run.id === session.id)?.output).toBe('');
+
+    store.getState().appendHeadlessOutput(session.id, line.slice(20));
+    expect(store.getState().headlessRuns.find((run) => run.id === session.id)?.output).toBe('split ok');
+  });
+
+  it('uses final assistant message instead of raw Pi JSON result on completion', async () => {
+    const store = await loadStore();
+    const session = await store.getState().createSession({ workspaceId: 'workspace-a', workspaceName: 'A', workspacePath: 'C:/a', profileId: 'powershell', startupCommand: 'pi --mode json -p "hello"', headless: true });
+    const finalEvent = { type: 'agent_end', message: { role: 'assistant', content: [{ type: 'text', text: 'Final answer' }] } };
+
+    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ type: 'agent_start' })}\n`);
+    store.getState().completeHeadlessRun(session.id, { output: `${JSON.stringify(finalEvent)}\n`, exitCode: 0 });
+
+    const run = store.getState().headlessRuns.find((item) => item.id === session.id)!;
+    expect(run.completedAt).toBeTypeOf('number');
+    expect(run.outputFormat).toBe('pi-json');
+    expect(run.output).toBe('Final answer');
+  });
+
+  it('keeps malformed and unrelated JSON output as plain text', async () => {
+    const store = await loadStore();
+    const session = await store.getState().createSession({ workspaceId: 'workspace-a', workspaceName: 'A', workspacePath: 'C:/a', profileId: 'powershell', startupCommand: 'node script.js', headless: true });
+
+    store.getState().appendHeadlessOutput(session.id, '{not json}\n');
+    store.getState().appendHeadlessOutput(session.id, `${JSON.stringify({ ok: true })}\n`);
+
+    const run = store.getState().headlessRuns.find((item) => item.id === session.id)!;
+    expect(run.outputFormat).toBe('plain');
+    expect(run.output).toContain('{not json}');
+    expect(run.output).toContain('{"ok":true}');
+  });
 });

@@ -33,6 +33,192 @@ function cleanHeadlessOutput(output: string, command: string) {
     .join('\n');
 }
 
+type PiJsonDetection = 'unknown' | 'plain' | 'pi-json';
+
+interface PiJsonRunState {
+  pending: string;
+  detection: PiJsonDetection;
+  progress: string;
+  assistantText: string;
+  preJsonText: string;
+}
+
+const piJsonStates = new Map<string, PiJsonRunState>();
+const PI_JSON_PROGRESS_MAX_CHARS = 16 * 1024;
+
+function trimStartToLimit(value: string, limit = HEADLESS_OUTPUT_MAX_CHARS) {
+  return value.length > limit ? value.slice(-limit) : value;
+}
+
+function appendBounded(current: string, next: string, limit = HEADLESS_OUTPUT_MAX_CHARS) {
+  return trimStartToLimit(current + next, limit);
+}
+
+function appendProgressLine(state: PiJsonRunState, line: string) {
+  const clean = stripAnsi(line).trim();
+  if (!clean) return;
+  state.progress = appendBounded(`${state.progress}${state.progress ? '\n' : ''}${clean}`, '', PI_JSON_PROGRESS_MAX_CHARS);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function getString(value: unknown) {
+  return typeof value === 'string' ? value : '';
+}
+
+function getDeltaText(value: unknown) {
+  if (typeof value === 'string') return value;
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '';
+  }
+}
+
+function isPiJsonEvent(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const type = getString(value.type);
+  if (['agent_start', 'turn_start', 'message_update', 'tool_execution_start', 'tool_execution_end', 'message_end', 'turn_end', 'agent_end', 'auto_retry_start', 'compaction_start', 'compaction_end'].includes(type)) return true;
+  if (isRecord(value.assistantMessageEvent)) return true;
+  if (isRecord(value.message) || Array.isArray(value.messages)) return true;
+  return false;
+}
+
+function extractAssistantText(message: unknown): string {
+  if (!message) return '';
+  if (typeof message === 'string') return message;
+  if (Array.isArray(message)) return message.map(extractAssistantText).filter(Boolean).join('');
+  if (!isRecord(message)) return '';
+  const role = getString(message.role);
+  if (role && role !== 'assistant') return '';
+  if (typeof message.text === 'string') return message.text;
+  if (typeof message.content === 'string') return message.content;
+  if (Array.isArray(message.content)) {
+    return message.content.map((block) => {
+      if (typeof block === 'string') return block;
+      if (!isRecord(block)) return '';
+      const type = getString(block.type);
+      if (type && type !== 'text' && type !== 'output_text') return '';
+      return getString(block.text) || getString(block.content);
+    }).join('');
+  }
+  return '';
+}
+
+function extractEventFinalText(event: Record<string, unknown>) {
+  const messageText = extractAssistantText(event.message);
+  if (messageText) return messageText;
+  if (Array.isArray(event.messages)) {
+    return event.messages.map(extractAssistantText).filter(Boolean).join('\n');
+  }
+  return '';
+}
+
+function formatPiJsonEvent(event: unknown, state: PiJsonRunState): Partial<HeadlessCommandRun> {
+  if (!isRecord(event)) return {};
+  const type = getString(event.type);
+  if (type === 'agent_start') appendProgressLine(state, 'Agent started');
+  else if (type === 'turn_start') appendProgressLine(state, 'Thinking…');
+  else if (type === 'tool_execution_start') appendProgressLine(state, `Running ${getString(event.toolName) || getString(event.name) || 'tool'}…`);
+  else if (type === 'tool_execution_end') appendProgressLine(state, `${getString(event.toolName) || getString(event.name) || 'Tool'} ${event.isError ? 'failed' : 'completed'}`);
+  else if (type === 'auto_retry_start') appendProgressLine(state, 'Retrying…');
+  else if (type === 'compaction_start') appendProgressLine(state, 'Compacting context…');
+  else if (type === 'compaction_end') appendProgressLine(state, 'Context compacted');
+
+  const assistantEvent = isRecord(event.assistantMessageEvent) ? event.assistantMessageEvent : isRecord(event.message_update) && isRecord(event.message_update.assistantMessageEvent) ? event.message_update.assistantMessageEvent : null;
+  if (type === 'message_update' && assistantEvent) {
+    const eventType = getString(assistantEvent.type);
+    const delta = getDeltaText(assistantEvent.delta);
+    if (eventType === 'thinking_delta') appendProgressLine(state, delta || getString(assistantEvent.thinking_delta) || 'Thinking…');
+    if (eventType === 'text_delta') state.assistantText = appendBounded(state.assistantText, delta || getString(assistantEvent.text_delta));
+    if (eventType === 'toolcall_delta') appendProgressLine(state, delta || getString(assistantEvent.toolcall_delta) || 'Tool call updated');
+  }
+
+  if (type === 'message_end' || type === 'turn_end' || type === 'agent_end') {
+    const finalText = extractEventFinalText(event);
+    if (finalText) state.assistantText = trimStartToLimit(finalText);
+  }
+
+  return { outputFormat: 'pi-json', progress: state.progress, output: state.assistantText };
+}
+
+function commandLooksLikePiJson(command: string) {
+  return /(^|[\s"'`])pi(?:\.cmd|\.exe)?(?=$|[\s"'`])/.test(command) && /--mode(?:=|\s+)json\b/.test(command);
+}
+
+function getPiJsonState(id: string, command: string) {
+  let state = piJsonStates.get(id);
+  if (!state) {
+    state = { pending: '', detection: commandLooksLikePiJson(command) ? 'pi-json' : 'unknown', progress: '', assistantText: '', preJsonText: '' };
+    piJsonStates.set(id, state);
+  }
+  return state;
+}
+
+function appendPiJsonChunk(id: string, chunk: string, command: string, flush = false): Partial<HeadlessCommandRun> | null {
+  const state = getPiJsonState(id, command);
+  const incoming = stripAnsi(chunk);
+  state.pending += incoming;
+  const lines = state.pending.split('\n');
+  state.pending = flush ? '' : lines.pop() ?? '';
+  const completeLines = flush ? lines : lines;
+  let patch: Partial<HeadlessCommandRun> | null = state.detection === 'pi-json' ? { outputFormat: 'pi-json', progress: state.progress, output: state.assistantText } : null;
+
+  for (const line of completeLines) {
+    if (!line.trim()) continue;
+    try {
+      const parsed = JSON.parse(line);
+      if (!isPiJsonEvent(parsed)) throw new Error('not pi json');
+      if (state.detection !== 'pi-json' && state.preJsonText.trim()) {
+        appendProgressLine(state, state.preJsonText);
+        state.preJsonText = '';
+      }
+      state.detection = 'pi-json';
+      patch = { ...patch, ...formatPiJsonEvent(parsed, state) };
+    } catch {
+      if (state.detection === 'pi-json') {
+        appendProgressLine(state, line);
+        patch = { outputFormat: 'pi-json', progress: state.progress, output: state.assistantText };
+      } else {
+        state.detection = 'plain';
+        state.preJsonText = appendBounded(state.preJsonText, `${line}\n`, PI_JSON_PROGRESS_MAX_CHARS);
+      }
+    }
+  }
+
+  if (flush && state.pending.trim()) {
+    if (state.detection === 'pi-json') appendProgressLine(state, state.pending);
+    state.pending = '';
+  }
+
+  return patch;
+}
+
+function extractPiJsonFinalOutput(output: string) {
+  let finalText = '';
+  let detected = false;
+  for (const line of stripAnsi(output).split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const parsed = JSON.parse(line);
+      if (!isPiJsonEvent(parsed) || !isRecord(parsed)) continue;
+      detected = true;
+      const type = getString(parsed.type);
+      if (type === 'message_end' || type === 'turn_end' || type === 'agent_end') {
+        const text = extractEventFinalText(parsed);
+        if (text) finalText = text;
+      }
+    } catch {
+      // Ignore non-JSON result lines here; completion fallback handles them.
+    }
+  }
+  return { detected, finalText: trimStartToLimit(finalText) };
+}
+
 interface CreateInput { workspaceId: string; workspaceName: string; workspacePath: string; profileId: string; cwd?: string; name?: string; startupCommand?: string; restoreId?: string; headless?: boolean; keepAlive?: boolean; commandLabel?: string; }
 interface SessionState {
   sessions: WorkspaceTerminalSession[];
@@ -118,17 +304,32 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     persistActiveSession(picked, fallbackWorkspaceId);
   },
   appendHeadlessOutput(id, data) {
-    set({ headlessRuns: get().headlessRuns.map((run) => run.id === id ? { ...run, output: cleanHeadlessOutput((run.output + data).slice(-HEADLESS_OUTPUT_MAX_CHARS), run.command) } : run) });
+    set({ headlessRuns: get().headlessRuns.map((run) => {
+      if (run.id !== id) return run;
+      const piPatch = appendPiJsonChunk(id, data, run.command);
+      if (piPatch?.outputFormat === 'pi-json') return { ...run, ...piPatch };
+      return { ...run, output: cleanHeadlessOutput((run.output + data).slice(-HEADLESS_OUTPUT_MAX_CHARS), run.command), outputFormat: run.outputFormat ?? 'plain' };
+    }) });
   },
   completeHeadlessRun(id, result) {
     set({ headlessRuns: get().headlessRuns.map((run) => {
       if (run.id !== id) return run;
+      const piPatch = appendPiJsonChunk(id, '', run.command, true);
+      const piState = piJsonStates.get(id);
+      const finalResult = extractPiJsonFinalOutput(result.output);
+      if ((piPatch?.outputFormat === 'pi-json' || piState?.detection === 'pi-json' || finalResult.detected)) {
+        const parsedOutput = (finalResult.finalText || piPatch?.output || piState?.assistantText || run.output).trim();
+        const fallback = cleanHeadlessOutput((result.output || piState?.progress || '').slice(-HEADLESS_OUTPUT_MAX_CHARS), run.command).trim();
+        piJsonStates.delete(id);
+        return { ...run, ...piPatch, label: result.label ?? run.label, output: parsedOutput || fallback, progress: piPatch?.progress ?? piState?.progress ?? run.progress, outputFormat: 'pi-json', completedAt: Date.now(), exitCode: result.exitCode, timedOut: result.timedOut };
+      }
+      piJsonStates.delete(id);
       const liveOutput = run.output.trim();
       const finalOutput = cleanHeadlessOutput((liveOutput || result.output).slice(-HEADLESS_OUTPUT_MAX_CHARS), run.command);
       return { ...run, label: result.label ?? run.label, output: finalOutput, completedAt: Date.now(), exitCode: result.exitCode, timedOut: result.timedOut };
     }) });
   },
-  removeHeadlessRun(id) { set({ headlessRuns: get().headlessRuns.filter((run) => run.id !== id) }); },
+  removeHeadlessRun(id) { piJsonStates.delete(id); set({ headlessRuns: get().headlessRuns.filter((run) => run.id !== id) }); },
   removeSessionLocal(id) {
     const current = get();
     const removing = current.sessions.find((session) => session.id === id);
