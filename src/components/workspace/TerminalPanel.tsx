@@ -8,6 +8,7 @@ import { api } from '../../lib/api';
 import { removeSerializedAttachmentToken, serializeTerminalAttachments, summarizeTerminalAttachments } from '../../lib/terminalAttachments';
 import { createTerminalMarkdownState, flushTerminalMarkdownState, formatTerminalMarkdownChunk, shouldFormatTerminalMarkdown } from '../../lib/terminalMarkdown';
 import { getTerminalCsiUSequence } from '../../lib/terminalKeyboard';
+import { normalizeTerminalClipboardText } from '../../lib/terminalCopy';
 import { keybindMatchesEvent } from '../../shared/keybinds';
 import { useToast } from '../common/ToastProvider';
 
@@ -592,7 +593,7 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     }
 
     try {
-      api.attachments.writeClipboardText(terminal.getSelection());
+      api.attachments.writeClipboardText(normalizeTerminalClipboardText(terminal.getSelection()));
       terminal.clearSelection();
       terminal.focus();
       showToast('Copied terminal selection', 'success');
@@ -723,6 +724,19 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
     if (eventTargetIsSmartInput(event.target)) return;
     activeInputTargetRef.current = 'terminal';
     const terminal = terminalRef.current;
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+    const key = event.key.toLowerCase();
+
+    // Copy needs to win before CSI-u forwarding so both Ctrl+C and the common
+    // terminal shortcut Ctrl+Shift+C copy an active selection instead of sending
+    // a modified C key sequence to the process.
+    if (key === 'c' && terminal?.hasSelection()) {
+      event.preventDefault();
+      event.stopPropagation();
+      void copySelection();
+      return;
+    }
+
     if (isReservedStackDockKeybind(event) && onReservedKeybindRef.current?.(event.nativeEvent)) {
       event.preventDefault();
       event.stopPropagation();
@@ -735,15 +749,6 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       event.stopPropagation();
       void api.terminal.write(session.id, csiUSequence);
       terminal?.focus();
-      return;
-    }
-    if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
-    const key = event.key.toLowerCase();
-
-    if (!event.shiftKey && key === 'c' && terminal?.hasSelection()) {
-      event.preventDefault();
-      event.stopPropagation();
-      void copySelection();
       return;
     }
 
@@ -868,6 +873,10 @@ function TerminalView({ session, focused, onOpenLink, settings, onAttachmentErro
       return;
     }
     activeInputTargetRef.current = 'terminal';
+    // Let xterm handle its own mousedown/drag sequence. Forcing focus from the
+    // React wrapper during that same event can interfere with text selection in
+    // Electron, making drags appear to do nothing.
+    if (event.target instanceof HTMLElement && event.target.closest('.terminal-xterm-inner, .xterm')) return;
     terminalRef.current?.focus();
   }
 
