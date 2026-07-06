@@ -1468,9 +1468,9 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
 
   type GitRemoteKind = 'fetch' | 'pull' | 'pullMerge' | 'push';
 
-  function isGitTerminalAuthError(error: unknown) {
+  function isGitTerminalFallbackError(error: unknown) {
     const message = getErrorMessage(error, '');
-    return /Authentication failed|Credentials are incorrect or have expired|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|Repository not found.*(Authentication|auth|credential|permission)/i.test(message);
+    return /Authentication failed|Credentials are incorrect or have expired|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|Repository not found.*(Authentication|auth|credential|permission)|schannel:|SEC_E_ILLEGAL_MESSAGE|fatal SSL\/TLS alert|TLS handshake/i.test(message);
   }
 
   async function runGitInTerminal(kind: GitRemoteKind) {
@@ -1494,8 +1494,8 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       await refreshGit();
       const message = getErrorMessage(error, `Git ${label} failed`);
       setGitError(message);
-      if (isGitTerminalAuthError(error)) {
-        const confirmed = await promptDialog.confirm({ title: `Git ${label} needs terminal authentication`, message: `${message}\n\nRun it in a terminal?`, confirmLabel: 'Run in Terminal', icon: '⎇' });
+      if (isGitTerminalFallbackError(error)) {
+        const confirmed = await promptDialog.confirm({ title: `Git ${label} needs terminal attention`, message: `${message}\n\nRun it in a terminal?`, confirmLabel: 'Run in Terminal', icon: '⎇' });
         if (confirmed) await runGitInTerminal(kind);
       } else {
         showToast(message, 'error');

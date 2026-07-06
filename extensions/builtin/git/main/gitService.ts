@@ -19,32 +19,64 @@ export class GitCommandError extends Error {
     this.name = 'GitCommandError';
     this.stdout = stdout;
     this.stderr = stderr;
-    this.remoteErrorKind = isAuthErrorText(`${stderr}\n${stdout}`) ? 'auth' : 'other';
+    const text = `${stderr}\n${stdout}`;
+    this.remoteErrorKind = isAuthErrorText(text) ? 'auth' : isSchannelTlsErrorText(text) ? 'terminal-required' : 'other';
   }
 }
 
+function extractGitResult(error: unknown): GitResult {
+  const stdout = typeof error === 'object' && error && 'stdout' in error ? String((error as { stdout?: unknown }).stdout ?? '') : '';
+  const stderr = typeof error === 'object' && error && 'stderr' in error ? String((error as { stderr?: unknown }).stderr ?? '') : '';
+  return { stdout, stderr };
+}
+
 function formatGitError(stdout: string, stderr: string) {
-  const detail = `${stderr}\n${stdout}`.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 8).join('\n');
-  return detail || 'Git command failed';
+  const text = `${stderr}\n${stdout}`;
+  const detail = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 8).join('\n');
+  const message = detail || 'Git command failed';
+  if (!isSchannelTlsErrorText(text)) return message;
+  return `${message}\n\nWindows Schannel could not complete the TLS handshake with this remote. StackDock retries remote Git commands with Git's OpenSSL TLS backend; if this still fails, update Git for Windows, run git config --global http.sslBackend openssl, or switch the remote to SSH.`;
+}
+
+function shouldRetryWithOpenSsl(args: string[], stdout: string, stderr: string) {
+  if (process.platform !== 'win32') return false;
+  if (!isSchannelTlsErrorText(`${stderr}\n${stdout}`)) return false;
+  const command = args[0];
+  return command === 'fetch' || command === 'pull' || command === 'push' || command === 'ls-remote' || command === 'clone';
+}
+
+async function executeGit(cwd: string, args: string[], options?: { timeoutMs?: number }): Promise<GitResult> {
+  const { stdout, stderr } = await execFileAsync('git', ['-C', cwd, ...args], {
+    maxBuffer: 1024 * 1024 * 10,
+    timeout: options?.timeoutMs ?? 30000,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+  });
+  return { stdout: stdout.toString(), stderr: stderr.toString() };
 }
 
 async function runGit(cwd: string, args: string[], options?: { timeoutMs?: number }): Promise<GitResult> {
   try {
-    const { stdout, stderr } = await execFileAsync('git', ['-C', cwd, ...args], {
-      maxBuffer: 1024 * 1024 * 10,
-      timeout: options?.timeoutMs ?? 30000,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-    });
-    return { stdout: stdout.toString(), stderr: stderr.toString() };
+    return await executeGit(cwd, args, options);
   } catch (error) {
-    const stdout = typeof error === 'object' && error && 'stdout' in error ? String((error as { stdout?: unknown }).stdout ?? '') : '';
-    const stderr = typeof error === 'object' && error && 'stderr' in error ? String((error as { stderr?: unknown }).stderr ?? '') : '';
-    throw new GitCommandError(formatGitError(stdout, stderr), stdout, stderr);
+    const first = extractGitResult(error);
+    if (shouldRetryWithOpenSsl(args, first.stdout, first.stderr)) {
+      try {
+        return await executeGit(cwd, ['-c', 'http.sslBackend=openssl', ...args], options);
+      } catch (retryError) {
+        const retry = extractGitResult(retryError);
+        throw new GitCommandError(formatGitError(retry.stdout || first.stdout, retry.stderr || first.stderr), retry.stdout || first.stdout, retry.stderr || first.stderr);
+      }
+    }
+    throw new GitCommandError(formatGitError(first.stdout, first.stderr), first.stdout, first.stderr);
   }
 }
 
 function isAuthErrorText(text: string) {
   return /Authentication failed|Credentials are incorrect or have expired|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|Repository not found.*(Authentication|auth|credential|permission)/i.test(text);
+}
+
+function isSchannelTlsErrorText(text: string) {
+  return /schannel:.*(?:InitializeSecurityContext|SEC_E_ILLEGAL_MESSAGE|SSL\/TLS|handshake)|SEC_E_ILLEGAL_MESSAGE|fatal SSL\/TLS alert/i.test(text);
 }
 
 export function isAuthError(error: unknown) {
