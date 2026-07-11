@@ -1432,11 +1432,53 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     }
   }
 
+  async function reloadOpenFilesAfterBranchSwitch() {
+    const workspaceSessionIds = new Set(sessions.map((session) => session.id));
+    const paths = [...new Set(Object.entries(editorsBySession)
+      .filter(([sessionId]) => workspaceSessionIds.has(sessionId))
+      .flatMap(([, editors]) => normalizeEditors(editors).editorGroups.flatMap((group) => group.openFiles.filter((file) => !file.dirty).map((file) => file.path))))];
+    const refreshed = new Map<string, OpenFileTab | null>();
+    await Promise.all(paths.map(async (filePath) => {
+      try {
+        if (!(await api.fs.pathExists(filePath))) {
+          refreshed.set(filePath, null);
+          return;
+        }
+        const mediaKind = mediaKindForPath(filePath);
+        if (mediaKind) {
+          const media = await api.fs.readFileDataUrl(filePath);
+          refreshed.set(filePath, { path: filePath, name: filePath.split(/[\\/]/).pop() ?? filePath, content: '', dirty: false, mediaKind, mimeType: media.mimeType, dataUrl: media.dataUrl });
+        } else {
+          const file = await api.fs.readFile(filePath);
+          refreshed.set(filePath, { path: filePath, name: filePath.split(/[\\/]/).pop() ?? filePath, content: file.content, dirty: false });
+        }
+      } catch {
+        // Leave the existing tab alone when a transient read fails.
+      }
+    }));
+    setEditorsBySession((current) => Object.fromEntries(Object.entries(current).map(([sessionId, editors]) => {
+      if (!workspaceSessionIds.has(sessionId)) return [sessionId, editors];
+      const normalized = normalizeEditors(editors);
+      return [sessionId, {
+        ...normalized,
+        editorGroups: normalized.editorGroups.map((group) => {
+          const openFiles = group.openFiles.flatMap((file) => {
+            if (file.dirty || !refreshed.has(file.path)) return [file];
+            const next = refreshed.get(file.path);
+            return next ? [next] : [];
+          });
+          return { ...group, openFiles, activeFile: openFiles.some((file) => file.path === group.activeFile) ? group.activeFile : openFiles[0]?.path ?? null };
+        }),
+      }];
+    })));
+  }
+
   async function performGitBranchSwitch(branch: string) {
     if (!requireTrusted('switching git branches')) return;
     try {
       setGitError(null);
       await api.git.switchBranch(workspace.path, branch);
+      await reloadOpenFilesAfterBranchSwitch();
       setSelectedGitFile(null);
       setSelectedStagedGitPaths([]);
       setSelectedChangeGitPaths([]);
@@ -1451,13 +1493,9 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     }
   }
 
-  async function switchGitBranch(branch: string) {
+  function switchGitBranch(branch: string) {
     if (!branch || branch === git?.branch) return;
-    if (git?.files.length) {
-      setPendingBranchSwitch(branch);
-      return;
-    }
-    await performGitBranchSwitch(branch);
+    setPendingBranchSwitch(branch);
   }
 
   function confirmPendingBranchSwitch() {
@@ -2298,18 +2336,22 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
       {releaseNotesOpen ? <ReleaseNotesDialog launchInfo={launchInfo} onClose={() => setReleaseNotesOpen(false)} /> : null}
       {pendingBranchSwitch ? (
         <div className="modal-backdrop confirm-backdrop" onMouseDown={() => setPendingBranchSwitch(null)}>
-          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="branch-switch-title" onMouseDown={(event) => event.stopPropagation()}>
+          <div className={`confirm-dialog${git?.files.length ? ' danger' : ''}`} role="dialog" aria-modal="true" aria-labelledby="branch-switch-title" onMouseDown={(event) => event.stopPropagation()}>
             <div className="confirm-dialog-head">
-              <span className="confirm-dialog-icon" aria-hidden>⎇</span>
+              <span className="confirm-dialog-icon" aria-hidden>{git?.files.length ? '!' : '⎇'}</span>
               <div>
-                <h3 id="branch-switch-title">Switch branch?</h3>
-                <p>Uncommitted changes are present in this workspace.</p>
+                <h3 id="branch-switch-title">{git?.files.length ? 'Uncommitted changes detected' : 'Switch branch?'}</h3>
+                <p><strong>{git?.branch ?? 'Current branch'}</strong> → <strong>{pendingBranchSwitch}</strong></p>
               </div>
             </div>
-            <p className="confirm-dialog-body">Git may block switching to <strong>{pendingBranchSwitch}</strong> if any changes conflict. Your changes will remain in the working tree when Git can switch safely.</p>
+            <p className="confirm-dialog-body">
+              {git?.files.length
+                ? <>You have {git.files.length} uncommitted {git.files.length === 1 ? 'file' : 'files'}. Switching may carry these changes to <strong>{pendingBranchSwitch}</strong>. Cancel now to commit or stash them first if they should remain on <strong>{git.branch ?? 'the current branch'}</strong>.</>
+                : <>This will switch the workspace codebase to <strong>{pendingBranchSwitch}</strong> and reload unchanged open files from that branch.</>}
+            </p>
             <div className="modal-actions confirm-dialog-actions">
               <button className="ghost" onClick={() => setPendingBranchSwitch(null)}>Cancel</button>
-              <button className="primary" autoFocus onClick={confirmPendingBranchSwitch}>Switch Branch</button>
+              <button className={`primary${git?.files.length ? ' danger-action' : ''}`} autoFocus onClick={confirmPendingBranchSwitch}>{git?.files.length ? 'Switch Anyway' : 'Switch Branch'}</button>
             </div>
           </div>
         </div>
