@@ -91,6 +91,10 @@ const api: StackDockApi = {
     pullMerge: (targetPath) => invokeExtension('stackdock.git', 'pullMerge', [targetPath]),
     abortMerge: (targetPath) => invokeExtension('stackdock.git', 'abortMerge', [targetPath]),
     fetch: (targetPath) => invokeExtension('stackdock.git', 'fetch', [targetPath]),
+    tryFetch: (targetPath) => invokeExtension('stackdock.git', 'tryFetch', [targetPath]),
+    tryPull: (targetPath) => invokeExtension('stackdock.git', 'tryPull', [targetPath]),
+    tryPullMerge: (targetPath) => invokeExtension('stackdock.git', 'tryPullMerge', [targetPath]),
+    tryPush: (targetPath) => invokeExtension('stackdock.git', 'tryPush', [targetPath]),
     ignored: (targetPath, paths) => invokeExtension('stackdock.git', 'ignored', [targetPath, paths]),
   },
   settings: {

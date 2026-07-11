@@ -20,7 +20,7 @@ export class GitCommandError extends Error {
     this.stdout = stdout;
     this.stderr = stderr;
     const text = `${stderr}\n${stdout}`;
-    this.remoteErrorKind = isAuthErrorText(text) ? 'auth' : isSchannelTlsErrorText(text) ? 'terminal-required' : 'other';
+    this.remoteErrorKind = isAuthErrorText(text) ? 'auth' : isTlsHandshakeErrorText(text) ? 'terminal-required' : 'other';
   }
 }
 
@@ -34,8 +34,8 @@ function formatGitError(stdout: string, stderr: string) {
   const text = `${stderr}\n${stdout}`;
   const detail = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 8).join('\n');
   const message = detail || 'Git command failed';
-  if (!isSchannelTlsErrorText(text)) return message;
-  return `${message}\n\nWindows Schannel could not complete the TLS handshake with this remote. StackDock retries remote Git commands with Git's OpenSSL TLS backend; if this still fails, update Git for Windows, run git config --global http.sslBackend openssl, or switch the remote to SSH.`;
+  if (!isTlsHandshakeErrorText(text)) return message;
+  return `${message}\n\nGit could not complete the TLS handshake with this remote. Verify the repository's remote URL is correct (git remote -v / git remote set-url origin <url>). If the URL is correct, update Git for Windows, run git config --global http.sslBackend openssl, or switch the remote to SSH.`;
 }
 
 function shouldRetryWithOpenSsl(args: string[], stdout: string, stderr: string) {
@@ -77,6 +77,10 @@ function isAuthErrorText(text: string) {
 
 function isSchannelTlsErrorText(text: string) {
   return /schannel:.*(?:InitializeSecurityContext|SEC_E_ILLEGAL_MESSAGE|SSL\/TLS|handshake)|SEC_E_ILLEGAL_MESSAGE|fatal SSL\/TLS alert/i.test(text);
+}
+
+function isTlsHandshakeErrorText(text: string) {
+  return isSchannelTlsErrorText(text) || /TLS connect error|SSL routines::|tlsv\d+(?:\.\d+)? alert|SSL\/TLS.*handshake|TLS handshake/i.test(text);
 }
 
 export function isAuthError(error: unknown) {
@@ -230,6 +234,20 @@ export async function pullMerge(cwd: string) {
 }
 export async function abortMerge(cwd: string) { await runGit(cwd, ['merge', '--abort']); }
 export async function fetch(cwd: string) { await runGit(cwd, ['fetch'], { timeoutMs: 120000 }); }
+
+async function tryRemoteAction(action: () => Promise<void>): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await action();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function tryFetch(cwd: string) { return tryRemoteAction(() => fetch(cwd)); }
+export async function tryPull(cwd: string) { return tryRemoteAction(() => pull(cwd)); }
+export async function tryPullMerge(cwd: string) { return tryRemoteAction(() => pullMerge(cwd)); }
+export async function tryPush(cwd: string) { return tryRemoteAction(() => push(cwd)); }
 
 export async function getIgnoredFiles(cwd: string, filePaths: string[]): Promise<string[]> {
   if (!filePaths.length) return [];

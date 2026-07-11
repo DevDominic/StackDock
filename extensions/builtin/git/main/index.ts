@@ -1,6 +1,6 @@
 import type { ExtensionMainContext } from '../../../../electron/extensionHost';
 import { assertAbsolutePath, assertNonEmptyString } from '../../../../electron/validation';
-import { abortMerge, addAll, commit, discardFile, fetch, getGitDiff, getGitFileContents, getGitStatus, getIgnoredFiles, ignoreFile, listBranches, pull, pullMerge, push, stageFile, switchBranch, unstageFile } from './gitService';
+import { abortMerge, addAll, commit, discardFile, fetch, getGitDiff, getGitFileContents, getGitStatus, getIgnoredFiles, ignoreFile, listBranches, pull, pullMerge, push, stageFile, switchBranch, tryFetch, tryPull, tryPullMerge, tryPush, unstageFile } from './gitService';
 
 const pathArg = (value: unknown, name = 'targetPath') => assertAbsolutePath(value, name);
 const stringArg = (value: unknown, name: string) => assertNonEmptyString(value, name);
@@ -23,5 +23,9 @@ export function activateMain(ctx: ExtensionMainContext) {
   ctx.rpc.handle('pullMerge', (targetPath) => pullMerge(pathArg(targetPath)));
   ctx.rpc.handle('abortMerge', (targetPath) => abortMerge(pathArg(targetPath)));
   ctx.rpc.handle('fetch', (targetPath) => fetch(pathArg(targetPath)));
+  ctx.rpc.handle('tryFetch', (targetPath) => tryFetch(pathArg(targetPath)));
+  ctx.rpc.handle('tryPull', (targetPath) => tryPull(pathArg(targetPath)));
+  ctx.rpc.handle('tryPullMerge', (targetPath) => tryPullMerge(pathArg(targetPath)));
+  ctx.rpc.handle('tryPush', (targetPath) => tryPush(pathArg(targetPath)));
   ctx.rpc.handle('ignored', (targetPath, paths) => getIgnoredFiles(pathArg(targetPath), pathsArg(paths)));
 }

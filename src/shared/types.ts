@@ -441,6 +441,10 @@ export interface StackDockApi {
     pullMerge(path: string): Promise<void>;
     abortMerge(path: string): Promise<void>;
     fetch(path: string): Promise<void>;
+    tryFetch(path: string): Promise<{ ok: boolean; error?: string }>;
+    tryPull(path: string): Promise<{ ok: boolean; error?: string }>;
+    tryPullMerge(path: string): Promise<{ ok: boolean; error?: string }>;
+    tryPush(path: string): Promise<{ ok: boolean; error?: string }>;
     ignored(path: string, paths: string[]): Promise<string[]>;
   };
   settings: {

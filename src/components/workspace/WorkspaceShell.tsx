@@ -617,7 +617,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     const run = async () => {
       if (autoFetchBusy.current) return;
       autoFetchBusy.current = true;
-      try { await api.git.fetch(workspace.path); } catch { /* offline/auth: stay silent, counts reflect last successful fetch */ }
+      try { await api.git.tryFetch(workspace.path); } catch { /* compatibility/offline: stay silent, counts reflect last successful fetch */ }
       finally { autoFetchBusy.current = false; }
     };
     void run();
@@ -1470,7 +1470,7 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
 
   function isGitTerminalFallbackError(error: unknown) {
     const message = getErrorMessage(error, '');
-    return /Authentication failed|Credentials are incorrect or have expired|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|Repository not found.*(Authentication|auth|credential|permission)|schannel:|SEC_E_ILLEGAL_MESSAGE|fatal SSL\/TLS alert|TLS handshake/i.test(message);
+    return /Authentication failed|Credentials are incorrect or have expired|could not read Username|terminal prompts disabled|Permission denied \(publickey\)|Repository not found.*(Authentication|auth|credential|permission)|schannel:|SEC_E_ILLEGAL_MESSAGE|fatal SSL\/TLS alert|TLS connect error|SSL routines::|tlsv\d+(?:\.\d+)? alert|TLS handshake/i.test(message);
   }
 
   async function runGitInTerminal(kind: GitRemoteKind) {
@@ -1486,7 +1486,9 @@ export function WorkspaceShell({ workspace, onBack, onUpdateWorkspace, workspace
     if (gitConfig.confirmBeforeRemoteActions !== false && (kind === 'pull' || kind === 'pullMerge' || kind === 'push') && !(await promptDialog.confirm({ title: `Run git ${label}?`, message: `Workspace: ${workspace.name}\nThis will ${kind === 'push' ? 'update the remote repository' : 'modify local files'}.`, confirmLabel: label[0].toUpperCase() + label.slice(1), icon: '⎇' }))) return;
     try {
       setGitError(null);
-      await api.git[kind](workspace.path);
+      const runRemoteAction = { fetch: api.git.tryFetch, pull: api.git.tryPull, pullMerge: api.git.tryPullMerge, push: api.git.tryPush }[kind];
+      const result = await runRemoteAction(workspace.path);
+      if (!result.ok) throw new Error(result.error || `Git ${label} failed`);
       await refreshGit();
       if (kind === 'pull' || kind === 'pullMerge') setRefreshToken((token) => token + 1);
       showToast(`Git ${label} complete`, 'success');
